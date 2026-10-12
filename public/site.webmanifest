@@ -1,0 +1,92 @@
+// public/site.webmanifest
+{
+  "name": "Gercie – Marketplace de Luxe en RDC",
+  "short_name": "Gercie",
+  "description": "Achetez et vendez en toute confiance. Authenticité certifiée, livraison express, paiement sécurisé en CDF et USD.",
+  "start_url": "/?utm_source=pwa",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f1b5c",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "fr-CD",
+  "categories": ["shopping", "lifestyle", "marketplace"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/home.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/screenshots/home-mobile.png",
+      "sizes": "720x1280",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Rechercher",
+      "url": "/search?utm_source=pwa-shortcut",
+      "description": "Trouver un produit rapidement",
+      "icons": [{ "src": "/icons/search.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "Panier",
+      "url": "/panier?utm_source=pwa-shortcut",
+      "description": "Consulter votre panier",
+      "icons": [{ "src": "/icons/cart.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "Commandes",
+      "url": "/profile/commandes?utm_source=pwa-shortcut",
+      "description": "Suivre vos commandes",
+      "icons": [{ "src": "/icons/orders.png", "sizes": "96x96", "type": "image/png" }]
+    }
+  ],
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "https://play.google.com/store/apps/details?id=com.gercie.app",
+      "id": "com.gercie.app"
+    },
+    {
+      "platform": "itunes",
+      "url": "https://apps.apple.com/app/id1234567890"
+    }
+  ],
+  "prefer_related_applications": false
+}

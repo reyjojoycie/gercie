@@ -1,0 +1,72 @@
+# .github/workflows/ci.yml
+name: Gercie CI – Marketplace Premium
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    name: Lint & Build & Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    env:
+      # Variables requises pour Next.js build (elles peuvent être factices,
+      # seules NEXT_PUBLIC_* sont utilisées côté client ; pour le build SSG/ISR,
+      # des valeurs factices suffisent)
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://example.supabase.co' }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZha2UifQ.fake' }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'fake-service-role-key' }}
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY || '' }}
+      TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID || '' }}
+      TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN || '' }}
+      TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER || '' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check coding standards (ESLint + Prettier)
+        run: npx eslint . --max-warnings=0
+        continue-on-error: true   # ne pas bloquer la CI pour des warnings de formatage
+
+      - name: Type checking (TypeScript)
+        run: npx tsc --noEmit
+
+      - name: Unit tests (Jest)
+        run: npx jest --ci --maxWorkers=2 --coverage --passWithNoTests
+
+      - name: Build application
+        run: npm run build
+
+      # Optionnel : exécuter les tests E2E Playwright – décommentez quand vous serez prêt
+      # - name: Install Playwright browsers
+      #   run: npx playwright install --with-deps
+      # - name: Run E2E tests
+      #   run: npm run e2e
+      #   env:
+      #     CI: true
+
+      - name: Archive production artifacts
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: gercie-build
+          path: .next/

@@ -1,0 +1,26 @@
+# Dependances
+node_modules/
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Secrets / environnement
+.env
+.env.local
+.env.development.local
+.env.production.local
+
+# Logs
+*.log
+
+# Tests / caches
+coverage/
+playwright-report/
+test-results/
+.cache/
+.turbo
+.vercel
+storybook-static/

@@ -1,0 +1,24 @@
+# robots.txt – Gercie Marketplace
+# https://gercie.com
+
+User-agent: *
+Allow: /
+
+# Pages administratives non indexables
+Disallow: /admin/
+Disallow: /api/
+
+# Pages de profil et de commandes (privées)
+Disallow: /profile/
+Disallow: /dashboard/
+
+# Pages d'authentification
+Disallow: /login
+Disallow: /register
+
+# Fichiers de configuration
+Disallow: /_next/
+Disallow: /node_modules/
+
+# Sitemap URL publique
+Sitemap: https://gercie.com/sitemap.xml

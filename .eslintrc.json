@@ -1,0 +1,166 @@
+// .eslintrc.json – Configuration ESLint professionnelle pour Gercie
+{
+  "extends": [
+    "next/core-web-vitals", // Règles de performance Next.js
+    "plugin:@typescript-eslint/recommended", // Règles TypeScript
+    "plugin:react/recommended", // Règles React
+    "plugin:react-hooks/recommended", // Règles des hooks React
+    "plugin:jsx-a11y/recommended", // Accessibilité
+    "plugin:import/recommended", // Ordre des imports
+    "plugin:import/typescript",
+    "prettier", // Désactive les règles qui entrent en conflit avec Prettier
+    "plugin:storybook/recommended"
+  ],
+  "plugins": [
+    "@typescript-eslint",
+    "react",
+    "react-hooks",
+    "jsx-a11y",
+    "import",
+    "unused-imports" // Suppression automatique des imports inutilisés
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": true
+    }
+  },
+  "settings": {
+    "react": {
+      "version": "detect"
+    },
+    "import/resolver": {
+      "typescript": {
+        "alwaysTryTypes": true,
+        "project": "./tsconfig.json"
+      }
+    }
+  },
+  "rules": {
+    // ---------- TypeScript ----------
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_"
+      }
+    ],
+    "@typescript-eslint/explicit-function-return-type": "off",
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/consistent-type-imports": [
+      "error",
+      {
+        "prefer": "type-imports"
+      }
+    ],
+    // ---------- React ----------
+    "react/react-in-jsx-scope": "off", // Pas nécessaire avec Next.js
+    "react/prop-types": "off", // On utilise TypeScript
+    "react/display-name": "off",
+    "react/jsx-curly-brace-presence": [
+      "error",
+      {
+        "props": "never",
+        "children": "never"
+      }
+    ],
+    // ---------- Hooks ----------
+    "react-hooks/exhaustive-deps": "warn",
+    // ---------- Accessibilité ----------
+    "jsx-a11y/anchor-is-valid": "off", // Next.js Link gère les ancres
+    "jsx-a11y/alt-text": [
+      "warn",
+      {
+        "elements": [
+          "img"
+        ],
+        "img": [
+          "Image"
+        ]
+      }
+    ],
+    // ---------- Imports ----------
+    "import/order": [
+      "error",
+      {
+        "groups": [
+          "builtin",
+          "external",
+          "internal",
+          "parent",
+          "sibling",
+          "index",
+          "object",
+          "type"
+        ],
+        "pathGroups": [
+          {
+            "pattern": "react",
+            "group": "external",
+            "position": "before"
+          },
+          {
+            "pattern": "next/**",
+            "group": "external",
+            "position": "before"
+          },
+          {
+            "pattern": "@/**",
+            "group": "internal",
+            "position": "after"
+          }
+        ],
+        "pathGroupsExcludedImportTypes": [
+          "react"
+        ],
+        "newlines-between": "always",
+        "alphabetize": {
+          "order": "asc",
+          "caseInsensitive": true
+        }
+      }
+    ],
+    "import/no-default-export": "off", // Next.js pages utilisent export default
+    // ---------- Nettoyage ----------
+    "unused-imports/no-unused-imports": "warn",
+    "unused-imports/no-unused-vars": [
+      "warn",
+      {
+        "vars": "all",
+        "varsIgnorePattern": "^_",
+        "args": "after-used",
+        "argsIgnorePattern": "^_"
+      }
+    ],
+    // ---------- Général ----------
+    "no-console": [
+      "warn",
+      {
+        "allow": [
+          "warn",
+          "error"
+        ]
+      }
+    ],
+    "prefer-const": "error",
+    "no-var": "error",
+    "eqeqeq": [
+      "error",
+      "always"
+    ]
+  },
+  "overrides": [
+    {
+      // Règles assouplies pour les fichiers de configuration et scripts
+      "files": [
+        "*.config.*",
+        "scripts/**/*"
+      ],
+      "rules": {
+        "no-console": "off",
+        "@typescript-eslint/no-explicit-any": "off"
+      }
+    }
+  ]
+}

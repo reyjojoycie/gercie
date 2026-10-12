@@ -1,0 +1,1263 @@
+/*
+Fichier à modifier : app/globals.css
+Nouveaux fichiers : aucun
+Base de données : aucune requête SQL
+*/
+
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ==========================================================================
+   Thème Tailwind v4 – Palettes Illimitées, Harmonie Absolue
+   Version optimisée : premium + performance + stabilité
+   ========================================================================== */
+@theme {
+  --font-sans: 'Outfit', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-heading: 'Plus Jakarta Sans', 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Brand – Bleu saphir */
+  --color-brand-50: #eff3ff;
+  --color-brand-100: #dbe3fe;
+  --color-brand-200: #b9c8fd;
+  --color-brand-300: #8fa8fb;
+  --color-brand-400: #6b87f9;
+  --color-brand-500: #4766f7;
+  --color-brand-600: #2a4ae3;
+  --color-brand-700: #1d3ab8;
+  --color-brand-800: #172d94;
+  --color-brand-900: #132378;
+  --color-brand-950: #0f1b5c;
+
+  /* Accent – Jade royal */
+  --color-accent-50: #eefdf6;
+  --color-accent-100: #d4faeb;
+  --color-accent-200: #adf5d9;
+  --color-accent-300: #72edc0;
+  --color-accent-400: #3fe0a3;
+  --color-accent-500: #18c78a;
+  --color-accent-600: #0fa073;
+  --color-accent-700: #0c7f5e;
+  --color-accent-800: #0b664d;
+  --color-accent-900: #095440;
+  --color-accent-950: #06382b;
+
+  /* Warm – Ambre royal */
+  --color-warm-50: #fffdf2;
+  --color-warm-100: #fef9dc;
+  --color-warm-200: #fdf2ba;
+  --color-warm-300: #fbe98f;
+  --color-warm-400: #f9dd5e;
+  --color-warm-500: #f6cf2a;
+  --color-warm-600: #d4ac0d;
+  --color-warm-700: #a8860a;
+  --color-warm-800: #7e6509;
+  --color-warm-900: #5e4c08;
+  --color-warm-950: #3d3106;
+
+  /* Luxury – Violet aubergine */
+  --color-luxury-50: #faf5ff;
+  --color-luxury-100: #efebff;
+  --color-luxury-200: #ddd1fb;
+  --color-luxury-300: #c2aef6;
+  --color-luxury-400: #a583f0;
+  --color-luxury-500: #8b5cf6;
+  --color-luxury-600: #6d39d2;
+  --color-luxury-700: #5329a8;
+  --color-luxury-800: #3d1f80;
+  --color-luxury-900: #291558;
+  --color-luxury-950: #1a0c3d;
+
+  /* Gold – Or pur */
+  --color-gold-50: #fdf9ed;
+  --color-gold-100: #faf0d7;
+  --color-gold-200: #f5e0af;
+  --color-gold-300: #efcf7e;
+  --color-gold-400: #e8be4c;
+  --color-gold-500: #dfad1f;
+  --color-gold-600: #c99a14;
+  --color-gold-700: #a87d0e;
+  --color-gold-800: #8b650a;
+  --color-gold-900: #6d4e08;
+  --color-gold-950: #4a3405;
+
+  /* Burgundy – Rouge profond */
+  --color-burgundy-50: #fdf2f4;
+  --color-burgundy-100: #fce7ea;
+  --color-burgundy-200: #f9d0d9;
+  --color-burgundy-300: #f2a5b6;
+  --color-burgundy-400: #e9728d;
+  --color-burgundy-500: #dc3f62;
+  --color-burgundy-600: #c42d54;
+  --color-burgundy-700: #a51f44;
+  --color-burgundy-800: #8b1a3a;
+  --color-burgundy-900: #721531;
+  --color-burgundy-950: #4a0c1f;
+
+  /* Midnight – Bleu nuit (dark mode) */
+  --color-midnight-50: #e6ebf4;
+  --color-midnight-100: #cdd6e9;
+  --color-midnight-200: #9aa7d2;
+  --color-midnight-300: #6b7db8;
+  --color-midnight-400: #455a9e;
+  --color-midnight-500: #2c3e84;
+  --color-midnight-600: #1f2b6b;
+  --color-midnight-700: #151e52;
+  --color-midnight-800: #0d1338;
+  --color-midnight-900: #080c24;
+  --color-midnight-950: #040715;
+
+  /* Champagne – Beige doré */
+  --color-champagne-50: #fefdfb;
+  --color-champagne-100: #fdf9f2;
+  --color-champagne-200: #faf2e2;
+  --color-champagne-300: #f6e8cd;
+  --color-champagne-400: #f2ddb8;
+  --color-champagne-500: #edd0a2;
+  --color-champagne-600: #e7c08b;
+  --color-champagne-700: #dfad6e;
+  --color-champagne-800: #d5994f;
+  --color-champagne-900: #c48232;
+  --color-champagne-950: #a5671e;
+
+  /* Rose Gold – Rose luxueux */
+  --color-rosegold-50: #fff5f7;
+  --color-rosegold-100: #ffe9ee;
+  --color-rosegold-200: #ffd3dd;
+  --color-rosegold-300: #ffb3c6;
+  --color-rosegold-400: #ff8aa5;
+  --color-rosegold-500: #ff5c7e;
+  --color-rosegold-600: #e03b5e;
+  --color-rosegold-700: #b32242;
+  --color-rosegold-800: #8a1a33;
+  --color-rosegold-900: #661226;
+  --color-rosegold-950: #3d0917;
+
+  /* Teal – Bleu canard profond */
+  --color-teal-50: #f0fdfb;
+  --color-teal-100: #d2f9f2;
+  --color-teal-200: #a7f0e4;
+  --color-teal-300: #6fe7d2;
+  --color-teal-400: #3cd6bc;
+  --color-teal-500: #1bbfa1;
+  --color-teal-600: #0f9e86;
+  --color-teal-700: #0b7d6c;
+  --color-teal-800: #096356;
+  --color-teal-900: #074f45;
+  --color-teal-950: #04352e;
+
+  /* Copper – Cuivre métallique */
+  --color-copper-50: #fdf6f2;
+  --color-copper-100: #fbecdf;
+  --color-copper-200: #f6d5ba;
+  --color-copper-300: #f0b98e;
+  --color-copper-400: #ea9b5d;
+  --color-copper-500: #e37d32;
+  --color-copper-600: #c2671e;
+  --color-copper-700: #9b4f17;
+  --color-copper-800: #7a3d13;
+  --color-copper-900: #5c2d0f;
+  --color-copper-950: #3d1c09;
+
+  /* Silver – Argent moderne */
+  --color-silver-50: #f8f9fc;
+  --color-silver-100: #f1f3f9;
+  --color-silver-200: #e2e6f0;
+  --color-silver-300: #cbd2e3;
+  --color-silver-400: #a9b3cc;
+  --color-silver-500: #8794b0;
+  --color-silver-600: #6b7894;
+  --color-silver-700: #525e78;
+  --color-silver-800: #3e4860;
+  --color-silver-900: #2c3348;
+  --color-silver-950: #1a2030;
+
+  /* Neutral – Gris chauds */
+  --color-neutral-50: #fafaf9;
+  --color-neutral-100: #f4f3f0;
+  --color-neutral-200: #e7e5e0;
+  --color-neutral-300: #d1cec7;
+  --color-neutral-400: #a8a49b;
+  --color-neutral-500: #7d7970;
+  --color-neutral-600: #5c5850;
+  --color-neutral-700: #41403a;
+  --color-neutral-800: #2b2a25;
+  --color-neutral-900: #1b1a16;
+  --color-neutral-950: #11100e;
+
+  /* Danger – Rouge vif */
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-200: #fecaca;
+  --color-danger-300: #fca5a5;
+  --color-danger-400: #f87171;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+  --color-danger-800: #991b1b;
+  --color-danger-900: #7f1d1d;
+  --color-danger-950: #450a0a;
+
+  /* Success – Vert émeraude */
+  --color-success-50: #f0fdf5;
+  --color-success-100: #dcfce8;
+  --color-success-200: #bbf7d1;
+  --color-success-300: #86efad;
+  --color-success-400: #4ade80;
+  --color-success-500: #22c55e;
+  --color-success-600: #16a34a;
+  --color-success-700: #15803c;
+  --color-success-800: #166533;
+  --color-success-900: #14532b;
+  --color-success-950: #052e14;
+
+  /* Warning – Ambre chaud */
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-warning-300: #fcd34d;
+  --color-warning-400: #fbbf24;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+  --color-warning-800: #92400e;
+  --color-warning-900: #78350f;
+  --color-warning-950: #451a03;
+
+  /* Info – Cyan */
+  --color-info-50: #ecfeff;
+  --color-info-100: #cffafe;
+  --color-info-200: #a5f3fc;
+  --color-info-300: #67e8f9;
+  --color-info-400: #22d3ee;
+  --color-info-500: #06b6d4;
+  --color-info-600: #0891b2;
+  --color-info-700: #0e7490;
+  --color-info-800: #155e75;
+  --color-info-900: #164e63;
+  --color-info-950: #083344;
+
+  /* Blush – Rose poudré */
+  --color-blush-50: #fff5f6;
+  --color-blush-100: #ffe9eb;
+  --color-blush-200: #ffd3d8;
+  --color-blush-300: #ffb3bd;
+  --color-blush-400: #ff8a9a;
+  --color-blush-500: #ff5c71;
+  --color-blush-600: #e03b52;
+  --color-blush-700: #b3223c;
+  --color-blush-800: #8a1a2d;
+  --color-blush-900: #661220;
+  --color-blush-950: #3d0911;
+
+  /* Sage – Vert sauge doux */
+  --color-sage-50: #f7f9f6;
+  --color-sage-100: #eaf0e8;
+  --color-sage-200: #d4e2d0;
+  --color-sage-300: #b2caac;
+  --color-sage-400: #8db380;
+  --color-sage-500: #6b9a5b;
+  --color-sage-600: #527d45;
+  --color-sage-700: #3f6234;
+  --color-sage-800: #304d28;
+  --color-sage-900: #223b1c;
+  --color-sage-950: #152511;
+
+  /* Coral – Corail chaleureux */
+  --color-coral-50: #fff5f2;
+  --color-coral-100: #ffe8df;
+  --color-coral-200: #ffcfba;
+  --color-coral-300: #ffac8a;
+  --color-coral-400: #ff8557;
+  --color-coral-500: #ff5e24;
+  --color-coral-600: #e0440d;
+  --color-coral-700: #b3340a;
+  --color-coral-800: #8a2708;
+  --color-coral-900: #661d06;
+  --color-coral-950: #3d1004;
+
+  /* Sky – Bleu ciel clair */
+  --color-sky-50: #f0f9ff;
+  --color-sky-100: #e0f2fe;
+  --color-sky-200: #bae6fd;
+  --color-sky-300: #7dd3fc;
+  --color-sky-400: #38bdf8;
+  --color-sky-500: #0ea5e9;
+  --color-sky-600: #0284c7;
+  --color-sky-700: #0369a1;
+  --color-sky-800: #075985;
+  --color-sky-900: #0c4a6e;
+  --color-sky-950: #082f49;
+
+  /* Plum – Prune mystérieuse */
+  --color-plum-50: #fcf5ff;
+  --color-plum-100: #f5e6ff;
+  --color-plum-200: #e9ccff;
+  --color-plum-300: #d6a3fa;
+  --color-plum-400: #be74f0;
+  --color-plum-500: #a344e0;
+  --color-plum-600: #7e22c2;
+  --color-plum-700: #601a9e;
+  --color-plum-800: #471378;
+  --color-plum-900: #300e55;
+  --color-plum-950: #1d0836;
+
+  /* Compatibilité additionnelle */
+  --color-gray-750: #2d3748;
+
+  /* Ombres premium */
+  --shadow-soft: 0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04);
+  --shadow-medium: 0 4px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  --shadow-strong: 0 10px 40px -10px rgba(0, 0, 0, 0.15), 0 20px 15px -15px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 10px 30px -10px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-gold: 0 0 30px rgba(223, 173, 31, 0.4);
+  --shadow-dark-card: 0 4px 20px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(255, 255, 255, 0.05);
+  --shadow-xl: 0 20px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --shadow-glass-dark: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+/* ==========================================================================
+   Variables CSS dynamiques pour le thème
+   ========================================================================== */
+:root {
+  color-scheme: light;
+
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f4f3f0;
+  --color-bg-card: #ffffff;
+  --color-bg-elevated: #ffffff;
+  --color-bg-inverse: #11100e;
+  --color-bg-overlay: rgba(17, 16, 14, 0.45);
+  --color-bg-overlay-strong: rgba(17, 16, 14, 0.65);
+
+  --color-text-primary: #1b1a16;
+  --color-text-secondary: #5c5850;
+  --color-text-tertiary: #7d7970;
+  --color-text-inverse: #ffffff;
+
+  --color-border-light: #e7e5e0;
+  --color-border-strong: #d1cec7;
+  --color-border-accent: #4766f7;
+
+  --color-link: #2a4ae3;
+  --color-link-hover: #1d3ab8;
+  --color-focus: #4766f7;
+
+  scrollbar-color: #d1cec7 var(--color-bg-secondary);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --color-bg-primary: #040715;
+  --color-bg-secondary: #080c24;
+  --color-bg-card: #0d1338;
+  --color-bg-elevated: #151e52;
+  --color-bg-inverse: #ffffff;
+  --color-bg-overlay: rgba(4, 7, 21, 0.55);
+  --color-bg-overlay-strong: rgba(4, 7, 21, 0.75);
+
+  --color-text-primary: #cdd6e9;
+  --color-text-secondary: #6b7db8;
+  --color-text-tertiary: #455a9e;
+  --color-text-inverse: #040715;
+
+  --color-border-light: #1f2b6b;
+  --color-border-strong: #455a9e;
+  --color-border-accent: #8b5cf6;
+
+  --color-link: #8fa8fb;
+  --color-link-hover: #b9c8fd;
+  --color-focus: #8b5cf6;
+
+  scrollbar-color: #455a9e #080c24;
+}
+
+/* ==========================================================================
+   Transitions optimisées
+   - On garde une sensation premium
+   - On évite les transitions trop coûteuses sur appareils modestes
+   ========================================================================== */
+@media (prefers-reduced-motion: no-preference) {
+  *,
+  *::before,
+  *::after {
+    transition:
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      fill 0.18s ease,
+      stroke 0.18s ease;
+  }
+
+  a,
+  button,
+  [role="button"],
+  input,
+  select,
+  textarea,
+  .card-premium,
+  .glass-card,
+  .badge-premium,
+  .badge-sale,
+  .badge-new,
+  .badge-ia,
+  .card-interactive,
+  .hover-lift,
+  .hover-scale,
+  .hover-glow {
+    transition-property:
+      background-color,
+      border-color,
+      color,
+      fill,
+      stroke,
+      box-shadow,
+      opacity,
+      transform;
+    transition-duration: 0.18s;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+img,
+video,
+canvas,
+svg,
+[data-no-theme-transition],
+.no-transition {
+  transition: none !important;
+}
+
+/* ==========================================================================
+   Scrollbar horizontale masquée
+   ========================================================================== */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ==========================================================================
+   Base – Lissage & barres de défilement
+   ========================================================================== */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
+  body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    line-height: 1.6;
+    min-height: 100dvh;
+  }
+
+  img {
+    max-width: 100%;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  button,
+  [role="button"],
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+
+  ::selection {
+    background-color: rgba(71, 102, 247, 0.25);
+    color: #1d3ab8;
+  }
+
+  ::-moz-selection {
+    background-color: rgba(71, 102, 247, 0.25);
+    color: #1d3ab8;
+  }
+
+  .dark ::selection {
+    background-color: rgba(139, 92, 246, 0.35);
+    color: #e6ebf4;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg-secondary);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #d1cec7;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a8a49b;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background: #455a9e;
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #6b7db8;
+  }
+}
+
+/* ==========================================================================
+   Motifs d’arrière-plan – textures subtiles
+   ========================================================================== */
+.pattern-dots {
+  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.dark .pattern-dots {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+
+.pattern-lines {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.02) 0,
+    rgba(0, 0, 0, 0.02) 0.5px,
+    transparent 0,
+    transparent 15px
+  );
+}
+
+.dark .pattern-lines {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.02) 0,
+    rgba(255, 255, 255, 0.02) 0.5px,
+    transparent 0,
+    transparent 15px
+  );
+}
+
+.pattern-zigzag {
+  background:
+    linear-gradient(135deg, var(--color-bg-primary) 25%, transparent 25%) -20px 0,
+    linear-gradient(225deg, var(--color-bg-primary) 25%, transparent 25%) -20px 0,
+    linear-gradient(315deg, var(--color-bg-primary) 25%, transparent 25%),
+    linear-gradient(45deg, var(--color-bg-primary) 25%, transparent 25%);
+  background-size: 40px 40px;
+  background-color: var(--color-bg-secondary);
+}
+
+.pattern-waves {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 10px,
+      rgba(0, 0, 0, 0.02) 10px,
+      rgba(0, 0, 0, 0.02) 12px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 10px,
+      rgba(0, 0, 0, 0.02) 10px,
+      rgba(0, 0, 0, 0.02) 12px
+    );
+}
+
+.dark .pattern-waves {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 10px,
+      rgba(255, 255, 255, 0.02) 10px,
+      rgba(255, 255, 255, 0.02) 12px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 10px,
+      rgba(255, 255, 255, 0.02) 10px,
+      rgba(255, 255, 255, 0.02) 12px
+    );
+}
+
+/* ==========================================================================
+   Composants premium – Glassmorphism, cartes, badges, boutons de base
+   ========================================================================== */
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: var(--shadow-soft);
+}
+
+.dark .glass-card {
+  background: rgba(13, 19, 56, 0.7);
+  border-color: rgba(69, 90, 158, 0.3);
+  box-shadow: var(--shadow-dark-card);
+}
+
+.card-premium {
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-card);
+}
+
+.card-premium:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+}
+
+.card-interactive {
+  cursor: pointer;
+}
+
+.card-interactive:active {
+  transform: scale(0.98);
+}
+
+.badge-premium {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25em 0.75em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-light);
+}
+
+.badge-sale {
+  background: linear-gradient(135deg, #dc3f62, #e9728d);
+  color: white;
+  font-weight: 700;
+}
+
+.badge-new {
+  background: linear-gradient(135deg, #18c78a, #3fe0a3);
+  color: white;
+}
+
+/* ==========================================================================
+   Gradients de texte et utilitaires
+   ========================================================================== */
+.gradient-text {
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-image: linear-gradient(135deg, #4766f7, #8b5cf6, #e37d32);
+  background-repeat: no-repeat;
+}
+
+.gradient-text-reverse {
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-image: linear-gradient(135deg, #e37d32, #8b5cf6, #4766f7);
+  background-repeat: no-repeat;
+}
+
+.gradient-gold {
+  background-image: linear-gradient(135deg, #dfad1f, #f6cf2a, #c99a14);
+}
+
+.gradient-soft {
+  background-image: linear-gradient(135deg, #2a4ae3, #6d39d2);
+}
+
+.gradient-midnight {
+  background-image: linear-gradient(to bottom, #0d1338 0%, #040715 100%);
+}
+
+.gradient-text-animated {
+  background-size: 200% 200%;
+  animation: gradient-shift 3s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* ==========================================================================
+   Animations
+   ========================================================================== */
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(223, 173, 31, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(223, 173, 31, 0.6);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes bounce-slow {
+  0%,
+  100% {
+    transform: translateY(-5%);
+  }
+  50% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes background-pan {
+  from {
+    background-position: 0% center;
+  }
+  to {
+    background-position: -200% center;
+  }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+.animate-fade-in-down {
+  animation: fadeInDown 0.5s ease-out forwards;
+}
+
+.animate-fade-in-left {
+  animation: fadeInLeft 0.5s ease-out forwards;
+}
+
+.animate-fade-in-right {
+  animation: fadeInRight 0.5s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out forwards;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 0.4s ease-out;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 2s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+.animate-background-pan {
+  animation: background-pan 3s linear infinite;
+}
+
+.stagger-fade-in > * {
+  opacity: 0;
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+.stagger-fade-in > *:nth-child(1) {
+  animation-delay: 0.05s;
+}
+
+.stagger-fade-in > *:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.stagger-fade-in > *:nth-child(3) {
+  animation-delay: 0.15s;
+}
+
+.stagger-fade-in > *:nth-child(4) {
+  animation-delay: 0.2s;
+}
+
+.stagger-fade-in > *:nth-child(5) {
+  animation-delay: 0.25s;
+}
+
+.stagger-fade-in > *:nth-child(6) {
+  animation-delay: 0.3s;
+}
+
+.stagger-fade-in > *:nth-child(7) {
+  animation-delay: 0.35s;
+}
+
+.stagger-fade-in > *:nth-child(8) {
+  animation-delay: 0.4s;
+}
+
+.stagger-fade-in > *:nth-child(9) {
+  animation-delay: 0.45s;
+}
+
+.stagger-fade-in > *:nth-child(10) {
+  animation-delay: 0.5s;
+}
+
+/* ==========================================================================
+   Accessibilité & mouvement réduit
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  html {
+    scroll-behavior: auto !important;
+  }
+}
+
+.low-bandwidth *,
+.low-power *,
+[data-low-power] *,
+[data-low-bandwidth] * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-data: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus, #4766f7);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.placeholder-blur {
+  filter: blur(20px);
+  transform: scale(1.05);
+}
+
+/* ==========================================================================
+   Utilitaires de couleurs de fond personnalisées
+   ========================================================================== */
+.bg-primary {
+  background-color: var(--color-bg-primary);
+}
+
+.bg-secondary {
+  background-color: var(--color-bg-secondary);
+}
+
+.bg-card {
+  background-color: var(--color-bg-card);
+}
+
+.bg-elevated {
+  background-color: var(--color-bg-elevated);
+}
+
+.bg-inverse {
+  background-color: var(--color-bg-inverse);
+}
+
+.bg-overlay {
+  background-color: var(--color-bg-overlay);
+}
+
+.bg-overlay-strong {
+  background-color: var(--color-bg-overlay-strong);
+}
+
+.text-primary {
+  color: var(--color-text-primary);
+}
+
+.text-secondary {
+  color: var(--color-text-secondary);
+}
+
+.text-tertiary {
+  color: var(--color-text-tertiary);
+}
+
+.text-inverse {
+  color: var(--color-text-inverse);
+}
+
+.border-light {
+  border-color: var(--color-border-light);
+}
+
+.border-strong {
+  border-color: var(--color-border-strong);
+}
+
+.border-accent {
+  border-color: var(--color-border-accent);
+}
+
+.link {
+  color: var(--color-link);
+}
+
+.link:hover {
+  color: var(--color-link-hover);
+}
+
+/* ==========================================================================
+   Skeleton loading
+   ========================================================================== */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-secondary) 25%,
+    var(--color-bg-elevated) 50%,
+    var(--color-bg-secondary) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.25rem;
+}
+
+/* ==========================================================================
+   Effets de survol globaux
+   ========================================================================== */
+.hover-lift {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-medium);
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 15px rgba(71, 102, 247, 0.3);
+}
+
+.hover-scale {
+  transition: transform 0.2s ease;
+}
+
+.hover-scale:hover {
+  transform: scale(1.02);
+}
+
+.separator {
+  height: 1px;
+  background: var(--color-border-light);
+  margin: 2rem 0;
+}
+
+.separator-vertical {
+  width: 1px;
+  background: var(--color-border-light);
+  align-self: stretch;
+}
+
+.page-container {
+  width: 100%;
+  max-width: 80rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .page-container {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+/* ==========================================================================
+   Utilitaires supplémentaires – stabilité, accessibilité, mobile
+   ========================================================================== */
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.safe-top {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.tap-highlight-transparent {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.text-pretty {
+  text-wrap: pretty;
+}
+
+.line-clamp-1,
+.line-clamp-2,
+.line-clamp-3,
+.line-clamp-4 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.line-clamp-1 {
+  -webkit-line-clamp: 1;
+}
+
+.line-clamp-2 {
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  -webkit-line-clamp: 3;
+}
+
+.line-clamp-4 {
+  -webkit-line-clamp: 4;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.aspect-product {
+  aspect-ratio: 1 / 1;
+}
+
+.aspect-banner {
+  aspect-ratio: 16 / 7;
+}
+
+/* ==========================================================================
+   IA Components – Styles additionnels
+   ========================================================================== */
+.bg-gray-750 {
+  background-color: #2d3748;
+}
+
+.dark .bg-gray-750 {
+  background-color: #2d3748;
+}
+
+.badge-ia {
+  background: linear-gradient(135deg, #8b5cf6, #6d39d2);
+  color: white;
+  font-size: 0.7rem;
+  padding: 0.2em 0.6em;
+  border-radius: 9999px;
+  font-weight: 600;
+}
+
+.animate-pulse-purple {
+  animation: pulse-purple 2s infinite;
+}
+
+@keyframes pulse-purple {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 10px rgba(139, 92, 246, 0);
+  }
+}
