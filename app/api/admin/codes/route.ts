@@ -130,7 +130,7 @@ export async function GET(request: Request) {
     setCache(cacheKey, response)
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/codes')
+    logger.error('Crash GET admin/codes', error)
     // En cas d'erreur inconnue, on renvoie un tableau vide plutôt qu'une 500
     return NextResponse.json({ data: [], pagination: { page, limit, total: 0, totalPages: 0 } })
   }
@@ -208,7 +208,7 @@ export async function POST(request: Request) {
     cache.clear()
     return NextResponse.json({ codes: batch.map(b => b.code), count: batch.length }, { status: 201 })
   } catch (error: any) {
-    logger.error(error, 'Crash POST admin/codes')
+    logger.error('Crash POST admin/codes', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

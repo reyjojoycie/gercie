@@ -82,7 +82,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .order('slug')
 
     if (catError) {
-      logger.error(catError, 'Erreur chargement catégories pour sitemap')
+      logger.error('Erreur chargement catégories pour sitemap', catError)
     } else if (categories) {
       for (const cat of categories) {
         const path = `/categories/${cat.slug}`
@@ -104,7 +104,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     }
   } catch (err) {
-    logger.error(err, 'Sitemap: impossible de charger les catégories')
+    logger.error('Sitemap: impossible de charger les catégories', err)
   }
 
   // --- Produits (limités aux 2000 derniers pour performance) ---
@@ -119,7 +119,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .limit(2000)
 
     if (prodError) {
-      logger.error(prodError, 'Erreur chargement produits pour sitemap')
+      logger.error('Erreur chargement produits pour sitemap', prodError)
     } else if (products) {
       for (const prod of products) {
         const path = `/produits/${prod.slug || prod.id}`
@@ -141,7 +141,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     }
   } catch (err) {
-    logger.error(err, 'Sitemap: impossible de charger les produits')
+    logger.error('Sitemap: impossible de charger les produits', err)
   }
 
   return entries

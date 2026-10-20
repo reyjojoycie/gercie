@@ -305,7 +305,7 @@ export async function GET(request: Request) {
     setCache(cacheKey, stats)
     return NextResponse.json(stats)
   } catch (error: any) {
-    logger.error(error, 'Crash dans /api/livreur/stats')
+    logger.error('Crash dans /api/livreur/stats', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

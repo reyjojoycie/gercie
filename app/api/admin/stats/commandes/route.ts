@@ -106,7 +106,7 @@ export async function GET(request: Request) {
     cache.set(cacheKey, { data: result, timestamp: Date.now() })
     return NextResponse.json(result)
   } catch (error: any) {
-    logger.error(error, "Crash GET admin/stats/commandes")
+    logger.error("Crash GET admin/stats/commandes", error)
     return NextResponse.json({ error: "Erreur serveur interne" }, { status: 500 })
   }
 }

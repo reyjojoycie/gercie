@@ -27,7 +27,7 @@ export async function GET() {
       progressPercent: loyaltyProfile.progressPercent,
     })
   } catch (error: any) {
-    logger.error(error, 'Erreur récupération profil fidélité')
+    logger.error('Erreur récupération profil fidélité', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

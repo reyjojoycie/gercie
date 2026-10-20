@@ -103,7 +103,7 @@ export async function GET(request: Request) {
         .eq('lue', false)
       nonLuesCount = countNL || 0
     } catch (err) {
-      logger.error(err, 'Exception GET alertes')
+      logger.error('Exception GET alertes', err)
       return NextResponse.json({ error: 'Erreur interne' }, { status: 500 })
     }
 
@@ -129,7 +129,7 @@ export async function GET(request: Request) {
     if (err.message === 'Accès réservé aux livreurs') {
       return NextResponse.json({ error: 'Accès non autorisé' }, { status: 403 })
     }
-    logger.error(err, 'Erreur GET /api/livreur/alertes')
+    logger.error('Erreur GET /api/livreur/alertes', err)
     return NextResponse.json({ error: 'Erreur interne', trace_id: uuidv4() }, { status: 500 })
   }
 }
@@ -184,7 +184,7 @@ export async function PUT(request: Request) {
         .eq('livreur_id', user.id)
         .eq('lue', false)
       if (error) {
-        logger.error(error, 'Erreur marquage toutes alertes')
+        logger.error('Erreur marquage toutes alertes', error)
         return NextResponse.json({ error: 'Erreur lors du marquage' }, { status: 500 })
       }
       updatedCount = count || 0
@@ -195,7 +195,7 @@ export async function PUT(request: Request) {
         .in('id', alerte_ids)
         .eq('livreur_id', user.id)
       if (error) {
-        logger.error(error, 'Erreur marquage alertes sélectionnées')
+        logger.error('Erreur marquage alertes sélectionnées', error)
         return NextResponse.json({ error: 'Erreur lors du marquage' }, { status: 500 })
       }
       updatedCount = count || 0
@@ -210,7 +210,7 @@ export async function PUT(request: Request) {
   } catch (err: any) {
     if (err.message === 'Non authentifié') return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
     if (err.message === 'Accès réservé aux livreurs') return NextResponse.json({ error: 'Accès non autorisé' }, { status: 403 })
-    logger.error(err, 'Erreur PUT /api/livreur/alertes')
+    logger.error('Erreur PUT /api/livreur/alertes', err)
     return NextResponse.json({ error: 'Erreur interne', trace_id: uuidv4() }, { status: 500 })
   }
 }
@@ -250,7 +250,7 @@ export async function DELETE(request: Request) {
       .eq('livreur_id', user.id)
 
     if (error) {
-      logger.error(error, 'Erreur suppression alertes')
+      logger.error('Erreur suppression alertes', error)
       return NextResponse.json({ error: 'Erreur lors de la suppression' }, { status: 500 })
     }
 
@@ -261,7 +261,7 @@ export async function DELETE(request: Request) {
   } catch (err: any) {
     if (err.message === 'Non authentifié') return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
     if (err.message === 'Accès réservé aux livreurs') return NextResponse.json({ error: 'Accès non autorisé' }, { status: 403 })
-    logger.error(err, 'Erreur DELETE /api/livreur/alertes')
+    logger.error('Erreur DELETE /api/livreur/alertes', err)
     return NextResponse.json({ error: 'Erreur interne', trace_id: uuidv4() }, { status: 500 })
   }
 }

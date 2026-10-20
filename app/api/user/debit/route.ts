@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       .eq('id', user.id)
 
     if (updateError) {
-      logger.error(updateError, 'Erreur lors du débit du portefeuille')
+      logger.error('Erreur lors du débit du portefeuille', updateError)
       return NextResponse.json({ error: 'Erreur lors du débit' }, { status: 500 })
     }
 
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     logger.info({ userId: user.id, montant, commande_id }, 'Débit effectué avec succès')
     return NextResponse.json({ success: true, newSolde: nouveauSolde })
   } catch (error: any) {
-    logger.error(error, 'Crash dans la route de débit')
+    logger.error('Crash dans la route de débit', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

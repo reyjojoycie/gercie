@@ -86,7 +86,7 @@ export default function CodesPromoPage() {
     formState: { errors, isSubmitting },
     reset,
   } = useForm<GenerateForm>({
-    resolver: zodResolver(generateSchema),
+    resolver: zodResolver(generateSchema as any),
     defaultValues: {
       count: 5,
       reductionPercent: 10,
@@ -510,7 +510,7 @@ export default function CodesPromoPage() {
         title="Supprimer le code ?"
         description="Cette action est irréversible."
         size="sm"
-        accent="danger"
+        accent={"red" as any}
       >
         <div className="flex gap-3">
           <Button

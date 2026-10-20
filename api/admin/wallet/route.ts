@@ -104,7 +104,7 @@ export async function GET(request: Request) {
       .single()
 
     if (walletErr) {
-      logger.error(walletErr, 'Erreur récupération portefeuille admin')
+      logger.error('Erreur récupération portefeuille admin', walletErr)
       return NextResponse.json({ error: 'Erreur lors du chargement du portefeuille' }, { status: 500 })
     }
 
@@ -120,7 +120,7 @@ export async function GET(request: Request) {
       .limit(recentLimit)
 
     if (txErr) {
-      logger.warn(txErr, 'Erreur récupération transactions admin')
+      logger.warn('Erreur récupération transactions admin', txErr)
     }
 
     // Statistiques mensuelles (si demandé)
@@ -157,7 +157,7 @@ export async function GET(request: Request) {
     setCache(cacheKey, response)
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/wallet')
+    logger.error('Crash GET admin/wallet', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -231,7 +231,7 @@ export async function POST(request: Request) {
       .eq('id', adminId)
 
     if (updateErr) {
-      logger.error(updateErr, 'Erreur ajustement portefeuille admin')
+      logger.error('Erreur ajustement portefeuille admin', updateErr)
       return NextResponse.json({ error: updateErr.message }, { status: 500 })
     }
 
@@ -253,7 +253,7 @@ export async function POST(request: Request) {
     })
 
     if (txErr) {
-      logger.error(txErr, 'Erreur enregistrement transaction ajustement')
+      logger.error('Erreur enregistrement transaction ajustement', txErr)
       // Pas de rollback ici, l'ajustement est déjà fait
     }
 
@@ -270,7 +270,7 @@ export async function POST(request: Request) {
       montant,
     })
   } catch (error: any) {
-    logger.error(error, 'Crash POST admin/wallet')
+    logger.error('Crash POST admin/wallet', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

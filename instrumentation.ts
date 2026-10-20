@@ -17,7 +17,7 @@ export async function register() {
     try {
       validateEnv(REQUIRED_ENV_VARS);
     } catch (error) {
-      logger.error(error, '❌ Configuration critique incorrecte');
+      logger.error('❌ Configuration critique incorrecte', error);
       if (process.env.NODE_ENV === 'production') {
         Sentry.captureException(error, { level: 'fatal' });
       } else {
@@ -31,7 +31,7 @@ export async function register() {
     // 4. Gestion erreurs fatales (Isolée pour le compilateur Edge)
     if (typeof process !== 'undefined' && process.env.NEXT_RUNTIME === 'nodejs') {
       process.on('uncaughtException', (error) => {
-        logger.error(error, 'CRITICAL: Uncaught Exception');
+        logger.error('CRITICAL: Uncaught Exception', error);
         Sentry.captureException(error, { level: 'fatal' });
         setTimeout(() => safeExit(1), 2000);
       });

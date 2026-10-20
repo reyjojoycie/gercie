@@ -532,7 +532,7 @@ function LoginContent() {
                   </label>
 
                   <Link
-                    href="/auth/reset-password"
+                    href="/forgot-password"
                     className="text-sm text-gold-600 dark:text-gold-400 hover:underline focus:outline-none focus:ring-2 focus:ring-gold-500 focus:ring-offset-2 rounded"
                   >
                     Mot de passe oublié ?

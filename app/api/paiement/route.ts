@@ -254,7 +254,7 @@ export async function POST(request: Request) {
       })
 
       if (txError) {
-        logger.error(txError, 'Erreur lors du commit de la transaction mobile money en base de données')
+        logger.error('Erreur lors du commit de la transaction mobile money en base de données', txError)
       }
 
       // Notification multicanal de l'initiation de la transaction
@@ -294,7 +294,7 @@ export async function POST(request: Request) {
       })
 
       if (cardTxError) {
-        logger.error(cardTxError, 'Erreur insertion historique de transaction carte')
+        logger.error('Erreur insertion historique de transaction carte', cardTxError)
       }
 
       // Passage de la commande à l'état payé suite à l'autorisation de la banque

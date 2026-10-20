@@ -167,7 +167,7 @@ export async function POST(
       .insert(positionInsert)
 
     if (insertError) {
-      logger.error(insertError, 'Erreur insertion position')
+      logger.error('Erreur insertion position', insertError)
       return NextResponse.json({ error: 'Erreur lors de l\'enregistrement de la position' }, { status: 500 })
     }
 
@@ -188,7 +188,7 @@ export async function POST(
       .eq('livreur_id', user.id)
 
     if (updateError) {
-      logger.error(updateError, 'Erreur mise à jour derniere_position')
+      logger.error('Erreur mise à jour derniere_position', updateError)
       // Pas bloquant, la table dédiée a déjà la donnée
     }
 
@@ -197,7 +197,7 @@ export async function POST(
       .from('livreurs')
       .update({ derniere_activite: new Date().toISOString() })
       .eq('id', user.id)
-      .catch(err => logger.error(err, 'Erreur maj derniere_activite'))
+      .catch(err => logger.error('Erreur maj derniere_activite', err))
 
     // 9. Notification au client si changement significatif (ex: dernière position > 500m)
     if (previousPosition?.latitude && previousPosition?.longitude) {
@@ -221,7 +221,7 @@ export async function POST(
             })
           }
         } catch (notifErr) {
-          logger.error(notifErr, 'Erreur notification position')
+          logger.error('Erreur notification position', notifErr)
         }
       }
     }
@@ -241,7 +241,7 @@ export async function POST(
       }
     })
   } catch (err) {
-    logger.error(err, 'Erreur POST /api/livreur/courses/[id]/location')
+    logger.error('Erreur POST /api/livreur/courses/[id]/location', err)
     return NextResponse.json({ error: 'Erreur interne', trace_id: uuidv4() }, { status: 500 })
   }
 }
@@ -306,7 +306,7 @@ export async function GET(
     const { data: positions, error, count } = await query
 
     if (error) {
-      logger.error(error, 'Erreur récupération positions')
+      logger.error('Erreur récupération positions', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -334,7 +334,7 @@ export async function GET(
       }
     })
   } catch (err) {
-    logger.error(err, 'Erreur GET /api/livreur/courses/[id]/location')
+    logger.error('Erreur GET /api/livreur/courses/[id]/location', err)
     return NextResponse.json({ error: 'Erreur interne', trace_id: uuidv4() }, { status: 500 })
   }
 }

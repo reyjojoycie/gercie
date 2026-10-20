@@ -174,7 +174,7 @@ export async function calculerETA(params: ETAParams): Promise<ETAResult> {
     setCache(key, result)
     return result
   } catch (err) {
-    logger.warn(err, 'Mapbox Directions indisponible, tentative de calcul interne')
+    logger.warn('Mapbox Directions indisponible, tentative de calcul interne', err)
   }
 
   // Fallback 1 : calcul interne via lib/itineraire (si disponible) – on peut utiliser la logique de calcul de route existante
@@ -194,7 +194,7 @@ export async function calculerETA(params: ETAParams): Promise<ETAResult> {
     setCache(key, result)
     return result
   } catch (internalErr) {
-    logger.warn(internalErr, 'Calcul itinéraire interne échoué, utilisation de la distance Haversine')
+    logger.warn('Calcul itinéraire interne échoué, utilisation de la distance Haversine', internalErr)
   }
 
   // Fallback 2 : distance Haversine simple

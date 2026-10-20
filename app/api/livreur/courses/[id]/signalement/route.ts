@@ -76,7 +76,7 @@ async function addHistorique(
         created_at: new Date().toISOString()
       })
   } catch (error) {
-    logger.error(error, 'Erreur ajout historique livreur')
+    logger.error('Erreur ajout historique livreur', error)
   }
 }
 
@@ -187,7 +187,7 @@ export async function POST(
       .single()
 
     if (alertError) {
-      logger.error(alertError, 'Erreur création alerte')
+      logger.error('Erreur création alerte', alertError)
       return NextResponse.json({ error: 'Erreur lors de l\'enregistrement du signalement' }, { status: 500 })
     }
 
@@ -207,7 +207,7 @@ export async function POST(
         }
       })
     } catch (notifErr) {
-      logger.error(notifErr, 'Échec notification admin')
+      logger.error('Échec notification admin', notifErr)
       // Pas bloquant
     }
 
@@ -244,7 +244,7 @@ export async function POST(
     })
 
   } catch (err) {
-    logger.error(err, 'Erreur POST /api/livreur/courses/[id]/signalement')
+    logger.error('Erreur POST /api/livreur/courses/[id]/signalement', err)
     return NextResponse.json({
       error: 'Erreur interne',
       trace_id: uuidv4()

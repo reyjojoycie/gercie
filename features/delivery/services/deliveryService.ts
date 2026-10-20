@@ -160,7 +160,7 @@ export async function getDeliveriesForLivreur(
 
   const { data, error, count } = await query
   if (error) {
-    logger.error(error, 'Erreur récupération livraisons livreur')
+    logger.error('Erreur récupération livraisons livreur', error)
     throw new Error(`Erreur récupération livraisons: ${error.message}`)
   }
 
@@ -230,7 +230,7 @@ export async function updateDeliveryStatus(
     .eq('id', deliveryId)
 
   if (error) {
-    logger.error(error, 'Erreur mise à jour livraison')
+    logger.error('Erreur mise à jour livraison', error)
     throw new Error(`Erreur mise à jour livraison: ${error.message}`)
   }
 
@@ -252,7 +252,7 @@ export async function assignLivreur(deliveryId: string, livreurId: string): Prom
     .upsert({ commande_id: deliveryId, livreur_id: livreurId, statut: 'acceptee' })
 
   if (error) {
-    logger.error(error, 'Erreur assignation livreur')
+    logger.error('Erreur assignation livreur', error)
     throw new Error(`Erreur assignation livreur: ${error.message}`)
   }
   cacheClearPrefix('delivery:')
@@ -316,7 +316,7 @@ export async function bulkUpdateDeliveryStatus(
     .in('id', ids)
 
   if (error) {
-    logger.error(error, 'Erreur mise à jour groupée livraisons')
+    logger.error('Erreur mise à jour groupée livraisons', error)
     throw new Error(`Erreur mise à jour groupée: ${error.message}`)
   }
   cacheClearPrefix('delivery:')

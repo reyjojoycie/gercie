@@ -25,7 +25,7 @@ export async function GET() {
 
     return NextResponse.json({ isLivreur: data.est_actif === true })
   } catch (error: any) {
-    logger.error(error, 'Crash dans is-livreur')
+    logger.error('Crash dans is-livreur', error)
     return NextResponse.json({ isLivreur: false })
   }
 }

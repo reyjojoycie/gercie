@@ -171,7 +171,7 @@ export async function GET(request: Request) {
 
     const { data: livraisons, error, count } = await query
     if (error) {
-      logger.error(error, 'Erreur récupération historique livreur')
+      logger.error('Erreur récupération historique livreur', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -269,7 +269,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET /api/livreur/historique')
+    logger.error('Crash GET /api/livreur/historique', error)
     return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 })
   }
 }

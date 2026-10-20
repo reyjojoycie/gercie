@@ -209,7 +209,7 @@ export async function createCheckoutSession(
     await cache.set(cacheKey, result, { ttl: 1800 })
     return result
   } catch (error) {
-    logger.error(error, 'Stripe: échec création session Checkout')
+    logger.error('Stripe: échec création session Checkout', error)
     throw new Error('Impossible de créer la session de paiement. Veuillez réessayer.')
   }
 }
@@ -260,7 +260,7 @@ export async function createPaymentIntent(
     await cache.set(cacheKey, result, { ttl: 1800 })
     return result
   } catch (error) {
-    logger.error(error, 'Stripe: échec création PaymentIntent')
+    logger.error('Stripe: échec création PaymentIntent', error)
     throw new Error('Le paiement par carte a échoué. Veuillez réessayer.')
   }
 }
@@ -285,7 +285,7 @@ export async function handleWebhook(
       STRIPE_WEBHOOK_SECRET
     )
   } catch (err: any) {
-    logger.error(err, 'Stripe: signature webhook invalide')
+    logger.error('Stripe: signature webhook invalide', err)
     return { received: false, message: `Signature invalide: ${err.message}` }
   }
 
@@ -307,7 +307,7 @@ export async function handleWebhook(
     }
     return { received: true, message: 'OK' }
   } catch (error) {
-    logger.error(error, `Erreur traitement webhook ${event.type}`)
+    logger.error(`Erreur traitement webhook ${event.type}`, error)
     return { received: false, message: 'Erreur interne lors du traitement' }
   }
 }
@@ -325,7 +325,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     .update({ statut: 'payée', statut_paiement: 'payé', stripe_session_id: session.id })
     .eq('id', orderId)
 
-  if (error) logger.error(error, 'Stripe: échec maj commande après checkout')
+  if (error) logger.error('Stripe: échec maj commande après checkout', error)
 
   // Notification
   const { data: commande } = await supabase

@@ -50,7 +50,7 @@ export async function getWalletBalance(): Promise<number> {
     .single()
 
   if (error) {
-    logger.error(error, 'Erreur récupération solde central')
+    logger.error('Erreur récupération solde central', error)
     throw new Error('Impossible de récupérer le solde central')
   }
   return data?.solde_achat ?? 0
@@ -68,7 +68,7 @@ export async function getWalletBalances() {
     .single()
 
   if (error) {
-    logger.error(error, 'Erreur récupération soldes centraux')
+    logger.error('Erreur récupération soldes centraux', error)
     throw new Error('Impossible de récupérer les soldes')
   }
 
@@ -96,7 +96,7 @@ export async function getRecentWalletTransactions(limit = 20) {
     .limit(limit)
 
   if (error) {
-    logger.error(error, 'Erreur récupération transactions portefeuille')
+    logger.error('Erreur récupération transactions portefeuille', error)
     throw new Error('Impossible de récupérer les transactions')
   }
   return data || []
@@ -172,7 +172,7 @@ export async function adjustCentralWallet(payload: {
     .eq('id', ESCROW_USER_ID)
 
   if (updateErr) {
-    logger.error(updateErr, 'Erreur ajustement portefeuille central')
+    logger.error('Erreur ajustement portefeuille central', updateErr)
     throw new Error(`Erreur lors de l'ajustement: ${updateErr.message}`)
   }
 
@@ -191,7 +191,7 @@ export async function adjustCentralWallet(payload: {
   })
 
   if (txErr) {
-    logger.error(txErr, 'Erreur enregistrement transaction ajustement')
+    logger.error('Erreur enregistrement transaction ajustement', txErr)
     // Pas de rollback ici (l'ajustement est déjà fait), mais l'erreur est loggée
   }
 

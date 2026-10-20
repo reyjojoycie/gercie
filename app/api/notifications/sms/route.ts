@@ -113,7 +113,7 @@ export async function POST(request: Request) {
       status: message.status,
     })
   } catch (err: any) {
-    logger.error(err, 'Erreur envoi SMS')
+    logger.error('Erreur envoi SMS', err)
     // Twilio renvoie des erreurs spécifiques
     const twilioError = err?.moreInfo ? `Twilio error: ${err.message}` : 'Erreur serveur interne.'
     return NextResponse.json(

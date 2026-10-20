@@ -24,6 +24,8 @@ interface ThemeContextType {
   themeChoice: ThemeChoice;
   /** Le thème résolu effectif (light ou dark) */
   resolvedTheme: ResolvedTheme;
+  /** Alias de resolvedTheme (compatibilité avec les composants qui lisent `theme`) */
+  theme: ResolvedTheme;
   /** Définit un nouveau choix de thème */
   setThemeChoice: (choice: ThemeChoice) => void;
   /** Bascule rapide entre light et dark (ignore "system") */
@@ -337,6 +339,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const value: ThemeContextType = {
     themeChoice,
     resolvedTheme,
+    theme: resolvedTheme,
     setThemeChoice,
     toggleTheme,
     isTransitioning,

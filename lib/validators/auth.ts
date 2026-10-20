@@ -4,7 +4,6 @@ import { z } from 'zod'
 /* ------------------------------------------------------------------ */
 /*  Regex et constantes                                                */
 /* ------------------------------------------------------------------ */
-
 export const PHONE_REGEX = /^(\+?243|00243|0)[1-9][0-9]{7,8}$/
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -16,15 +15,11 @@ export const VERIFICATION_CODE_LENGTH = 6
 /* ------------------------------------------------------------------ */
 /*  Helpers de normalisation                                           */
 /* ------------------------------------------------------------------ */
-
 export function normalizePhone(phone: string): string {
   if (!phone) return ''
-
   // On garde uniquement chiffres et + éventuel
   let cleaned = phone.replace(/[^\d+]/g, '')
-
   if (!cleaned) return ''
-
   // 00243 -> +243
   if (cleaned.startsWith('00243')) {
     cleaned = '+243' + cleaned.slice(5)
@@ -37,12 +32,10 @@ export function normalizePhone(phone: string): string {
   else if (cleaned.startsWith('0') && !cleaned.startsWith('00')) {
     cleaned = '+243' + cleaned.slice(1)
   }
-
   // Cas +2430XXXXXXXXX : on retire le zéro après l'indicatif
   if (cleaned.startsWith('+2430')) {
     cleaned = '+243' + cleaned.slice(5)
   }
-
   return cleaned
 }
 
@@ -63,20 +56,16 @@ export function normalizeEmail(email: string): string {
 
 export function maskEmail(email: string): string {
   if (!email) return ''
-
   const [local, domain] = email.split('@')
   if (!local || !domain) return email
-
   if (local.length <= 2) return local[0] + '***@' + domain
   return local[0] + '***' + local.slice(-1) + '@' + domain
 }
 
 export function maskPhone(phone: string): string {
   if (!phone) return ''
-
   const cleaned = phone.replace(/\s+/g, '')
   if (cleaned.length < 4) return cleaned
-
   return (
     cleaned.slice(0, 3) +
     '•'.repeat(Math.max(0, cleaned.length - 5)) +
@@ -85,11 +74,11 @@ export function maskPhone(phone: string): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Schémas de base (réutilisables)                                    */
+/*  Schémas de base (réutilisables) – COMPATIBLES ZOD v4               */
+/*  (required_error remplacé par message)                             */
 /* ------------------------------------------------------------------ */
-
 export const emailSchema = z
-  .string({ required_error: 'Email requis' })
+  .string({ message: 'Email requis' })
   .min(1, 'Email requis')
   .max(255, 'Email trop long')
   .email('Email invalide')
@@ -106,7 +95,7 @@ export const phoneSchema = z
   .transform((val) => (val ? normalizePhone(val) : ''))
 
 export const phoneRequiredSchema = z
-  .string({ required_error: 'Téléphone requis' })
+  .string({ message: 'Téléphone requis' })
   .min(1, 'Téléphone requis')
   .refine(
     (val) => isValidPhone(val),
@@ -121,7 +110,7 @@ export const phoneRequiredSchema = z
  * - PAS de contraintes de complexité obligatoire
  */
 export const registerPasswordSchema = z
-  .string({ required_error: 'Mot de passe requis' })
+  .string({ message: 'Mot de passe requis' })
   .min(MIN_PASSWORD_LENGTH, `Minimum ${MIN_PASSWORD_LENGTH} caractères`)
   .max(MAX_PASSWORD_LENGTH, 'Mot de passe trop long')
 
@@ -130,7 +119,7 @@ export const registerPasswordSchema = z
  * Non utilisé dans les flux utilisateur standard.
  */
 export const strongPasswordSchema = z
-  .string({ required_error: 'Mot de passe requis' })
+  .string({ message: 'Mot de passe requis' })
   .min(8, 'Minimum 8 caractères')
   .max(MAX_PASSWORD_LENGTH, 'Mot de passe trop long')
   .regex(/[A-Z]/, 'Doit contenir au moins une majuscule')
@@ -138,17 +127,17 @@ export const strongPasswordSchema = z
   .regex(/[0-9]/, 'Doit contenir au moins un chiffre')
 
 export const simplePasswordSchema = z
-  .string({ required_error: 'Mot de passe requis' })
+  .string({ message: 'Mot de passe requis' })
   .min(1, 'Mot de passe requis')
   .max(MAX_PASSWORD_LENGTH, 'Mot de passe trop long')
 
 export const verificationCodeSchema = z
-  .string({ required_error: 'Code requis' })
+  .string({ message: 'Code requis' })
   .min(1, 'Code requis')
   .regex(/^\d{6}$/, 'Le code doit contenir 6 chiffres')
 
 export const nameSchema = z
-  .string({ required_error: 'Nom requis' })
+  .string({ message: 'Nom requis' })
   .min(2, 'Minimum 2 caractères')
   .max(50, 'Maximum 50 caractères')
   .transform((val) => val.trim())
@@ -156,7 +145,6 @@ export const nameSchema = z
 /* ------------------------------------------------------------------ */
 /*  Schémas d'authentification                                         */
 /* ------------------------------------------------------------------ */
-
 export const loginSchema = z.object({
   email: emailSchema,
   password: simplePasswordSchema,
@@ -182,7 +170,7 @@ export const registerSchema = z
 
 export const forgotPasswordSchema = z.object({
   identifier: z
-    .string({ required_error: 'Email ou téléphone requis' })
+    .string({ message: 'Email ou téléphone requis' })
     .min(1, 'Veuillez saisir votre email ou numéro de téléphone')
     .refine(
       (val) =>
@@ -231,12 +219,12 @@ export const changePasswordSchema = z
 
 export const securityQuestionSchema = z.object({
   question: z
-    .string({ required_error: 'Question requise' })
+    .string({ message: 'Question requise' })
     .min(10, 'La question doit contenir au moins 10 caractères')
     .max(200, 'La question est trop longue')
     .transform((val) => val.trim()),
   answer: z
-    .string({ required_error: 'Réponse requise' })
+    .string({ message: 'Réponse requise' })
     .min(2, 'La réponse est trop courte')
     .max(100, 'La réponse est trop longue')
     .transform(normalizeAnswer),
@@ -245,7 +233,7 @@ export const securityQuestionSchema = z.object({
 export const verifySecurityAnswerSchema = z.object({
   email: emailSchema,
   answer: z
-    .string({ required_error: 'Réponse requise' })
+    .string({ message: 'Réponse requise' })
     .min(1, 'La réponse est requise')
     .transform(normalizeAnswer),
 })
@@ -253,7 +241,6 @@ export const verifySecurityAnswerSchema = z.object({
 /* ------------------------------------------------------------------ */
 /*  Schémas de profil                                                  */
 /* ------------------------------------------------------------------ */
-
 export const updateProfileSchema = z.object({
   nom: nameSchema.optional(),
   prenom: nameSchema.optional(),
@@ -270,7 +257,8 @@ export const updateProfileSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => (v === '' ? null : v)),
-  preferences: z.record(z.unknown()).optional(),
+  // ✅ Zod v4 : z.record exige 2 arguments (clé, valeur)
+  preferences: z.record(z.string(), z.unknown()).optional(),
   onboarding_completed: z.boolean().optional(),
   terms_accepted_at: z.string().datetime().optional(),
 })
@@ -315,7 +303,6 @@ export const onboardingSchema = z.object({
 /* ------------------------------------------------------------------ */
 /*  Schémas d'adresses                                                 */
 /* ------------------------------------------------------------------ */
-
 export const addressSchema = z.object({
   nom: z.string().min(2, 'Nom requis (min. 2 caractères)').max(100),
   province_id: z.string().min(1, 'Province requise'),
@@ -333,7 +320,6 @@ export const addressUpdateSchema = addressSchema.partial()
 /* ------------------------------------------------------------------ */
 /*  Types dérivés                                                      */
 /* ------------------------------------------------------------------ */
-
 export type LoginInput = z.infer<typeof loginSchema>
 export type RegisterInput = z.infer<typeof registerSchema>
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>
@@ -350,7 +336,6 @@ export type AddressUpdateInput = z.infer<typeof addressUpdateSchema>
 /* ------------------------------------------------------------------ */
 /*  Helpers de validation                                              */
 /* ------------------------------------------------------------------ */
-
 export function validateSchema<T extends z.ZodSchema>(
   schema: T,
   data: unknown
@@ -358,18 +343,14 @@ export function validateSchema<T extends z.ZodSchema>(
   | { success: true; data: z.infer<T> }
   | { success: false; errors: Record<string, string> } {
   const result = schema.safeParse(data)
-
   if (result.success) {
     return { success: true, data: result.data }
   }
-
   const errors: Record<string, string> = {}
-
   for (const issue of result.error.issues) {
     const path = issue.path.join('.')
     errors[path] = issue.message
   }
-
   return { success: false, errors }
 }
 
@@ -393,9 +374,7 @@ export function calculatePasswordStrength(password: string): {
     special: /[^A-Za-z0-9]/.test(password),
     veryLong: password.length >= 12,
   }
-
   const score = Object.values(checks).filter(Boolean).length
-
   const labels = [
     'Très faible',
     'Faible',
@@ -405,7 +384,6 @@ export function calculatePasswordStrength(password: string): {
     'Fort',
     'Très fort',
   ]
-
   return {
     score,
     label: labels[score] || 'Inconnu',
@@ -421,27 +399,23 @@ export function detectIdentifierType(value: string): 'email' | 'phone' | 'unknow
 
 export function generateVerificationCode(length: number = VERIFICATION_CODE_LENGTH): string {
   const cryptoObj = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined
-
   if (cryptoObj && typeof cryptoObj.getRandomValues === 'function') {
     const array = new Uint32Array(length)
     cryptoObj.getRandomValues(array)
     return Array.from(array, (n) => (n % 10).toString()).join('')
   }
-
   // Fallback de compatibilité uniquement.
   // Pour les codes de sécurité serveur, préférer generateNumericCode() dans lib/security.ts.
   let code = ''
   for (let i = 0; i < length; i++) {
     code += Math.floor(Math.random() * 10).toString()
   }
-
   return code
 }
 
 /* ------------------------------------------------------------------ */
 /*  Messages d'erreur partagés                                         */
 /* ------------------------------------------------------------------ */
-
 export const AUTH_ERROR_MESSAGES = {
   invalid_credentials: 'Email ou mot de passe incorrect.',
   account_banned: 'Votre compte a été suspendu.',
@@ -466,7 +440,6 @@ export const AUTH_ERROR_MESSAGES = {
 /* ------------------------------------------------------------------ */
 /*  Export par défaut                                                  */
 /* ------------------------------------------------------------------ */
-
 export default {
   PHONE_REGEX,
   EMAIL_REGEX,

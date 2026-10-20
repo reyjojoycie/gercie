@@ -67,7 +67,7 @@ class NotificationService {
       } catch (err: any) {
         entry.status = 'failed'
         entry.error = err.message
-        logger.error(err, `Notification ${channel} échouée pour ${uid}`)
+        logger.error(`Notification ${channel} échouée pour ${uid}`, err)
       }
     })
 

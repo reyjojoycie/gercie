@@ -10,6 +10,7 @@ import React, {
   useContext,
   useMemo,
   useReducer,
+  isValidElement,
   ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
@@ -27,15 +28,20 @@ import {
 /* ========================================================================
    Types
    ======================================================================== */
-type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading' | 'default'
-type ToastPosition =
+export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading' | 'default'
+export type ToastPosition =
   | 'top-left'
   | 'top-center'
   | 'top-right'
   | 'bottom-left'
   | 'bottom-center'
   | 'bottom-right'
-type ToastVariant = 'solid' | 'outlined' | 'glass' | 'minimal'
+export type ToastVariant = 'solid' | 'outlined' | 'glass' | 'minimal'
+
+export interface ToastActionButton {
+  label: string
+  onClick: () => void
+}
 
 export interface ToastItem {
   id: string
@@ -46,6 +52,8 @@ export interface ToastItem {
   duration?: number
   showProgress?: boolean
   actions?: ReactNode
+  /** Alias tolérant de `actions` : un nœud React ou { label, onClick } */
+  action?: ReactNode | ToastActionButton
   icon?: ReactNode
   variant?: ToastVariant
   persistent?: boolean
@@ -53,12 +61,41 @@ export interface ToastItem {
   onOpen?: () => void
 }
 
-interface ToastContextValue {
+export type ToastInput = Omit<ToastItem, 'id'> & { id?: string }
+export type ToastOptions = Partial<Omit<ToastItem, 'type' | 'message'>>
+
+/**
+ * Valeur du contexte.
+ * Elle est À LA FOIS :
+ *  - appelable      → const toast = useToast(); toast({ message: '...' })
+ *  - un objet       → const { addToast, show } = useToast()
+ *  - avec raccourcis → toast.success('...'), toast.error('...')
+ */
+export interface ToastContextValue {
+  (props: ToastInput): string
   toasts: ToastItem[]
-  addToast: (toast: Omit<ToastItem, 'id'> & { id?: string }) => string
+  addToast: (toast: ToastInput) => string
   updateToast: (id: string, toast: Partial<ToastItem>) => void
   removeToast: (id: string) => void
+  dismiss: (id: string) => void
   clearToasts: () => void
+  /**
+   * show({ type, message, ... })
+   * show('Message')
+   * show('Message', 'success')
+   * show('Message', { type: 'error', title: '...' })
+   * show('Message', 'info', 3000)
+   */
+  show: (
+    messageOrProps: ReactNode | ToastInput,
+    typeOrOptions?: ToastType | (ToastOptions & { type?: ToastType }),
+    duration?: number
+  ) => string
+  success: (message: ReactNode, options?: ToastOptions) => string
+  error: (message: ReactNode, options?: ToastOptions) => string
+  warning: (message: ReactNode, options?: ToastOptions) => string
+  info: (message: ReactNode, options?: ToastOptions) => string
+  loading: (message: ReactNode, options?: ToastOptions) => string
 }
 
 /* ========================================================================
@@ -66,19 +103,19 @@ interface ToastContextValue {
    ======================================================================== */
 export const ToastContext = createContext<ToastContextValue | undefined>(undefined)
 
-export const useToast = () => {
+export const useToast = (): ToastContextValue => {
   const ctx = useContext(ToastContext)
   if (!ctx) throw new Error('useToast must be used within a ToastProvider')
   return ctx
 }
 
-type ToastAction =
+type ToastReducerAction =
   | { type: 'ADD'; toast: ToastItem }
   | { type: 'REMOVE'; id: string }
   | { type: 'UPDATE'; id: string; data: Partial<ToastItem> }
   | { type: 'CLEAR' }
 
-function toastReducer(state: ToastItem[], action: ToastAction): ToastItem[] {
+function toastReducer(state: ToastItem[], action: ToastReducerAction): ToastItem[] {
   switch (action.type) {
     case 'ADD':
       return [...state, action.toast]
@@ -93,16 +130,45 @@ function toastReducer(state: ToastItem[], action: ToastAction): ToastItem[] {
   }
 }
 
+// Détecte un objet de type ToastInput (et non un simple nœud React)
+function isToastInput(value: unknown): value is ToastInput {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !isValidElement(value) &&
+    'message' in value
+  )
+}
+
+function isActionButton(value: unknown): value is ToastActionButton {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !isValidElement(value) &&
+    'label' in value &&
+    'onClick' in value
+  )
+}
+
 // Son de notification (côté client uniquement)
 const playSound = (type: ToastType) => {
   if (typeof window === 'undefined') return
   try {
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext
-    const ctx = new AudioContext()
+    const AudioCtor: typeof AudioContext | undefined =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioCtor) return
+
+    const ctx = new AudioCtor()
     const oscillator = ctx.createOscillator()
     const gain = ctx.createGain()
     oscillator.connect(gain)
     gain.connect(ctx.destination)
+
+    // Libère le contexte audio (les navigateurs en limitent le nombre)
+    oscillator.onended = () => {
+      void ctx.close()
+    }
 
     if (type === 'success') {
       oscillator.frequency.value = 880
@@ -116,36 +182,48 @@ const playSound = (type: ToastType) => {
       gain.gain.value = 0.1
       oscillator.start()
       oscillator.stop(ctx.currentTime + 0.2)
+    } else {
+      void ctx.close()
     }
   } catch (_) {}
 }
 
 // Variable globale pour la fonction standalone toast
-let addToastGlobal: ((toast: Omit<ToastItem, 'id'> & { id?: string }) => string) | null = null
+let addToastGlobal: ((toast: ToastInput) => string) | null = null
 
 export const ToastProvider = ({ children }: { children: ReactNode }) => {
   const [toasts, dispatch] = useReducer(toastReducer, [])
 
-  const addToast = useCallback(
-    (toast: Omit<ToastItem, 'id'> & { id?: string }) => {
-      const id = toast.id ?? `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      const duration = toast.duration ?? (toast.type === 'loading' ? 0 : 5000)
-      const newToast: ToastItem = { ...toast, id, duration }
-      dispatch({ type: 'ADD', toast: newToast })
-      if (toast.type && toast.type !== 'loading' && toast.type !== 'default') {
-        playSound(toast.type)
-      }
-      newToast.onOpen?.()
+  // Référence vers la liste courante : évite de recréer removeToast à chaque
+  // changement (ce qui relançait les minuteurs de tous les toasts affichés).
+  const toastsRef = useRef<ToastItem[]>(toasts)
+  toastsRef.current = toasts
+
+  const addToast = useCallback((toast: ToastInput) => {
+    const id = toast.id ?? `toast-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+    const duration = toast.duration ?? (toast.type === 'loading' ? 0 : 5000)
+    const newToast: ToastItem = { ...toast, id, duration }
+
+    // Même id déjà affiché → mise à jour (évite les clés React en double)
+    if (toastsRef.current.some((t) => t.id === id)) {
+      dispatch({ type: 'UPDATE', id, data: newToast })
       return id
-    },
-    []
-  )
+    }
+
+    dispatch({ type: 'ADD', toast: newToast })
+    if (toast.type && toast.type !== 'loading' && toast.type !== 'default') {
+      playSound(toast.type)
+    }
+    newToast.onOpen?.()
+    return id
+  }, [])
 
   const removeToast = useCallback((id: string) => {
-    const toast = toasts.find((t) => t.id === id)
-    toast?.onClose?.()
+    const existing = toastsRef.current.find((t) => t.id === id)
+    if (!existing) return
+    existing.onClose?.()
     dispatch({ type: 'REMOVE', id })
-  }, [toasts])
+  }, [])
 
   const updateToast = useCallback((id: string, data: Partial<ToastItem>) => {
     dispatch({ type: 'UPDATE', id, data })
@@ -155,6 +233,26 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: 'CLEAR' })
   }, [])
 
+  const show = useCallback(
+    (
+      messageOrProps: ReactNode | ToastInput,
+      typeOrOptions?: ToastType | (ToastOptions & { type?: ToastType }),
+      duration?: number
+    ): string => {
+      if (isToastInput(messageOrProps)) return addToast(messageOrProps)
+
+      const opts: ToastOptions & { type?: ToastType } =
+        typeof typeOrOptions === 'string' ? { type: typeOrOptions } : typeOrOptions ?? {}
+
+      return addToast({
+        ...opts,
+        ...(duration !== undefined ? { duration } : {}),
+        message: messageOrProps as ReactNode,
+      })
+    },
+    [addToast]
+  )
+
   // Alimente la variable globale pour l'API standalone
   useEffect(() => {
     addToastGlobal = addToast
@@ -163,10 +261,29 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [addToast])
 
-  const value = useMemo(
-    () => ({ toasts, addToast, updateToast, removeToast, clearToasts }),
-    [toasts, addToast, updateToast, removeToast, clearToasts]
-  )
+  const value = useMemo<ToastContextValue>(() => {
+    const withType =
+      (type: ToastType) =>
+      (message: ReactNode, options?: ToastOptions): string =>
+        addToast({ ...options, type, message })
+
+    const callable = (props: ToastInput): string => addToast(props)
+
+    return Object.assign(callable, {
+      toasts,
+      addToast,
+      updateToast,
+      removeToast,
+      dismiss: removeToast,
+      clearToasts,
+      show,
+      success: withType('success'),
+      error: withType('error'),
+      warning: withType('warning'),
+      info: withType('info'),
+      loading: withType('loading'),
+    })
+  }, [toasts, addToast, updateToast, removeToast, clearToasts, show])
 
   return (
     <ToastContext.Provider value={value}>
@@ -216,6 +333,22 @@ const typeBorderColors: Record<ToastType, string> = {
   default: 'border-l-neutral-500',
 }
 
+function renderAction(action: ToastItem['action']): ReactNode {
+  if (!action) return null
+  if (isActionButton(action)) {
+    return (
+      <button
+        type="button"
+        onClick={action.onClick}
+        className="rounded-md px-2.5 py-1 text-xs font-semibold bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-colors"
+      >
+        {action.label}
+      </button>
+    )
+  }
+  return action as ReactNode
+}
+
 const ToastComponent = ({
   toast,
   onRemove,
@@ -225,33 +358,42 @@ const ToastComponent = ({
 }) => {
   const [progress, setProgress] = useState(100)
   const [isPaused, setIsPaused] = useState(false)
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const duration = toast.duration ?? 5000
   const persistent = toast.persistent || duration === 0
+
+  // Toujours la dernière version de onRemove, sans relancer le minuteur
+  const onRemoveRef = useRef(onRemove)
+  onRemoveRef.current = onRemove
+
+  // Temps restant : conservé pendant la pause (le survol ne remet plus à zéro)
+  const remainingRef = useRef(duration)
+
+  // Si la durée change (ex. toast "loading" mis à jour en "success"), on repart de zéro
+  useEffect(() => {
+    remainingRef.current = duration
+    setProgress(100)
+  }, [duration])
 
   useEffect(() => {
     if (persistent || isPaused) return
 
-    const startTime = Date.now()
-    const totalDuration = duration
+    const startedAt = Date.now()
+    const startRemaining = remainingRef.current
 
-    progressIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTime
-      const remaining = totalDuration - elapsed
+    const interval = setInterval(() => {
+      const remaining = startRemaining - (Date.now() - startedAt)
+      remainingRef.current = Math.max(0, remaining)
       if (remaining <= 0) {
+        clearInterval(interval)
         setProgress(0)
-        onRemove()
-        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+        onRemoveRef.current()
       } else {
-        setProgress((remaining / totalDuration) * 100)
+        setProgress((remaining / duration) * 100)
       }
     }, 30)
 
-    return () => {
-      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
-    }
-  }, [persistent, isPaused, duration, onRemove])
+    return () => clearInterval(interval)
+  }, [persistent, isPaused, duration])
 
   const pause = () => setIsPaused(true)
   const resume = () => setIsPaused(false)
@@ -266,6 +408,8 @@ const ToastComponent = ({
       : variantStyles[variant],
     variant !== 'solid' && 'border-l-4 ' + typeBorderColors[type]
   )
+
+  const actionsNode = toast.actions ?? renderAction(toast.action)
 
   return (
     <motion.div
@@ -303,8 +447,8 @@ const ToastComponent = ({
         </button>
       </div>
 
-      {toast.actions && (
-        <div className="flex items-center gap-2 px-4 pb-3">{toast.actions}</div>
+      {actionsNode && (
+        <div className="flex items-center gap-2 px-4 pb-3">{actionsNode}</div>
       )}
 
       {!persistent && toast.showProgress !== false && (
@@ -338,7 +482,7 @@ const ToastContainer = ({
 }) => {
   const { toasts, removeToast } = useToast()
 
-  // ✅ Évite l'accès à document.body pendant le SSR
+  // Évite l'accès à document.body pendant le SSR
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
 
@@ -369,7 +513,7 @@ const ToastContainer = ({
 /* ========================================================================
    API standalone – utilisable hors composant
    ======================================================================== */
-export const toast = (props: Omit<ToastItem, 'id'> & { id?: string }) => {
+export const toast = (props: ToastInput) => {
   if (!addToastGlobal) {
     console.warn('Toast function called before ToastProvider is mounted.')
     return ''
@@ -377,22 +521,25 @@ export const toast = (props: Omit<ToastItem, 'id'> & { id?: string }) => {
   return addToastGlobal(props)
 }
 
+// Alias de compatibilité : toast.addToast({ ... })
+toast.addToast = (props: ToastInput) => toast(props)
+
 // Raccourcis pratiques
-toast.success = (message: ReactNode, options?: Partial<Omit<ToastItem, 'type' | 'message'>>) => {
+toast.success = (message: ReactNode, options?: ToastOptions) => {
   return toast({ type: 'success', message, ...options })
 }
-toast.error = (message: ReactNode, options?: Partial<Omit<ToastItem, 'type' | 'message'>>) => {
+toast.error = (message: ReactNode, options?: ToastOptions) => {
   return toast({ type: 'error', message, ...options })
 }
-toast.warning = (message: ReactNode, options?: Partial<Omit<ToastItem, 'type' | 'message'>>) => {
+toast.warning = (message: ReactNode, options?: ToastOptions) => {
   return toast({ type: 'warning', message, ...options })
 }
-toast.info = (message: ReactNode, options?: Partial<Omit<ToastItem, 'type' | 'message'>>) => {
+toast.info = (message: ReactNode, options?: ToastOptions) => {
   return toast({ type: 'info', message, ...options })
 }
-toast.loading = (message: ReactNode, options?: Partial<Omit<ToastItem, 'type' | 'message'>>) => {
+toast.loading = (message: ReactNode, options?: ToastOptions) => {
   return toast({ type: 'loading', message, ...options })
 }
-toast.default = (message: ReactNode, options?: Partial<Omit<ToastItem, 'type' | 'message'>>) => {
+toast.default = (message: ReactNode, options?: ToastOptions) => {
   return toast({ type: 'default', message, ...options })
 }

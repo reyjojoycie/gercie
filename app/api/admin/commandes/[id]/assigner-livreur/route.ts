@@ -131,7 +131,7 @@ export async function PUT(
       .eq('id', parsedId.data)
 
     if (updateErr) {
-      logger.error(updateErr, `Erreur assignation livreur à commande ${parsedId.data}`)
+      logger.error(`Erreur assignation livreur à commande ${parsedId.data}`, updateErr)
       return NextResponse.json({ error: updateErr.message }, { status: 500 })
     }
 
@@ -142,7 +142,7 @@ export async function PUT(
       code_livreur: codeLivreur, // utile pour debug/admin
     })
   } catch (error: any) {
-    logger.error(error, 'Crash PUT assigner-livreur')
+    logger.error('Crash PUT assigner-livreur', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

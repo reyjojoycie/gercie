@@ -81,7 +81,8 @@ export async function POST(request: Request) {
 
     // 3. Vérification du portefeuille vente
     const supabase = await createClient(true) // service_role pour garantir l'intégrité des écritures
-    const { data: wallet, error: walletError } = await supabase
+    let wallet: { solde_vente: number; solde_achat: number }
+    const { data: walletData, error: walletError } = await supabase
       .from('portefeuilles')
       .select('solde_vente, solde_achat')
       .eq('id', user.id)
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
         .from('portefeuilles')
         .insert({ id: user.id, solde_achat: 0, solde_vente: 0 })
       if (insertError) {
-        logger.error(insertError, 'Échec création portefeuille pour retrait')
+        logger.error('Échec création portefeuille pour retrait', insertError)
         return NextResponse.json(
           { error: 'Portefeuille introuvable.', code: 'WALLET_CREATION_FAILED' },
           { status: 500 }
@@ -102,13 +103,13 @@ export async function POST(request: Request) {
       }
       wallet = { solde_vente: 0, solde_achat: 0 }
     } else if (walletError) {
-      logger.error(walletError, 'Erreur récupération portefeuille')
+      logger.error('Erreur récupération portefeuille', walletError)
       return NextResponse.json(
         { error: 'Erreur base de données.', code: 'DB_ERROR' },
         { status: 500 }
       )
     } else {
-      wallet = wallet as { solde_vente: number; solde_achat: number }
+      wallet = walletData
     }
 
     // Vérification du solde vente
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
       .eq('id', user.id)
 
     if (updateError) {
-      logger.error(updateError, 'Erreur débit portefeuille vente pour retrait')
+      logger.error('Erreur débit portefeuille vente pour retrait', updateError)
       return NextResponse.json(
         { error: 'Erreur lors du traitement.', code: 'UPDATE_ERROR' },
         { status: 500 }
@@ -159,9 +160,9 @@ export async function POST(request: Request) {
         .from('portefeuilles')
         .update({ solde_vente: wallet.solde_vente })
         .eq('id', user.id)
-      logger.error(txError, 'Échec enregistrement transaction retrait')
+      logger.error('Échec enregistrement transaction retrait', txError)
       return NextResponse.json(
-        { error: 'Erreur lors de l’enregistrement.', code: 'TX_ERROR' },
+        { error: "Erreur lors de l'enregistrement.", code: 'TX_ERROR' },
         { status: 500 }
       )
     }
@@ -182,7 +183,7 @@ export async function POST(request: Request) {
       },
     }, { status: 201 })
   } catch (error: any) {
-    logger.error(error, 'Crash POST retrait')
+    logger.error('Crash POST retrait', error)
     return NextResponse.json(
       { error: 'Erreur serveur interne.', code: 'INTERNAL_ERROR' },
       { status: 500 }
@@ -241,7 +242,7 @@ export async function GET(request: Request) {
 
     const { data, error, count } = await query
     if (error) {
-      logger.error(error, 'Erreur récupération retraits')
+      logger.error('Erreur récupération retraits', error)
       return NextResponse.json({ error: 'Impossible de charger les retraits.', code: 'FETCH_ERROR' }, { status: 500 })
     }
 
@@ -265,7 +266,7 @@ export async function GET(request: Request) {
       },
     })
   } catch (error: any) {
-    logger.error(error, 'Crash GET retraits')
+    logger.error('Crash GET retraits', error)
     return NextResponse.json({ error: 'Erreur serveur interne.', code: 'INTERNAL_ERROR' }, { status: 500 })
   }
 }

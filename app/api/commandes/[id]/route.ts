@@ -99,7 +99,7 @@ export async function GET(
       .maybeSingle()
 
     if (orderError) {
-      logger.error(orderError, 'Erreur lors de l\'interrogation de la table commandes')
+      logger.error('Erreur lors de l\'interrogation de la table commandes', orderError)
       return NextResponse.json({ error: 'Erreur SQL lors du chargement', tech: orderError.message }, { status: 500 })
     }
 
@@ -123,7 +123,7 @@ export async function GET(
         .eq('commande_id', parsedId.data)
 
       if (articlesError) {
-        logger.warn(articlesError, 'Échec de la jointure directe, bascule sur le mode de récupération unifié')
+        logger.warn('Échec de la jointure directe, bascule sur le mode de récupération unifié', articlesError)
         
         // Mode dégradé sécurisé : Extraction sans jointure relationnelle pour sauver l'affichage de la page
         const { data: fallbackArticles } = await supabase
@@ -150,7 +150,7 @@ export async function GET(
         }))
       }
     } catch (innerError) {
-      logger.error(innerError, 'Exception levée pendant la mise en forme des articles')
+      logger.error('Exception levée pendant la mise en forme des articles', innerError)
     }
 
     // 6. Signature de réponse unifiée avec structures de repli (Fallback) pour l'UI premium

@@ -65,12 +65,12 @@ export async function POST(request: Request) {
         .from('portefeuilles')
         .insert({ id: user.id, solde_achat: 0, solde_vente: 0 })
       if (insertError) {
-        logger.error(insertError, 'Erreur création portefeuille')
+        logger.error('Erreur création portefeuille', insertError)
         return NextResponse.json({ error: 'Erreur technique' }, { status: 500 })
       }
       wallet = { solde_achat: 0, solde_vente: 0 }
     } else if (walletError) {
-      logger.error(walletError, 'Erreur récupération portefeuille')
+      logger.error('Erreur récupération portefeuille', walletError)
       return NextResponse.json({ error: 'Erreur technique' }, { status: 500 })
     } else {
       wallet = existing as any
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
       .eq('id', user.id)
 
     if (updateError) {
-      logger.error(updateError, 'Erreur mise à jour portefeuille')
+      logger.error('Erreur mise à jour portefeuille', updateError)
       return NextResponse.json({ error: 'Erreur technique' }, { status: 500 })
     }
 
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     logger.info({ userId: user.id, montantCDF, method }, 'Recharge réussie')
     return NextResponse.json({ success: true, newSolde })
   } catch (err: any) {
-    logger.error(err, 'Erreur dans recharge')
+    logger.error('Erreur dans recharge', err)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

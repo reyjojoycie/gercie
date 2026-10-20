@@ -148,7 +148,7 @@ export async function GET(request: Request) {
 
     const { data, error, count } = await query
     if (error) {
-      logger.error(error, "Erreur récupération commandes admin")
+      logger.error("Erreur récupération commandes admin", error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -233,7 +233,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, "Crash GET admin/commandes")
+    logger.error("Crash GET admin/commandes", error)
     return NextResponse.json({ error: "Erreur serveur interne" }, { status: 500 })
   }
 }
@@ -304,7 +304,7 @@ export async function PUT(request: Request) {
         .eq("id", cmd.id)
 
       if (updateError) {
-        logger.error(updateError, `Erreur mise à jour commande ${cmd.id}`)
+        logger.error(`Erreur mise à jour commande ${cmd.id}`, updateError)
         continue
       }
 
@@ -338,7 +338,7 @@ export async function PUT(request: Request) {
           }
         }
       } catch (notifErr) {
-        logger.warn(notifErr, "Erreur notification changement statut")
+        logger.warn("Erreur notification changement statut", notifErr)
       }
     }
 
@@ -349,7 +349,7 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({ success: true, updated: commandes.length })
   } catch (error: any) {
-    logger.error(error, "Crash PUT admin/commandes")
+    logger.error("Crash PUT admin/commandes", error)
     return NextResponse.json({ error: "Erreur serveur interne" }, { status: 500 })
   }
 }

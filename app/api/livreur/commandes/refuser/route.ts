@@ -99,7 +99,7 @@ export async function POST(request: Request) {
     .eq('id', commande_id)
 
   if (updateErr) {
-    logger.error(updateErr, `Erreur libération commande ${commande_id} refusée par livreur ${user.id}`)
+    logger.error(`Erreur libération commande ${commande_id} refusée par livreur ${user.id}`, updateErr)
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
 

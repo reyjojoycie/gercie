@@ -157,7 +157,7 @@ export async function chargerZones(force = false): Promise<DeliveryZone[]> {
       return zonesCache ?? []
     }
   } catch (err) {
-    logger.error(err, 'Erreur chargement zones')
+    logger.error('Erreur chargement zones', err)
     return zonesCache ?? []
   }
 }

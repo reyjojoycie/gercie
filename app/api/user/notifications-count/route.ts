@@ -25,14 +25,14 @@ export async function GET() {
       .eq('read', false)
 
     if (error) {
-      logger.error(error, 'Erreur comptage notifications')
+      logger.error('Erreur comptage notifications', error)
       return NextResponse.json({ count: 0, error: 'Erreur serveur' }, { status: 500 })
     }
 
     logger.info({ userId: user.id, count }, 'Notifications non lues comptées')
     return NextResponse.json({ count: count ?? 0 })
   } catch (err: any) {
-    logger.error(err, 'Crash comptage notifications')
+    logger.error('Crash comptage notifications', err)
     return NextResponse.json({ count: 0, error: 'Erreur interne du serveur' }, { status: 500 })
   }
 }

@@ -46,13 +46,13 @@ export async function GET(
       .order('created_at', { ascending: false })
 
     if (error) {
-      logger.error(error, `Erreur récupération historique commande ${parsedId.data}`)
+      logger.error(`Erreur récupération historique commande ${parsedId.data}`, error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     return NextResponse.json(data || [])
   } catch (error: any) {
-    logger.error(error, `Crash GET historique commande/${id}`)
+    logger.error(`Crash GET historique commande/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

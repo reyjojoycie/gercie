@@ -156,7 +156,7 @@ export function useLocalStorage<T>(
       }
       return resolvedInitial
     } catch (err) {
-      logger.error(err, `[useLocalStorage] Erreur lecture: ${key}`)
+      logger.error(`[useLocalStorage] Erreur lecture: ${key}`, err)
       return resolvedInitial
     }
   })
@@ -180,7 +180,7 @@ export function useLocalStorage<T>(
         localStorage.setItem(key, value)
         if (debug) logger.debug(`[useLocalStorage] Écrit: ${key}`)
       } catch (err) {
-        logger.error(err, `[useLocalStorage] Erreur écriture: ${key}`)
+        logger.error(`[useLocalStorage] Erreur écriture: ${key}`, err)
       }
     }, 100),
     [debug]
@@ -197,7 +197,7 @@ export function useLocalStorage<T>(
             debouncedSetItem(key, serialized)
             setIsPersisted(true)
           } catch (err) {
-            logger.error(err, `[useLocalStorage] Erreur stringify: ${key}`)
+            logger.error(`[useLocalStorage] Erreur stringify: ${key}`, err)
           }
         }
         // Notifier le callback onChange (interne)
@@ -216,7 +216,7 @@ export function useLocalStorage<T>(
         setIsPersisted(false)
         if (debug) logger.debug(`[useLocalStorage] Supprimé: ${key}`)
       } catch (err) {
-        logger.error(err, `[useLocalStorage] Erreur suppression: ${key}`)
+        logger.error(`[useLocalStorage] Erreur suppression: ${key}`, err)
       }
     }
     setStoredValue(resolvedInitial)

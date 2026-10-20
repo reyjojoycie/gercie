@@ -154,7 +154,7 @@ export async function GET(request: Request) {
 
     const { data: transactions, error, count } = await query
     if (error) {
-      logger.error(error, 'Erreur récupération retraits')
+      logger.error('Erreur récupération retraits', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -210,7 +210,7 @@ export async function GET(request: Request) {
     setCache(cacheKey, response)
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/retraits')
+    logger.error('Crash GET admin/retraits', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -350,7 +350,7 @@ export async function PUT(request: Request) {
               }
             }
           } catch (walletError) {
-            logger.error(walletError, `Erreur remboursement portefeuille retrait ${retraitId}`)
+            logger.error(`Erreur remboursement portefeuille retrait ${retraitId}`, walletError)
           }
 
           // Mise à jour du statut
@@ -379,7 +379,7 @@ export async function PUT(request: Request) {
                     .eq('id', retrait.user_id)
                 }
               } catch (rollbackErr) {
-                logger.error(rollbackErr, `Rollback échoué pour le retrait ${retraitId}`)
+                logger.error(`Rollback échoué pour le retrait ${retraitId}`, rollbackErr)
               }
             }
             results.failed++
@@ -411,7 +411,7 @@ export async function PUT(request: Request) {
           }
         }
       } catch (itemError) {
-        logger.error(itemError, `Erreur traitement retrait ${retraitId}`)
+        logger.error(`Erreur traitement retrait ${retraitId}`, itemError)
         results.failed++
       }
     }
@@ -429,7 +429,7 @@ export async function PUT(request: Request) {
       ...results,
     })
   } catch (error: any) {
-    logger.error(error, 'Crash PUT admin/retraits')
+    logger.error('Crash PUT admin/retraits', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

@@ -9,7 +9,7 @@ const paramsSchema = z.object({
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   // Vérifier la session
   const supabase = await createClient(false)

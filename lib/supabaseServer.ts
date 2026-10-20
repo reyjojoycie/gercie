@@ -108,3 +108,10 @@ export function createServiceClient(): SupabaseClient<Database> {
 export const createAdminClient = createServiceClient
 
 export default createClient
+
+// ---------------------------------------------------------------------------
+// ALIAS D'EXPORTATION POUR COMPATIBILITÉ
+// Ces exports permettent d'utiliser : import { supabaseServer } from '@/lib/supabaseServer'
+// ---------------------------------------------------------------------------
+export const supabaseServer = createClient
+export const supabaseAdmin = createServiceClient

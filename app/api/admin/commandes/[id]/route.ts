@@ -158,7 +158,7 @@ export async function GET(
 
     return NextResponse.json(detail)
   } catch (error: any) {
-    logger.error(error, `Crash GET admin/commandes/${id}`)
+    logger.error(`Crash GET admin/commandes/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -227,7 +227,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, `Crash PUT admin/commandes/${id}`)
+    logger.error(`Crash PUT admin/commandes/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

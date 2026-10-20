@@ -217,7 +217,8 @@ export function useDebouncedCallback<T extends (...args: any[]) => any>(
 /* ========================================================================== */
 export function useDebounceImmediate<T>(value: T, delay = 400): T {
   const [debounced, setDebounced] = useState<T>(value)
-  const timerRef = useRef<ReturnType<typeof setTimeout>>()
+  // React 19 : useRef exige un argument (corrige l'erreur "Expected 1 arguments, but got 0")
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     timerRef.current = setTimeout(() => setDebounced(value), delay)

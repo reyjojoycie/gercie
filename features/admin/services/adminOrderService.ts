@@ -103,7 +103,7 @@ export async function getOrders(filters: z.infer<typeof orderFiltersSchema> = {}
 
   const { data, error, count } = await query
   if (error) {
-    logger.error(error, 'Erreur récupération commandes')
+    logger.error('Erreur récupération commandes', error)
     throw new Error(`Erreur récupération commandes: ${error.message}`)
   }
 
@@ -178,7 +178,7 @@ export async function updateOrderStatus(
     .update({ statut: parsed.data.statut, commentaire_statut: parsed.data.commentaire || null })
     .eq('id', orderId)
   if (error) {
-    logger.error(error, `Erreur mise à jour statut commande ${orderId}`)
+    logger.error(`Erreur mise à jour statut commande ${orderId}`, error)
     throw new Error(`Erreur mise à jour statut: ${error.message}`)
   }
   logger.info(`Commande ${orderId} passée à ${parsed.data.statut}`)
@@ -205,7 +205,7 @@ export async function bulkUpdateOrderStatus(
     .update({ statut: parsedStatus.data.statut, commentaire_statut: parsedStatus.data.commentaire || null })
     .in('id', parsedIds.data)
   if (error) {
-    logger.error(error, 'Erreur mise à jour groupée des statuts')
+    logger.error('Erreur mise à jour groupée des statuts', error)
     throw new Error(`Erreur mise à jour groupée: ${error.message}`)
   }
   logger.info(`${parsedIds.data.length} commandes passées à ${parsedStatus.data.statut}`)
@@ -225,7 +225,7 @@ export async function deleteOrder(id: string) {
   await supabase.from('commande_articles').delete().eq('commande_id', id)
   const { error } = await supabase.from('commandes').delete().eq('id', id)
   if (error) {
-    logger.error(error, `Erreur suppression commande ${id}`)
+    logger.error(`Erreur suppression commande ${id}`, error)
     throw new Error(`Erreur suppression commande: ${error.message}`)
   }
   logger.info(`Commande ${id} supprimée`)

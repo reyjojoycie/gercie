@@ -167,11 +167,11 @@ export async function POST(request: Request) {
 
         if (!commandeError && data) commande = data
         else if (commandeError?.code !== '42P01') {
-          logger.error(commandeError, 'Échec insertion commande')
+          logger.error('Échec insertion commande', commandeError)
           return NextResponse.json({ error: 'Erreur lors de la création de la commande' }, { status: 500 })
         }
       } catch (err) {
-        logger.error(err, 'Erreur insertion commande')
+        logger.error('Erreur insertion commande', err)
         return NextResponse.json({ error: 'Erreur lors de la création de la commande' }, { status: 500 })
       }
     }
@@ -189,12 +189,12 @@ export async function POST(request: Request) {
         }))
         const { error: articlesError } = await supabase.from('commande_articles').insert(articlesToInsert)
         if (articlesError && articlesError.code !== '42P01') {
-          logger.error(articlesError, 'Échec insertion articles')
+          logger.error('Échec insertion articles', articlesError)
           await supabase.from('commandes').delete().eq('id', commande.id).maybeSingle()
           return NextResponse.json({ error: "Erreur lors de l'enregistrement des produits" }, { status: 500 })
         }
       } catch (err) {
-        logger.error(err, 'Erreur insertion articles')
+        logger.error('Erreur insertion articles', err)
       }
     }
 
@@ -231,7 +231,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ id: commande.id, numero: commande.numero_commande }, { status: 201 })
   } catch (error: any) {
-    logger.error(error, 'Crash POST /api/commandes')
+    logger.error('Crash POST /api/commandes', error)
     return NextResponse.json({ error: 'Erreur serveur interne', details: error.message }, { status: 500 })
   }
 }
@@ -299,7 +299,7 @@ export async function GET(request: Request) {
     
     if (error) {
       if (error.code === '42P01') return NextResponse.json([])
-      logger.error(error, 'Erreur récupération commandes')
+      logger.error('Erreur récupération commandes', error)
       return NextResponse.json({ 
         error: 'Erreur lors de la requête de base de données Supabase', 
         details: error 
@@ -325,7 +325,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(formatted)
   } catch (error: any) {
-    _logger.error(error, 'Crash global critique sur GET /api/commandes')
+    _logger.error('Crash global critique sur GET /api/commandes', error)
     return NextResponse.json({ 
       error: 'Crash de l\'API lors du traitement des données', 
       message: error.message,

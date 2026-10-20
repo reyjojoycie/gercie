@@ -137,7 +137,7 @@ export async function GET(request: Request) {
     setCache(cacheKey, formatted)
     return NextResponse.json(formatted)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/promotions')
+    logger.error('Crash GET admin/promotions', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -203,7 +203,7 @@ export async function POST(request: Request) {
     cache.clear()
     return NextResponse.json(data, { status: 201 })
   } catch (error: any) {
-    logger.error(error, 'Crash POST admin/promotions')
+    logger.error('Crash POST admin/promotions', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

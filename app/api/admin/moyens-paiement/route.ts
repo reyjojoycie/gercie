@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   if (error) {
     // Log complet pour déboguer dans le terminal
     console.error("Erreur Supabase GET:", error)
-    logger.error(error, 'Erreur GET moyens_paiement')
+    logger.error('Erreur GET moyens_paiement', error)
     return NextResponse.json({ error: 'Erreur lors de la récupération des données', details: error.message }, { status: 500 })
   }
 
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Permission refusée par la base de données (RLS)' }, { status: 403 })
     }
     
-    logger.error(insertErr, 'Erreur création moyen de paiement')
+    logger.error('Erreur création moyen de paiement', insertErr)
     return NextResponse.json({ error: insertErr.message }, { status: 500 })
   }
 

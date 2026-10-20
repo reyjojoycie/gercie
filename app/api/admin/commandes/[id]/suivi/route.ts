@@ -66,14 +66,14 @@ export async function PUT(
       .eq('id', parsedId.data)
 
     if (updateErr) {
-      logger.error(updateErr, `Erreur mise à jour suivi commande ${parsedId.data}`)
+      logger.error(`Erreur mise à jour suivi commande ${parsedId.data}`, updateErr)
       return NextResponse.json({ error: updateErr.message }, { status: 500 })
     }
 
     logger.info(`Numéro de suivi mis à jour pour commande ${parsedId.data}`)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, `Crash PUT commande suivi ${id}`)
+    logger.error(`Crash PUT commande suivi ${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

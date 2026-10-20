@@ -110,7 +110,7 @@ export async function GET(request: Request) {
     const { data, error, count } = await query
 
     if (error) {
-      logger.error(error, 'Erreur récupération transactions')
+      logger.error('Erreur récupération transactions', error)
       return NextResponse.json(
         { error: 'Impossible de charger les transactions.', code: 'FETCH_ERROR' },
         { status: 500 }
@@ -160,7 +160,7 @@ export async function GET(request: Request) {
 
     return response
   } catch (error: any) {
-    logger.error(error, 'Crash GET transactions')
+    logger.error('Crash GET transactions', error)
     return NextResponse.json(
       { error: 'Erreur serveur interne. Veuillez réessayer.', code: 'INTERNAL_ERROR' },
       { status: 500 }

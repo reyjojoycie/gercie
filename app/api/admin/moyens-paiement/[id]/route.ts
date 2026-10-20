@@ -138,7 +138,7 @@ export async function PUT(
     .eq('id', parsedId.data)
 
   if (updateErr) {
-    logger.error(updateErr, `Erreur mise à jour moyen de paiement ${parsedId.data}`)
+    logger.error(`Erreur mise à jour moyen de paiement ${parsedId.data}`, updateErr)
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
 
@@ -198,7 +198,7 @@ export async function DELETE(
     .eq('id', parsedId.data)
 
   if (deleteErr) {
-    logger.error(deleteErr, `Erreur suppression moyen de paiement ${parsedId.data}`)
+    logger.error(`Erreur suppression moyen de paiement ${parsedId.data}`, deleteErr)
     return NextResponse.json({ error: deleteErr.message }, { status: 500 })
   }
 

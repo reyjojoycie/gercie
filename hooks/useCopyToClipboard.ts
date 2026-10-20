@@ -207,7 +207,7 @@ export function useCopyToClipboard(options: UseCopyToClipboardOptions = {}): Use
           setError(err)
           setIsCopied(false)
           onErrorRef.current?.(err)
-          if (debug) logger.error(err, '[useCopyToClipboard] Échec copie')
+          if (debug) logger.error('[useCopyToClipboard] Échec copie', err)
         },
       })
 

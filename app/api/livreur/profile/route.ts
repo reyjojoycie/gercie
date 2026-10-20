@@ -81,7 +81,7 @@ export async function GET() {
       .maybeSingle()
 
     // Ne pas bloquer si le profil n'existe pas encore – on met des chaînes vides
-    if (profileErr) logger.error(profileErr, 'Erreur récupération profil utilisateur')
+    if (profileErr) logger.error('Erreur récupération profil utilisateur', profileErr)
 
     // 4. Récupération des données livreur (table livreurs)
     const { data: livreurData, error: livreurErr } = await supabase
@@ -92,7 +92,7 @@ export async function GET() {
 
     // Si la table livreurs n'existe pas, on garde les valeurs par défaut
     if (livreurErr && livreurErr.code !== '42P01') {
-      logger.error(livreurErr, 'Erreur récupération livreur')
+      logger.error('Erreur récupération livreur', livreurErr)
       return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
     }
 
@@ -134,7 +134,7 @@ export async function GET() {
     cacheSet(cacheKey, response)
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET /api/livreur/profile')
+    logger.error('Crash GET /api/livreur/profile', error)
     return NextResponse.json({ error: 'Erreur interne' }, { status: 500 })
   }
 }
@@ -193,7 +193,7 @@ export async function PUT(request: Request) {
       .update(profileUpdates)
       .eq('id', livreurId)
     if (profileErr) {
-      logger.error(profileErr, 'Erreur mise à jour profile')
+      logger.error('Erreur mise à jour profile', profileErr)
       return NextResponse.json({ error: profileErr.message }, { status: 500 })
     }
   }
@@ -222,7 +222,7 @@ export async function PUT(request: Request) {
         ...livreurUpdates,
       })
     if (upsertErr) {
-      logger.error(upsertErr, 'Erreur upsert livreur')
+      logger.error('Erreur upsert livreur', upsertErr)
       return NextResponse.json({ error: upsertErr.message }, { status: 500 })
     }
   }

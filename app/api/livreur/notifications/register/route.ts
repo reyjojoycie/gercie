@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       .update({ is_active: false })
       .lt('last_used', new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString())
       .eq('is_active', true)
-      .then(({ error }) => { if (error) logger.warn(error, 'Nettoyage tokens échoué') })
+      .then(({ error }) => { if (error) logger.warn('Nettoyage tokens échoué', error) })
 
     // Upsert du token
     const { error: upsertErr } = await supabase
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
       )
 
     if (upsertErr) {
-      logger.error(upsertErr, 'Erreur enregistrement token')
+      logger.error('Erreur enregistrement token', upsertErr)
       return NextResponse.json({ error: upsertErr.message }, { status: 500 })
     }
 
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, message: 'Token enregistré' })
   } catch (error: any) {
-    logger.error(error, 'Crash POST /api/livreur/notifications/register')
+    logger.error('Crash POST /api/livreur/notifications/register', error)
     return NextResponse.json({ error: 'Erreur interne' }, { status: 500 })
   }
 }
@@ -172,7 +172,7 @@ export async function DELETE(request: Request) {
       .eq('livreur_id', livreurId)
 
     if (error) {
-      logger.error(error, 'Erreur suppression token')
+      logger.error('Erreur suppression token', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -180,7 +180,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true, message: 'Token désenregistré' })
   } catch (error: any) {
-    logger.error(error, 'Crash DELETE /api/livreur/notifications/register')
+    logger.error('Crash DELETE /api/livreur/notifications/register', error)
     return NextResponse.json({ error: 'Erreur interne' }, { status: 500 })
   }
 }

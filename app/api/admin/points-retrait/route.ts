@@ -121,7 +121,7 @@ export async function GET(request: Request) {
     setCache(cacheKey, response)
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/points-retrait')
+    logger.error('Crash GET admin/points-retrait', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
     clearCachePrefix('admin-points')
     return NextResponse.json(data, { status: 201 })
   } catch (error: any) {
-    logger.error(error, 'Crash POST admin/points-retrait')
+    logger.error('Crash POST admin/points-retrait', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -181,7 +181,7 @@ export async function PUT(request: Request) {
     clearCachePrefix('admin-points')
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash PUT admin/points-retrait')
+    logger.error('Crash PUT admin/points-retrait', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -208,7 +208,7 @@ export async function DELETE(request: Request) {
     clearCachePrefix('admin-points')
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash DELETE admin/points-retrait')
+    logger.error('Crash DELETE admin/points-retrait', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

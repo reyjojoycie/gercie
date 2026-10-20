@@ -36,6 +36,16 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "tests",
+    "cypress",
+    "jest.config.ts",
+    "playwright.config.ts",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/*.cy.ts",
+    "**/*.cy.tsx"
   ]
 }

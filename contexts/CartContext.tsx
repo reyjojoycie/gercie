@@ -38,8 +38,13 @@ export interface CartItem {
   prix_initial?: number
   remise?: number
   stock_disponible?: number
+  /** Alias de stock_disponible (utilisé par certains composants) */
+  stock?: number
   addedAt?: number // Timestamp d'ajout
 }
+
+/** Article à ajouter au panier : `quantite` est optionnelle (1 par défaut) */
+export type AddCartItemInput = Omit<CartItem, 'quantite'> & { quantite?: number }
 
 export interface PromoCode {
   code: string
@@ -48,6 +53,7 @@ export interface PromoCode {
   minTotal?: number
   maxDiscount?: number
   expiresAt?: string
+  description?: string
 }
 
 export interface CartSummary {
@@ -57,6 +63,8 @@ export interface CartSummary {
   total: number
   totalUSD: number | null
   nombreArticles: number
+  /** Somme des quantités de tous les articles */
+  totalItems: number
   poidsEstime?: number
   economie: number // Économie totale (remises + prix initial)
 }
@@ -69,7 +77,9 @@ interface CartContextType {
   isSyncing: boolean
   error: string | null
 
-  addItem: (item: Omit<CartItem, 'quantite'>, quantite?: number) => Promise<void>
+  addItem: (item: AddCartItemInput, quantite?: number) => Promise<void>
+  /** Alias de addItem (utilisé par certains composants) */
+  addToCart: (item: AddCartItemInput, quantite?: number) => Promise<void>
   removeItem: (id: string, variantKey?: string) => Promise<void>
   updateQuantity: (id: string, quantite: number, variantKey?: string) => Promise<void>
   clearCart: () => Promise<void>
@@ -221,7 +231,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
           map[p.id] = {
             nom: p.nom,
             prix: p.prix,
-            prix_initial: p.prix_initial,
+            // Correction : la colonne sélectionnée est prix_comparatif
+            // (avant, on lisait p.prix_initial qui n'existe pas → toujours undefined)
+            prix_initial: p.prix_comparatif,
             images: p.images || [],
             stock: p.stock,
           }
@@ -258,6 +270,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           specifications: undefined,
           variante: row.variant_key ? { attributes: JSON.parse(row.variant_key) } : undefined,
           stock_disponible: produit?.stock,
+          stock: produit?.stock,
           addedAt: Date.now(), // TODO: stocker dans DB si besoin
         }
       }),
@@ -380,9 +393,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   /* ========================================================================== */
 
   const addItem = useCallback(
-    async (newItem: Omit<CartItem, 'quantite'>, quantite = 1) => {
+    async (newItem: AddCartItemInput, quantiteArg?: number) => {
+      // La quantité peut venir du 2e argument ou de l'objet lui-même (1 par défaut)
+      const quantite = quantiteArg ?? newItem.quantite ?? 1
       const current = userId ? remoteItems : localItems
-      const variantKey = getVariantKey(newItem as CartItem)
+      const variantKey = getVariantKey(newItem)
       const idx = findIndex(current, newItem.id, variantKey)
 
       let updated: CartItem[]
@@ -396,6 +411,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             ...newItem,
             quantite,
             stock_disponible: produitsCache[newItem.id]?.stock,
+            stock: produitsCache[newItem.id]?.stock,
             addedAt: Date.now(),
           },
         ]
@@ -679,6 +695,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           minTotal: data.minTotal,
           maxDiscount: data.maxDiscount,
           expiresAt: data.expiresAt,
+          description: data.description,
         }
 
         setPromo(newPromo)
@@ -748,6 +765,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     })
   }, [userId, localItems, addItem, addToast])
 
+  // refetchCart : version qui retourne Promise<void> (refetchRemote retourne le résultat de la requête)
+  const refetchCart = useCallback(async () => {
+    await refetchRemote()
+  }, [refetchRemote])
+
   /* ========================================================================== */
   /*  8. Synchronisation au retour en ligne                                     */
   /* ========================================================================== */
@@ -814,6 +836,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       total,
       totalUSD: rate ? total / rate : null,
       nombreArticles: items.length,
+      totalItems: items.reduce((acc, i) => acc + i.quantite, 0),
       poidsEstime: items.reduce((acc, i) => acc + i.quantite * 0.5, 0),
       economie: economiePrix + remiseTotal,
     }
@@ -838,6 +861,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           : 'Erreur panier'
         : null,
       addItem,
+      addToCart: addItem,
       removeItem,
       updateQuantity,
       clearCart,
@@ -851,7 +875,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       savedItems,
       summary,
       totalItems,
-      refetchCart: refetchRemote,
+      refetchCart,
       mergeLocalCart,
       isOffline: !isOnline,
       pendingSyncCount,
@@ -878,7 +902,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       promo,
       promoError,
       savedItems,
-      refetchRemote,
+      refetchCart,
       mergeLocalCart,
       isOnline,
       lastUpdated,
@@ -900,4 +924,5 @@ export function useCart() {
   return context
 }
 
-export type { CartItem as CartItemType, VariantePanier }
+// VariantePanier est déjà exporté plus haut (export interface) : ne pas le ré-exporter ici
+export type { CartItem as CartItemType }

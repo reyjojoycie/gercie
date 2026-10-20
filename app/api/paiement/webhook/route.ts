@@ -191,7 +191,7 @@ export async function POST(request: Request) {
       .eq('id', pendingTx.id)
 
     if (updateTxError) {
-      logger.error(updateTxError, 'Erreur mise à jour transaction')
+      logger.error('Erreur mise à jour transaction', updateTxError)
       return NextResponse.json({ error: 'Erreur interne' }, { status: 500 })
     }
 
@@ -248,7 +248,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash webhook paiement')
+    logger.error('Crash webhook paiement', error)
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }

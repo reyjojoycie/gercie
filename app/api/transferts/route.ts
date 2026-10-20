@@ -76,7 +76,8 @@ export async function POST(request: Request) {
 
     // 3. Récupération du portefeuille avec service_role pour garantir l'intégrité des écritures
     const supabase = await createClient(true)
-    const { data: wallet, error: walletError } = await supabase
+    let wallet: { solde_achat: number; solde_vente: number }
+    const { data: walletData, error: walletError } = await supabase
       .from('portefeuilles')
       .select('solde_achat, solde_vente')
       .eq('id', user.id)
@@ -88,7 +89,7 @@ export async function POST(request: Request) {
         .from('portefeuilles')
         .insert({ id: user.id, solde_achat: 0, solde_vente: 0 })
       if (insertError) {
-        logger.error(insertError, 'Échec création portefeuille pour transfert')
+        logger.error('Échec création portefeuille pour transfert', insertError)
         return NextResponse.json(
           { error: 'Portefeuille introuvable et impossible à créer.', code: 'WALLET_CREATION_FAILED' },
           { status: 500 }
@@ -97,13 +98,13 @@ export async function POST(request: Request) {
       // Après création, les deux soldes sont à 0 donc le transfert échouera
       wallet = { solde_achat: 0, solde_vente: 0 }
     } else if (walletError) {
-      logger.error(walletError, 'Erreur récupération portefeuille')
+      logger.error('Erreur récupération portefeuille', walletError)
       return NextResponse.json(
         { error: 'Portefeuille introuvable.', code: 'DB_ERROR' },
         { status: 500 }
       )
     } else {
-      wallet = wallet as { solde_achat: number; solde_vente: number }
+      wallet = walletData
     }
 
     // 4. Vérification du solde source
@@ -135,7 +136,7 @@ export async function POST(request: Request) {
       .eq('id', user.id)
 
     if (updateError) {
-      logger.error(updateError, 'Erreur mise à jour portefeuille après transfert')
+      logger.error('Erreur mise à jour portefeuille après transfert', updateError)
       return NextResponse.json(
         { error: 'Erreur lors du transfert.', code: 'UPDATE_ERROR' },
         { status: 500 }
@@ -166,7 +167,7 @@ export async function POST(request: Request) {
 
     const { error: insertError } = await supabase.from('transactions').insert(transactions)
     if (insertError) {
-      logger.error(insertError, 'Erreur enregistrement transactions transfert – transfert effectué mais historique incomplet')
+      logger.error('Erreur enregistrement transactions transfert – transfert effectué mais historique incomplet', insertError)
       // On ne rollback pas volontairement (le transfert est déjà fait), on alerte
     }
 
@@ -206,7 +207,7 @@ export async function POST(request: Request) {
       },
     })
   } catch (error: any) {
-    logger.error(error, 'Crash POST transfert')
+    logger.error('Crash POST transfert', error)
     return NextResponse.json(
       { error: 'Erreur serveur interne.', code: 'INTERNAL_ERROR' },
       { status: 500 }

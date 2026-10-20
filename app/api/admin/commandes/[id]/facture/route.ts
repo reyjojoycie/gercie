@@ -163,7 +163,7 @@ export async function GET(
       },
     })
   } catch (error: any) {
-    logger.error(error, `Crash GET facture commande/${id}`)
+    logger.error(`Crash GET facture commande/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

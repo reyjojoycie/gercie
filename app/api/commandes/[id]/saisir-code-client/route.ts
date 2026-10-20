@@ -5,7 +5,7 @@ import { z } from 'zod'
 import logger from '@/lib/logger'
 import { rateLimit, applyRateLimitHeaders } from '@/lib/rateLimit'
 import { normalizeCode } from '@/lib/codes'
-import { isCodeBlocked, recordAttempt, isCodeAlreadyUsed, remainingAttempts } from '@/lib/anti-fraude'
+import { isCodeBlocked, recordAttempt, isCodeAlreadyUsed } from '@/lib/anti-fraude'
 
 const bodySchema = z.object({
   code_client: z.string().min(1, 'Le code client est requis'),
@@ -156,7 +156,7 @@ export async function PUT(
     .eq('id', id)
 
   if (updateErr) {
-    logger.error(updateErr, `Erreur mise à jour statut commande ${id}`)
+    logger.error(`Erreur mise à jour statut commande ${id}`, updateErr)
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
 

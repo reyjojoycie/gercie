@@ -91,7 +91,7 @@ async function sendReturnNotifications(
       await sendSMS(profile.telephone, `Gercie: Retour #${commandeNumero} – ${statut}.`)
     }
   } catch (err) {
-    logger.warn(err, 'Erreur notification retour')
+    logger.warn('Erreur notification retour', err)
   }
 }
 
@@ -225,7 +225,7 @@ export async function POST(request: Request) {
       .single()
 
     if (insertError || !retour) {
-      logger.error(insertError, 'Erreur création retour')
+      logger.error('Erreur création retour', insertError)
       return NextResponse.json({ error: 'Erreur lors de la création du retour' }, { status: 500 })
     }
 
@@ -247,7 +247,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, retour_id: retour.id }, { status: 201 })
   } catch (error: any) {
-    logger.error(error, 'Crash POST retours')
+    logger.error('Crash POST retours', error)
     const message = error.message || 'Erreur serveur interne'
     return NextResponse.json({ error: message }, { status: 500 })
   }
@@ -282,13 +282,13 @@ export async function GET(request: Request) {
 
     const { data: retours, error } = await query
     if (error) {
-      logger.error(error, 'Erreur récupération retours')
+      logger.error('Erreur récupération retours', error)
       return NextResponse.json({ error: 'Impossible de charger vos retours' }, { status: 500 })
     }
 
     return NextResponse.json(retours || [])
   } catch (error: any) {
-    logger.error(error, 'Crash GET retours')
+    logger.error('Crash GET retours', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -352,7 +352,7 @@ export async function PUT(request: Request) {
       .eq('id', retourId)
 
     if (updateError) {
-      logger.error(updateError, 'Erreur mise à jour retour')
+      logger.error('Erreur mise à jour retour', updateError)
       return NextResponse.json({ error: 'Erreur lors de la mise à jour' }, { status: 500 })
     }
 
@@ -380,7 +380,7 @@ export async function PUT(request: Request) {
             `Votre retour a été accepté et un remboursement de ${montant.toLocaleString()} FC a été effectué.`)
         }
       } catch (refundError: any) {
-        logger.error(refundError, 'Échec remboursement retour')
+        logger.error('Échec remboursement retour', refundError)
         // On notifie l'admin sans bloquer
         await createNotification(user.id, 'alerte', 'Échec remboursement retour',
           `Le retour ${retourId} a été accepté mais le remboursement a échoué : ${refundError.message}`)
@@ -402,7 +402,7 @@ export async function PUT(request: Request) {
     logger.info({ retourId, statut, adminId: user.id }, 'Retour mis à jour')
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash PUT retours')
+    logger.error('Crash PUT retours', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

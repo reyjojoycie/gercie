@@ -20,6 +20,9 @@ const buttonVariants = cva(
       variant: {
         primary:
           'bg-gradient-brand text-white shadow-soft hover:shadow-medium focus:ring-brand-500/50',
+        // Alias de compatibilité : même rendu que primary
+        brand:
+          'bg-gradient-brand text-white shadow-soft hover:shadow-medium focus:ring-brand-500/50',
         secondary:
           'bg-neutral-100 text-neutral-800 hover:bg-neutral-200 focus:ring-neutral-400 ' +
           'dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700 dark:focus:ring-neutral-500',
@@ -42,6 +45,10 @@ const buttonVariants = cva(
         luxe:
           'bg-gradient-gold text-white shadow-gold hover:shadow-glow-gold focus:ring-gold-500/50 dark:text-gold-100 dark:hover:shadow-glow-gold/50',
 
+        // Alias de compatibilité : même rendu que luxe
+        gold:
+          'bg-gradient-gold text-white shadow-gold hover:shadow-glow-gold focus:ring-gold-500/50 dark:text-gold-100 dark:hover:shadow-glow-gold/50',
+
         glass:
           'bg-white/10 dark:bg-midnight-800/30 backdrop-blur-xl border border-white/20 dark:border-midnight-500/30 text-white dark:text-neutral-100 hover:bg-white/20 dark:hover:bg-midnight-700/50 shadow-soft',
         'outline-gold':
@@ -57,6 +64,8 @@ const buttonVariants = cva(
         xs: 'px-2.5 py-1.5 text-xs',
         sm: 'px-3 py-2 text-sm',
         md: 'px-4 py-2.5 text-sm',
+        // Alias de compatibilité : même taille que md
+        default: 'px-4 py-2.5 text-sm',
         lg: 'px-5 py-3 text-base',
         xl: 'px-6 py-3.5 text-base',
         'icon-sm': 'p-1.5',

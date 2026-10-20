@@ -104,7 +104,7 @@ async function getAccessToken(): Promise<string> {
     cachedToken = { token: data.access_token, expiresAt }
     return data.access_token
   } catch (error) {
-    logger.error(error, 'M‑Pesa: impossible d’obtenir le token')
+    logger.error('M‑Pesa: impossible d’obtenir le token', error)
     throw new Error('Service M‑Pesa temporairement indisponible')
   }
 }
@@ -233,12 +233,12 @@ export async function initierPaiement(
         })
         .eq('id', orderId)
     } catch (updateErr) {
-      logger.error(updateErr, 'M‑Pesa: échec mise à jour commande')
+      logger.error('M‑Pesa: échec mise à jour commande', updateErr)
     }
 
     return result
   } catch (error) {
-    logger.error(error, 'M‑Pesa: échec initiation paiement')
+    logger.error('M‑Pesa: échec initiation paiement', error)
     throw new Error('Le paiement via M‑Pesa a échoué. Veuillez réessayer.')
   }
 }
@@ -315,7 +315,7 @@ export async function verifierStatut(
     await cache.set(cacheKey, result, { ttl: 300 })
     return result
   } catch (error) {
-    logger.error(error, 'M‑Pesa: échec vérification statut')
+    logger.error('M‑Pesa: échec vérification statut', error)
     throw new Error('Impossible de vérifier le statut du paiement M‑Pesa.')
   }
 }
@@ -369,7 +369,7 @@ export async function gererCallback(
       }
     }
   } catch (error) {
-    logger.error(error, 'M‑Pesa callback: échec mise à jour commande')
+    logger.error('M‑Pesa callback: échec mise à jour commande', error)
   }
 
   // Invalider le cache

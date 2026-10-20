@@ -215,7 +215,7 @@ export function useGeolocation(options: UseGeolocationOptions = {}): UseGeolocat
     setLoading(false)
     if (geoError.PERMISSION_DENIED) setPermissionDenied(true)
     onError?.(geoError)
-    logger.warn(geoError, 'Erreur de géolocalisation')
+    logger.warn('Erreur de géolocalisation', geoError)
   }, [onError])
 
   // Démarrer le suivi (getCurrentPosition ou watchPosition)

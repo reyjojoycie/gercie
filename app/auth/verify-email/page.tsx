@@ -1,7 +1,7 @@
 // app/auth/verify-email/page.tsx
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -18,7 +18,6 @@ import {
   WifiOff,
   Loader2,
   LinkIcon,
-  ExternalLink,
 } from 'lucide-react'
 import { Container } from '@/components/layout/Container'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
@@ -54,7 +53,7 @@ const ERROR_MESSAGES = {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Helpers                                                             */
+/*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 function maskEmail(email: string): string {
   if (!email) return ''
@@ -76,9 +75,23 @@ function normalizeCode(code: string): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Composant principal                                                 */
+/*  Fallback de chargement (Suspense)                                  */
 /* ------------------------------------------------------------------ */
-export default function VerifyEmailPage() {
+function VerifyEmailLoading() {
+  return (
+    <div className="min-h-screen bg-neutral-50 dark:bg-midnight-950 flex items-center justify-center px-4">
+      <div className="flex items-center gap-2 text-neutral-400" role="status">
+        <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+        Chargement...
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Composant principal (contenu)                                      */
+/* ------------------------------------------------------------------ */
+function VerifyEmailContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, isOnboarded, refreshRoles } = useAuth()
@@ -91,9 +104,13 @@ export default function VerifyEmailPage() {
   const [magicLinkCooldown, setMagicLinkCooldown] = useState(0)
   const [showTips, setShowTips] = useState(false)
   const [devCode, setDevCode] = useState<string | null>(() => {
-  if (typeof window === 'undefined') return null
-  try { return sessionStorage.getItem('gercie_dev_code') } catch { return null }
-})
+    if (typeof window === 'undefined') return null
+    try {
+      return sessionStorage.getItem('gercie_dev_code')
+    } catch {
+      return null
+    }
+  })
   const [email, setEmail] = useState('')
   const [loadingEmail, setLoadingEmail] = useState(true)
   const [isOnline, setIsOnline] = useState(true)
@@ -327,10 +344,10 @@ export default function VerifyEmailPage() {
         return
       }
 
-// Succès
-vibrate([50, 50, 50, 50, 100]) // Vibration de succès
-setVerified(true)
-setSuccess('Email vérifié avec succès !')
+      // Succès
+      vibrate([50, 50, 50, 50, 100]) // Vibration de succès
+      setVerified(true)
+      setSuccess('Email vérifié avec succès !')
       await refreshRoles()
       setTimeout(() => {
         const destination = isOnboarded ? '/' : '/onboarding'
@@ -349,7 +366,7 @@ setSuccess('Email vérifié avec succès !')
       setIsSubmitting(false)
       submitLockRef.current = false
     }
-  }, [isSubmitting, success, isOnline, fetchWithRetry, refreshRoles, isOnboarded, router, vibrate])
+  }, [isSubmitting, verified, isOnline, fetchWithRetry, refreshRoles, isOnboarded, router, vibrate])
 
   // Soumission automatique quand les 6 chiffres sont saisis
   useEffect(() => {
@@ -552,7 +569,7 @@ setSuccess('Email vérifié avec succès !')
                     </div>
                   )}
 
-                  {/* Barre de progression de l'expiration (CSS pur) */}
+                  {/* Barre de progression de l'expiration */}
                   <div className="space-y-1" aria-live="polite" aria-atomic="true">
                     <div className="flex items-center justify-between text-xs text-neutral-500">
                       <span className="flex items-center gap-1">
@@ -801,5 +818,16 @@ setSuccess('Email vérifié avec succès !')
         }
       `}</style>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Export unique : page par défaut avec Suspense                      */
+/* ------------------------------------------------------------------ */
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={<VerifyEmailLoading />}>
+      <VerifyEmailContent />
+    </Suspense>
   )
 }

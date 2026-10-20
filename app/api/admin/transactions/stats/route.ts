@@ -73,7 +73,7 @@ export async function GET(request: Request) {
 
     const { data: transactions, error } = await query
     if (error) {
-      logger.error(error, 'Erreur récupération transactions pour stats')
+      logger.error('Erreur récupération transactions pour stats', error)
       return NextResponse.json({ parType: [], evolution: [] })
     }
 
@@ -99,7 +99,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ parType, evolution })
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/transactions/stats')
+    logger.error('Crash GET admin/transactions/stats', error)
     return NextResponse.json({ parType: [], evolution: [] })
   }
 }

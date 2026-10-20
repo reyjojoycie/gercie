@@ -67,7 +67,7 @@ export async function GET(
       transactions: transactions || [],
     })
   } catch (error: any) {
-    logger.error(error, `Crash GET admin/utilisateurs/${id}`)
+    logger.error(`Crash GET admin/utilisateurs/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

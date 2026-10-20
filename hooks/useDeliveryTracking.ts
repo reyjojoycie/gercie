@@ -162,7 +162,7 @@ export function useDeliveryTracking(
       return data
     } catch (err: any) {
       if (err.name === 'AbortError') return null
-      logger.error(err, 'Erreur fetchDelivery')
+      logger.error('Erreur fetchDelivery', err)
       throw err
     }
   }, [commandeId])
@@ -211,7 +211,7 @@ export function useDeliveryTracking(
         setEtaMinutes(estimatedMin > 0 ? estimatedMin : null)
       }
     } catch (err) {
-      logger.error(err, 'Erreur calcul ETA')
+      logger.error('Erreur calcul ETA', err)
     } finally {
       if (mountedRef.current) setEtaLoading(false)
     }

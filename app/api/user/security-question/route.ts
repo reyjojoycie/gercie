@@ -74,7 +74,7 @@ export async function GET(request: Request) {
         )
       }
 
-      logger.error(error, 'Erreur récupération question sécurité')
+      logger.error('Erreur récupération question sécurité', error)
       return NextResponse.json(
         { error: 'Impossible de récupérer la question de sécurité.', code: 'FETCH_ERROR' },
         { status: 500 }
@@ -86,7 +86,7 @@ export async function GET(request: Request) {
       question_secrete: data?.question_secrete || null,
     })
   } catch (error: any) {
-    logger.error(error, 'Crash GET security-question')
+    logger.error('Crash GET security-question', error)
     return NextResponse.json(
       { error: 'Erreur serveur interne. Veuillez réessayer.', code: 'INTERNAL_ERROR' },
       { status: 500 }
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
       .eq('id', user.id)
 
     if (error) {
-      logger.error(error, 'Erreur mise à jour question sécurité')
+      logger.error('Erreur mise à jour question sécurité', error)
       return NextResponse.json(
         { error: 'Impossible d’enregistrer la question de sécurité.', code: 'UPDATE_ERROR' },
         { status: 500 }
@@ -187,7 +187,7 @@ export async function POST(request: Request) {
       message: 'Votre question de sécurité a bien été mise à jour.',
     })
   } catch (error: any) {
-    logger.error(error, 'Crash POST security-question')
+    logger.error('Crash POST security-question', error)
     return NextResponse.json(
       { error: 'Erreur serveur interne. Veuillez réessayer.', code: 'INTERNAL_ERROR' },
       { status: 500 }

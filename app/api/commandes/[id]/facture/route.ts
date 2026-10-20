@@ -158,7 +158,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     })
 
   } catch (error: any) {
-    logger.error(error, 'Erreur lors de la compilation de la facture PDF')
+    logger.error('Erreur lors de la compilation de la facture PDF', error)
     return NextResponse.json(
       { error: 'Erreur d’exécution du module PDF', details: error.message },
       { status: 500 }

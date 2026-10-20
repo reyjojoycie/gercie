@@ -128,7 +128,7 @@ export async function POST(request: Request) {
     })
 
     if (error) {
-      logger.error(error, `Échec envoi email à ${to}`)
+      logger.error(`Échec envoi email à ${to}`, error)
       return NextResponse.json(
         { error: error.message, code: 'RESEND_ERROR' },
         { status: 500 }
@@ -142,7 +142,7 @@ export async function POST(request: Request) {
       messageId: data?.id,
     })
   } catch (err: any) {
-    logger.error(err, 'Crash envoi email')
+    logger.error('Crash envoi email', err)
     return NextResponse.json(
       { error: 'Erreur serveur interne.', code: 'INTERNAL_ERROR' },
       { status: 500 }

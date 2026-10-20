@@ -1,3 +1,5 @@
+// components/navbar/NavbarActions.tsx
+ 
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
@@ -97,6 +99,13 @@ export function NavbarActions({
 }: NavbarActionsProps) {
   const cartRef = useRef<HTMLDivElement>(null)
   const userMenuRef = useRef<HTMLDivElement>(null)
+  
+  // État pour éviter les erreurs d'hydratation liées au thème
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Fermeture du panier et du menu utilisateur au clic extérieur
   useEffect(() => {
@@ -118,13 +127,21 @@ export function NavbarActions({
   return (
     <div className={cn('flex items-center gap-1 ml-auto', className)}>
       {/* Bouton thème (caché sur mobile) */}
-      <Tooltip content={theme === 'light' ? 'Mode sombre' : 'Mode clair'}>
+      <Tooltip content={!isMounted ? 'Chargement du thème' : (theme === 'light' ? 'Mode sombre' : 'Mode clair')}>
         <button
           onClick={toggleTheme}
           className="hidden sm:flex p-2 rounded-xl text-neutral-400 hover:text-gold-500 dark:hover:text-gold-400 hover:bg-neutral-100 dark:hover:bg-midnight-700/40 transition-colors"
-          aria-label={theme === 'light' ? 'Activer le mode sombre' : 'Activer le mode clair'}
+          aria-label={!isMounted ? 'Chargement du thème' : (theme === 'light' ? 'Activer le mode sombre' : 'Activer le mode clair')}
+          disabled={!isMounted}
         >
-          {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+          {!isMounted ? (
+            // Espace réservé avec les mêmes dimensions pour éviter un décalage de mise en page (layout shift)
+            <div className="w-[18px] h-[18px]" />
+          ) : theme === 'light' ? (
+            <Moon size={18} />
+          ) : (
+            <Sun size={18} />
+          )}
         </button>
       </Tooltip>
 

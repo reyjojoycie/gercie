@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       .limit(50);
 
     if (error) {
-      logger.error(error, 'Erreur récupération courses');
+      logger.error('Erreur récupération courses', error);
       return NextResponse.json({ error: 'Erreur lors de la récupération' }, { status: 500 });
     }
 
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(formatted);
   } catch (error: any) {
-    logger.error(error, 'Erreur GET courses');
+    logger.error('Erreur GET courses', error);
     return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
   }
 }
@@ -158,7 +158,7 @@ export async function POST(request: Request) {
 
     return applyRateLimitHeaders(NextResponse.json(livraison), rateLimitHeaders);
   } catch (error: any) {
-    logger.error(error, 'Erreur POST courses');
+    logger.error('Erreur POST courses', error);
     return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
   }
 }

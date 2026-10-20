@@ -82,7 +82,7 @@ export async function GET(request: Request) {
       total: count ?? 0,
     })
   } catch (error: any) {
-    logger.error(error, "Erreur GET admin/transactions")
+    logger.error("Erreur GET admin/transactions", error)
     return NextResponse.json({ error: "Erreur serveur interne" }, { status: 500 })
   }
 }

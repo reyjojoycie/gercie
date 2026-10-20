@@ -114,7 +114,7 @@ export async function GET(request: Request) {
         .range(offset, offset + limit - 1)
 
       if (histErr) {
-        logger.error(histErr, 'Erreur récupération historique taux')
+        logger.error('Erreur récupération historique taux', histErr)
         return NextResponse.json({ error: histErr.message }, { status: 500 })
       }
 
@@ -172,7 +172,7 @@ export async function GET(request: Request) {
       .single()
 
     if (error) {
-      logger.error(error, 'Erreur récupération taux')
+      logger.error('Erreur récupération taux', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -205,7 +205,7 @@ export async function GET(request: Request) {
     setCache(cacheKey, response)
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/exchange-rate')
+    logger.error('Crash GET admin/exchange-rate', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -268,7 +268,7 @@ export async function POST(request: Request) {
       )
 
     if (updateErr) {
-      logger.error(updateErr, 'Erreur mise à jour taux')
+      logger.error('Erreur mise à jour taux', updateErr)
       return NextResponse.json({ error: updateErr.message }, { status: 500 })
     }
 
@@ -283,7 +283,7 @@ export async function POST(request: Request) {
         created_at: now,
       })
     } catch (histErr) {
-      logger.warn(histErr, 'Impossible d\'inscrire dans l\'historique (table manquante ?)')
+      logger.warn('Impossible d\'inscrire dans l\'historique (table manquante ?)', histErr)
     }
 
     // 4. Invalider le cache
@@ -302,7 +302,7 @@ export async function POST(request: Request) {
       updatedAt: now,
     })
   } catch (error: any) {
-    logger.error(error, 'Crash POST admin/exchange-rate')
+    logger.error('Crash POST admin/exchange-rate', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

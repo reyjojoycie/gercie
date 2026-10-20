@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       })),
     })
   } catch (error: any) {
-    logger.error(error, 'Crash POST bulk-price')
+    logger.error('Crash POST bulk-price', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
@@ -124,7 +124,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash DELETE bulk-price')
+    logger.error('Crash DELETE bulk-price', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

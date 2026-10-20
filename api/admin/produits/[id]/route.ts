@@ -54,13 +54,13 @@ export async function GET(
       .single()
 
     if (error) {
-      logger.error(error, `Erreur récupération produit ${parsedId.data}`)
+      logger.error(`Erreur récupération produit ${parsedId.data}`, error)
       return NextResponse.json({ error: 'Produit introuvable' }, { status: 404 })
     }
 
     return NextResponse.json(data)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/produits/[id]')
+    logger.error('Crash GET admin/produits/[id]', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -140,7 +140,7 @@ export async function PUT(
       .single()
 
     if (updateErr) {
-      logger.error(updateErr, `Erreur mise à jour produit ${parsedId.data}`)
+      logger.error(`Erreur mise à jour produit ${parsedId.data}`, updateErr)
       return NextResponse.json({ error: updateErr.message }, { status: 500 })
     }
 
@@ -148,7 +148,7 @@ export async function PUT(
 
     return NextResponse.json(data)
   } catch (error: any) {
-    logger.error(error, 'Crash PUT admin/produits/[id]')
+    logger.error('Crash PUT admin/produits/[id]', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -206,7 +206,7 @@ export async function DELETE(
       .eq('id', parsedId.data)
 
     if (deleteErr) {
-      logger.error(deleteErr, `Erreur suppression produit ${parsedId.data}`)
+      logger.error(`Erreur suppression produit ${parsedId.data}`, deleteErr)
       return NextResponse.json({ error: deleteErr.message }, { status: 500 })
     }
 
@@ -214,7 +214,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash DELETE admin/produits/[id]')
+    logger.error('Crash DELETE admin/produits/[id]', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

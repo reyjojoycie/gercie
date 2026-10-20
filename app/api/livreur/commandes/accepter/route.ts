@@ -109,7 +109,7 @@ export async function POST(request: Request) {
     .eq('id', commande_id)
 
   if (updateErr) {
-    logger.error(updateErr, `Erreur acceptation commande ${commande_id} par livreur ${user.id}`)
+    logger.error(`Erreur acceptation commande ${commande_id} par livreur ${user.id}`, updateErr)
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
 

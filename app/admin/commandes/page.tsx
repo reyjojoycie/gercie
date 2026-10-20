@@ -208,7 +208,7 @@ const Pagination = ({
           ) : (
             <Button
               key={`p-${p}`}
-              variant={p === currentPage ? 'gold' : 'outline-gold'}
+              variant={p === currentPage ? 'luxe' : 'outline-gold'}
               size="sm"
               onClick={() => onPageChange(p as number)}
               className={cn(p === currentPage && 'shadow-gold')}

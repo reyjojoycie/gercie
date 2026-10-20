@@ -4,7 +4,8 @@ import { requireAdmin } from '@/lib/auth/adminGuard'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import logger from '@/lib/logger'
-import { rateLimit, applyRateLimitHeaders } from '@/lib/rateLimit'
+// ⚠️ IMPORT CORRECT : On utilise checkRateLimit (asynchrone) au lieu de rateLimit (synchrone)
+import { checkRateLimit, applyRateLimitHeaders } from '@/lib/rateLimit'
 import { updateProductSchema } from '@/lib/validations/product'
 
 /* ========================================================================== */
@@ -42,11 +43,14 @@ export async function GET(
 ) {
   const { id } = await params
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
-  const { allowed, headers: rateLimitHeaders } = rateLimit({
+  
+  // ✅ AJOUT DE await ET UTILISATION DE checkRateLimit
+  const { allowed, headers: rateLimitHeaders } = await checkRateLimit({
     id: `admin-produit-get:${ip}`,
     maxRequests: 30,
     windowSeconds: 60,
   })
+  
   if (!allowed) {
     return applyRateLimitHeaders(
       NextResponse.json({ error: 'Trop de requêtes.' }, { status: 429 }),
@@ -84,7 +88,7 @@ export async function GET(
     setCache(cacheKey, data)
     return NextResponse.json(data)
   } catch (error: any) {
-    logger.error(error, `Crash GET admin/produits/${id}`)
+    logger.error(`Crash GET admin/produits/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -98,11 +102,14 @@ export async function PUT(
 ) {
   const { id } = await params
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
-  const { allowed, headers: rateLimitHeaders } = rateLimit({
+  
+  // ✅ AJOUT DE await ET UTILISATION DE checkRateLimit
+  const { allowed, headers: rateLimitHeaders } = await checkRateLimit({
     id: `admin-produit-put:${ip}`,
     maxRequests: 15,
     windowSeconds: 60,
   })
+  
   if (!allowed) {
     return applyRateLimitHeaders(
       NextResponse.json({ error: 'Trop de requêtes.' }, { status: 429 }),
@@ -158,7 +165,7 @@ export async function PUT(
       .eq('id', parsedId.data)
 
     if (updateError) {
-      logger.error(updateError, `Erreur PUT admin/produits/${id}`)
+      logger.error(`Erreur PUT admin/produits/${id}`, updateError)
       return NextResponse.json({ error: updateError.message }, { status: 500 })
     }
 
@@ -168,7 +175,7 @@ export async function PUT(
     logger.info(`Produit ${parsedId.data} mis à jour`)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, `Crash PUT admin/produits/${id}`)
+    logger.error(`Crash PUT admin/produits/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -182,11 +189,14 @@ export async function DELETE(
 ) {
   const { id } = await params
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
-  const { allowed, headers: rateLimitHeaders } = rateLimit({
+  
+  // ✅ AJOUT DE await ET UTILISATION DE checkRateLimit
+  const { allowed, headers: rateLimitHeaders } = await checkRateLimit({
     id: `admin-produit-delete:${ip}`,
     maxRequests: 10,
     windowSeconds: 60,
   })
+  
   if (!allowed) {
     return applyRateLimitHeaders(
       NextResponse.json({ error: 'Trop de requêtes.' }, { status: 429 }),
@@ -214,7 +224,7 @@ export async function DELETE(
       .eq('id', parsedId.data)
 
     if (error) {
-      logger.error(error, `Erreur DELETE admin/produits/${id}`)
+      logger.error(`Erreur DELETE admin/produits/${id}`, error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -224,7 +234,7 @@ export async function DELETE(
     logger.info(`Produit ${parsedId.data} supprimé`)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, `Crash DELETE admin/produits/${id}`)
+    logger.error(`Crash DELETE admin/produits/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

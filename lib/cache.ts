@@ -185,7 +185,7 @@ class RedisStore {
       if (!raw) return null
       return JSON.parse(raw) as T
     } catch (err) {
-      logger.error(err, 'Redis GET error')
+      logger.error('Redis GET error', err)
       return null
     }
   }
@@ -200,7 +200,7 @@ class RedisStore {
         await this.retry(() => this.exec(['SET', key, serialized]))
       }
     } catch (err) {
-      logger.error(err, 'Redis SET error')
+      logger.error('Redis SET error', err)
     }
   }
 
@@ -209,7 +209,7 @@ class RedisStore {
       const result = await this.retry(() => this.exec(['DEL', key]))
       return result === 1
     } catch (err) {
-      logger.error(err, 'Redis DEL error')
+      logger.error('Redis DEL error', err)
       return false
     }
   }
@@ -248,7 +248,7 @@ class RedisStore {
       const result = await this.retry(() => this.exec(['INCRBY', key, String(amount)]))
       return Number(result) || 0
     } catch (err) {
-      logger.error(err, 'Redis INCRBY error')
+      logger.error('Redis INCRBY error', err)
       throw err
     }
   }

@@ -54,7 +54,7 @@ export async function GET(
 
     return NextResponse.json({ note_interne: data.note_interne })
   } catch (error: any) {
-    logger.error(error, `Crash GET commande notes ${id}`)
+    logger.error(`Crash GET commande notes ${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -115,14 +115,14 @@ export async function PUT(
       .eq('id', parsedId.data)
 
     if (updateErr) {
-      logger.error(updateErr, `Erreur mise à jour note commande ${parsedId.data}`)
+      logger.error(`Erreur mise à jour note commande ${parsedId.data}`, updateErr)
       return NextResponse.json({ error: updateErr.message }, { status: 500 })
     }
 
     logger.info(`Note interne mise à jour pour commande ${parsedId.data}`)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, `Crash PUT commande notes ${id}`)
+    logger.error(`Crash PUT commande notes ${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

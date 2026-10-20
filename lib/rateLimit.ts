@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // Rate Limiting – Protection ultra‑premium des API sensibles
 // Compatible Next.js App Router (API routes), Edge, et Serverless.
-// Stockage : Map (in‑memory) + Redis via Upstash (optionnel).
+// Stockage : Map (in‑memory) en dev + Redis via Upstash (auto en prod).
 // ---------------------------------------------------------------------------
 
 import { z } from 'zod'
@@ -14,11 +14,11 @@ import logger from './logger'
 const rateLimitConfigSchema = z.object({
   id: z.string().min(1),
   maxRequests: z.number().int().positive(),
-  windowSeconds: z.number().int().positive().optional().default(60),
-  banDurationSeconds: z.number().int().positive().optional().default(300),
-  useRedis: z.boolean().optional().default(false),         // bascule vers le stockage Redis
-  whitelist: z.array(z.string()).optional(),               // IDs/IPs à ne jamais bloquer
-  burstAllowance: z.number().int().nonnegative().optional().default(0), // requêtes supplémentaires autorisées en burst
+  windowSeconds: z.number().int().positive().optional(),
+  banDurationSeconds: z.number().int().positive().optional(),
+  useRedis: z.boolean().optional(),
+  whitelist: z.array(z.string()).optional(),
+  burstAllowance: z.number().int().nonnegative().optional(),
 })
 
 export type RateLimitConfig = z.infer<typeof rateLimitConfigSchema>
@@ -38,11 +38,11 @@ interface WindowEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Store mémoire (Map) – utilisé par défaut ou en fallback si Redis indisponible
+// Store mémoire (Map) – utilisé par défaut en développement local
 // ---------------------------------------------------------------------------
 const memoryStore = new Map<string, WindowEntry>()
 
-// Nettoyage périodique pour éviter les fuites mémoire
+// Nettoyage périodique pour éviter les fuites mémoire en local
 if (typeof setInterval !== 'undefined') {
   setInterval(() => {
     const now = Date.now()
@@ -78,7 +78,7 @@ async function getRedisAdapter(): Promise<RateLimitStore | null> {
   const token = process.env.UPSTASH_REDIS_REST_TOKEN
   if (!url || !token) return null
 
-  // Utilisation simple de l'API REST Upstash (fetch)
+  // Utilisation de l'API REST Upstash (fetch natif, zéro dépendance supplémentaire)
   const fetchRedis = async (command: string) => {
     const res = await fetch(url, {
       method: 'POST',
@@ -96,7 +96,9 @@ async function getRedisAdapter(): Promise<RateLimitStore | null> {
       return result ? JSON.parse(result) : null
     },
     async set(key, entry) {
-      await fetchRedis(`SET ${key} ${JSON.stringify(entry)} PX ${entry.resetTime - Date.now() + 60000}`)
+      // PX définit l'expiration en millisecondes
+      const ttl = entry.resetTime - Date.now() + 60000 
+      await fetchRedis(`SET ${key} ${JSON.stringify(entry)} PX ${ttl}`)
     },
     async delete(key) {
       await fetchRedis(`DEL ${key}`)
@@ -106,14 +108,24 @@ async function getRedisAdapter(): Promise<RateLimitStore | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Fonction de rate limiting asynchrone (compatible API routes)
+// Fonction de rate limiting asynchrone (Recommandée pour les API routes)
 // ---------------------------------------------------------------------------
 export async function checkRateLimit(config: RateLimitConfig): Promise<RateLimitResult> {
   const parsed = rateLimitConfigSchema.safeParse(config)
   if (!parsed.success) {
     throw new Error(`Configuration de rate limit invalide: ${parsed.error.message}`)
   }
-  const { id, maxRequests, windowSeconds, banDurationSeconds, useRedis, whitelist, burstAllowance } = parsed.data
+  
+  const { 
+    id, 
+    maxRequests, 
+    windowSeconds = 60, 
+    banDurationSeconds = 300, 
+    useRedis = false, 
+    whitelist, 
+    burstAllowance = 0 
+  } = parsed.data
+  
   const windowMs = windowSeconds * 1000
   const banMs = banDurationSeconds * 1000
   const now = Date.now()
@@ -128,9 +140,14 @@ export async function checkRateLimit(config: RateLimitConfig): Promise<RateLimit
     }
   }
 
-  // Choisir le store
+  // 🚀 AUTO-DETECTION PRODUCTION : 
+  // Utilise Redis si on est en prod ET que les variables Upstash sont présentes,
+  // OU si on le force manuellement via useRedis: true.
+  const isProd = process.env.NODE_ENV === 'production'
+  const hasUpstash = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+
   let store: RateLimitStore = memoryAdapter
-  if (useRedis) {
+  if ((isProd && hasUpstash) || useRedis) {
     const redis = await getRedisAdapter()
     if (redis) store = redis
   }
@@ -195,13 +212,23 @@ export async function checkRateLimit(config: RateLimitConfig): Promise<RateLimit
 
 // ---------------------------------------------------------------------------
 // Fonction synchrone (mémoire uniquement) – conservée pour compatibilité
+// (À n'utiliser que dans le middleware ou si l'asynchrone est impossible)
 // ---------------------------------------------------------------------------
 export function rateLimit(config: RateLimitConfig): RateLimitResult {
   const parsed = rateLimitConfigSchema.safeParse(config)
   if (!parsed.success) {
     throw new Error(`Configuration de rate limit invalide: ${parsed.error.message}`)
   }
-  const { id, maxRequests, windowSeconds, banDurationSeconds, whitelist, burstAllowance } = parsed.data
+  
+  const { 
+    id, 
+    maxRequests, 
+    windowSeconds = 60, 
+    banDurationSeconds = 300, 
+    whitelist, 
+    burstAllowance = 0 
+  } = parsed.data
+  
   const windowMs = windowSeconds * 1000
   const banMs = banDurationSeconds * 1000
   const now = Date.now()
@@ -295,7 +322,7 @@ export function applyRateLimitHeaders(response: Response, headers: Record<string
 }
 
 // ---------------------------------------------------------------------------
-// Helper pratique pour les API routes : throw si bloqué
+// Helper pratique pour les API routes : throw une Response 429 si bloqué
 // ---------------------------------------------------------------------------
 export async function requireRateLimit(config: RateLimitConfig): Promise<RateLimitResult> {
   const result = await checkRateLimit(config)
@@ -304,7 +331,6 @@ export async function requireRateLimit(config: RateLimitConfig): Promise<RateLim
       status: 429,
       headers: { 'Content-Type': 'application/json', ...result.headers },
     })
-    // On throw la réponse pour que la route l'intercepte (ou on la retourne directement selon votre gestion)
     throw response
   }
   return result

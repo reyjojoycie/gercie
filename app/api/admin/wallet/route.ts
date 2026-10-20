@@ -43,7 +43,7 @@ export async function GET(request: Request) {
       .maybeSingle()
 
     if (fetchError) {
-      logger.error(fetchError, "Erreur GET wallet")
+      logger.error("Erreur GET wallet", fetchError)
       return NextResponse.json({ error: fetchError.message }, { status: 500 })
     }
 
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
         .insert({ id: ESCROW_USER_ID, solde_achat: 0, solde_vente: 0 })
 
       if (insertError) {
-        logger.error(insertError, "Impossible de créer le portefeuille central")
+        logger.error("Impossible de créer le portefeuille central", insertError)
         return NextResponse.json({ error: insertError.message }, { status: 500 })
       }
 
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
       last_updated: new Date().toISOString(),
     })
   } catch (error: any) {
-    logger.error(error, "Erreur GET admin/wallet")
+    logger.error("Erreur GET admin/wallet", error)
     return NextResponse.json({ error: "Erreur serveur interne" }, { status: 500 })
   }
 }
@@ -184,12 +184,12 @@ export async function POST(request: Request) {
     })
 
     if (txError) {
-      logger.error(txError, "Impossible d'enregistrer la transaction")
+      logger.error("Impossible d'enregistrer la transaction", txError)
     }
 
     return NextResponse.json({ success: true, nouveauSolde })
   } catch (error: any) {
-    logger.error(error, "Erreur POST admin/wallet")
+    logger.error("Erreur POST admin/wallet", error)
     return NextResponse.json({ error: "Erreur serveur interne" }, { status: 500 })
   }
 }

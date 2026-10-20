@@ -141,7 +141,7 @@ export async function GET(request: Request) {
     const { data, error, count } = await query
 
     if (error) {
-      logger.error(error, 'Erreur récupération utilisateurs admin')
+      logger.error('Erreur récupération utilisateurs admin', error)
       return NextResponse.json({ error: 'Erreur lors du chargement des utilisateurs' }, { status: 500 })
     }
 
@@ -156,7 +156,7 @@ export async function GET(request: Request) {
     setCache(cacheKey, response)
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/utilisateurs')
+    logger.error('Crash GET admin/utilisateurs', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -234,7 +234,7 @@ export async function PUT(request: Request) {
       .eq('id', userId)
 
     if (updateErr) {
-      logger.error(updateErr, `Erreur mise à jour utilisateur ${userId}`)
+      logger.error(`Erreur mise à jour utilisateur ${userId}`, updateErr)
       return NextResponse.json({ error: 'Erreur lors de la mise à jour' }, { status: 500 })
     }
 
@@ -242,7 +242,7 @@ export async function PUT(request: Request) {
     logger.info(`Utilisateur ${userId} mis à jour par admin`, { updates })
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash PUT admin/utilisateurs')
+    logger.error('Crash PUT admin/utilisateurs', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -284,7 +284,7 @@ export async function DELETE(request: Request) {
     logger.info(`Utilisateur ${id} supprimé par admin`)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash DELETE admin/utilisateurs')
+    logger.error('Crash DELETE admin/utilisateurs', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -353,7 +353,7 @@ export async function POST(request: Request) {
     cache.clear()
     return NextResponse.json({ success: true, user: authUser.user }, { status: 201 })
   } catch (error: any) {
-    logger.error(error, 'Crash POST admin/utilisateurs')
+    logger.error('Crash POST admin/utilisateurs', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

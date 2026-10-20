@@ -60,7 +60,7 @@ function getRedisConnection(): IORedis {
     })
 
     redisConnection.on('error', (err) => {
-      logger.error(err, 'Connexion Redis BullMQ en erreur')
+      logger.error('Connexion Redis BullMQ en erreur', err)
       redisReady = false
     })
 
@@ -98,7 +98,7 @@ export async function closeRedisConnection(): Promise<void> {
       await redisConnection.quit()
       logger.info('Connexion Redis fermée proprement')
     } catch (err) {
-      logger.error(err, 'Erreur lors de la fermeture de Redis')
+      logger.error('Erreur lors de la fermeture de Redis', err)
     } finally {
       redisConnection = null
       redisReady = false
@@ -172,7 +172,7 @@ export class TypedQueue<T> {
       logger.info(`Job ajouté à "${this.queueName}": ${job.id}`)
       return job
     } catch (error) {
-      logger.error(error, `Échec ajout job à "${this.queueName}"`)
+      logger.error(`Échec ajout job à "${this.queueName}"`, error)
       throw error
     }
   }
@@ -270,10 +270,10 @@ export class TypedWorker<T> {
       logger.info(`Job ${job.id} dans "${queueName}" terminé`)
     })
     this.worker.on('failed', (job, err) => {
-      logger.error(err, `Job ${job?.id} dans "${queueName}" échoué`)
+      logger.error(`Job ${job?.id} dans "${queueName}" échoué`, err)
     })
     this.worker.on('error', (err) => {
-      logger.error(err, `Erreur worker "${queueName}"`)
+      logger.error(`Erreur worker "${queueName}"`, err)
     })
   }
 

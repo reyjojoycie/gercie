@@ -55,7 +55,7 @@ export async function GET(
       .order('created_at', { ascending: true })
 
     if (error) {
-      logger.error(error, `Erreur récupération messages commande ${parsedId.data}`)
+      logger.error(`Erreur récupération messages commande ${parsedId.data}`, error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -72,7 +72,7 @@ export async function GET(
 
     return NextResponse.json(messages)
   } catch (error: any) {
-    logger.error(error, `Crash GET conversation commande/${id}`)
+    logger.error(`Crash GET conversation commande/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -151,14 +151,14 @@ export async function POST(
       .single()
 
     if (insertErr) {
-      logger.error(insertErr, `Erreur insertion message commande ${parsedId.data}`)
+      logger.error(`Erreur insertion message commande ${parsedId.data}`, insertErr)
       return NextResponse.json({ error: insertErr.message }, { status: 500 })
     }
 
     logger.info(`Message ajouté à la commande ${parsedId.data} par ${currentUser.id}`)
     return NextResponse.json(newMsg, { status: 201 })
   } catch (error: any) {
-    logger.error(error, `Crash POST conversation commande/${id}`)
+    logger.error(`Crash POST conversation commande/${id}`, error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

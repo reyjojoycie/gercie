@@ -59,7 +59,7 @@ export async function GET(request: Request) {
         )
       }
 
-      logger.error(error, 'Erreur récupération type_user')
+      logger.error('Erreur récupération type_user', error)
       return NextResponse.json(
         { error: 'Impossible de récupérer le type de compte.', code: 'FETCH_ERROR' },
         { status: 500 }
@@ -86,7 +86,7 @@ export async function GET(request: Request) {
     response.headers.set('Cache-Control', 'private, max-age=300')
     return response
   } catch (error: any) {
-    logger.error(error, 'Crash GET user type')
+    logger.error('Crash GET user type', error)
     return NextResponse.json(
       { error: 'Erreur serveur interne.', code: 'INTERNAL_ERROR' },
       { status: 500 }

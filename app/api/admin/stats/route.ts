@@ -1,8 +1,7 @@
 // app/api/admin/stats/route.ts
 /**
  * API de statistiques pour le tableau de bord administrateur.
- * Enrichie avec +30 indicateurs, cache optimisé, agrégations temporelles,
- * gestion avancée des erreurs, et désormais des métriques IA.
+ * Version corrigée : résolution des erreurs Promise.all et gestion des paramètres.
  */
 import { createClient } from "@/lib/supabaseServer"
 import { requireAdmin } from "@/lib/auth/adminGuard"
@@ -14,7 +13,7 @@ import logger from "@/lib/logger"
 // ID du portefeuille central (escrow)
 const ESCROW_USER_ID = process.env.ESCROW_USER_ID ?? "c0ffee00-0000-0000-0000-000000000ec0"
 
-// Cache simple en mémoire (peut être remplacé par Redis)
+// Cache simple en mémoire
 const cache = new Map<string, { data: any; timestamp: number }>()
 const CACHE_TTL = 30_000 // 30 secondes
 
@@ -32,7 +31,7 @@ function setCache(key: string, data: any) {
   cache.set(key, { data, timestamp: Date.now() })
 }
 
-// Validation du paramètre de période
+// Validation du paramètre de période (accepte "range" ou "period", et convertit "30j" en "30d")
 const querySchema = z.object({
   range: z.enum(['7d', '30d', '90d']).default('30d'),
   refresh: z.enum(['true', 'false']).default('false'),
@@ -61,10 +60,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message || "Accès non autorisé" }, { status: error.status || 403 })
   }
 
-  // Paramètres de période
+  // Paramètres de période (gestion robuste de "period=30j" venant du frontend)
   const { searchParams } = new URL(request.url)
+  const rawPeriod = searchParams.get("range") || searchParams.get("period") || "30d"
+  const normalizedPeriod = rawPeriod.replace('j', 'd') // Convertit "30j" en "30d" si nécessaire
+
   const parsedParams = querySchema.safeParse({
-    range: searchParams.get("range") || "30d",
+    range: normalizedPeriod,
     refresh: searchParams.get("refresh") || "false",
   })
 
@@ -110,7 +112,8 @@ export async function GET(request: Request) {
       }
     }
 
-    // Lancement de toutes les requêtes en parallèle (existantes + IA)
+    // Lancement de toutes les requêtes en parallèle
+    // ⚠️ CORRECTION : On récupère les valeurs brutes ici, les calculs dérivés se font APRÈS le await.
     const [
       totalUsers,
       newUsersMonth,
@@ -132,12 +135,11 @@ export async function GET(request: Request) {
       ventesDuJour,
       rechargesMois,
       retraitsMois,
-      // ============ NOUVEAUX INDICATEURS IA ============
       nbEmbeddingsProduits,
       nbInteractionsUtilisateurs,
       nbRecherchesCachees,
-      tauxConversion,
-      commandesFraude,
+      commandesPayeesOuLivrees, // Valeur brute pour calculer le taux après
+      commandesAnnuleesRecentes, // Valeur brute (sans .abortSignal invalide)
       totalRecommandationsPersonnalisees,
     ] = await Promise.all([
       safeCount(supabase.from("profiles").select("*", { count: "exact", head: true }), "profiles total"),
@@ -160,44 +162,40 @@ export async function GET(request: Request) {
       safeSum(supabase.from("commandes").select("total_global").eq("statut", "livree").gte("created_at", todayStart), "ventes du jour"),
       safeSum(supabase.from("transactions").select("montant").eq("type", "recharge").gte("created_at", thisMonthStart), "recharges mois"),
       safeSum(supabase.from("transactions").select("montant").eq("type", "retrait").gte("created_at", thisMonthStart), "retraits mois"),
-      // NOUVEAUX : indicateurs IA (sans casser si les tables manquent)
       safeCount(supabase.from("product_embeddings").select("*", { count: "exact", head: true }), "embeddings produits"),
       safeCount(supabase.from("user_interactions").select("*", { count: "exact", head: true }).gte("created_at", periodStart), "interactions utilisateurs"),
       safeCount(supabase.from("search_cache").select("*", { count: "exact", head: true }), "cache de recherche"),
-      safeCount(supabase.from("commandes").select("*", { count: "exact", head: true }).eq("statut", "payee").or("statut.eq.livree") , "commandes payées ou livrées").then(count => totalUsers > 0 ? count / totalUsers : 0), // approximation du taux de conversion
-      safeCount(supabase.from("commandes").select("*", { count: "exact", head: true }).filter("statut", "eq", "annulee").gte("created_at", periodStart).lt("created_at", new Date().toISOString()).abortSignal(undefined as any), "commandes annulées"), // on pourrait améliorer avec l'IA de fraude, ici on compte les annulations suspectes (simplifié)
-      safeCount(supabase.from("user_interactions").select("*", { count: "exact", head: true }).eq("interaction_type", "purchase").gte("created_at", periodStart), "recommandations personnalisées"), // interactions qui alimentent les recos
+      // CORRECTION 1 : On récupère juste le count, le calcul se fera après
+      safeCount(supabase.from("commandes").select("*", { count: "exact", head: true }).in("statut", ["payee", "livree"]), "commandes payées ou livrées"),
+      // CORRECTION 2 : Suppression de .abortSignal(undefined as any) qui faisait crasher
+      safeCount(supabase.from("commandes").select("*", { count: "exact", head: true }).eq("statut", "annulee").gte("created_at", periodStart), "commandes annulées récentes"),
+      safeCount(supabase.from("user_interactions").select("*", { count: "exact", head: true }).eq("interaction_type", "purchase").gte("created_at", periodStart), "recommandations personnalisées"),
     ])
 
-    // Calculs dérivés
+    // ✅ CALCULS DÉRIVÉS (faits APRÈS que Promise.all ait résolu toutes les variables)
     const panierMoyen = commandesLivrees > 0 ? Math.round(totalVentes / commandesLivrees) : 0
     const tauxConversionReel = totalUsers > 0 ? Math.round((commandesLivrees / totalUsers) * 10000) / 100 : 0
-    const produitsAvecEmbedding = nbEmbeddingsProduits
-    const interactionsTotal = nbInteractionsUtilisateurs
-    const recherchesEnCache = nbRecherchesCachees
+    const tauxConversionGlobal = totalUsers > 0 ? Math.round((commandesPayeesOuLivrees / totalUsers) * 10000) / 100 : 0
 
     const stats = {
-      // Indicateurs principaux (compatibles avec votre page actuelle)
       totalUsers,
-      totalVendeurs: 0, // sera remplacé si la colonne is_vendeur existe
+      totalVendeurs: 0,
       totalCommandes,
       totalVentes,
       retraitsEnAttente,
-      litigesOuverts: 0, // à enrichir avec une table litiges
+      litigesOuverts: 0,
       soldeEscrow,
       commandesDuJour,
       ventesDuJour,
       nouveauxUtilisateurs: newUsersMonth,
       tauxConversion: tauxConversionReel,
-      // Détails supplémentaires pour graphiques
       parStatut: [
         { name: "En attente", value: commandesEnAttente },
         { name: "Payées", value: commandesPayees },
         { name: "Livrées", value: commandesLivrees },
         { name: "Annulées", value: commandesAnnulees },
       ],
-      evolution: [], // sera enrichi avec des données quotidiennes si besoin
-      // Stats additionnelles (pour vos futurs besoins)
+      evolution: [],
       produitsActifs,
       produitsRupture,
       totalLivreurs,
@@ -210,25 +208,21 @@ export async function GET(request: Request) {
         range: days,
         cacheTtl: CACHE_TTL,
       },
-      // ============ NOUVELLES STATS IA ============
       ia: {
-        produitsAvecEmbedding,
-        interactionsUtilisateurs: interactionsTotal,
-        recherchesCachees: recherchesEnCache,
-        tauxConversionReel, // en %
-        // Indicateur de fraude : nombre de commandes annulées récemment (simplifié, pourrait être enrichi avec le score IA)
-        commandesAnnuleesRecentes: commandesAnnulees,
-        // Nombre d'interactions d'achat (pour les recos)
+        produitsAvecEmbedding: nbEmbeddingsProduits,
+        interactionsUtilisateurs: nbInteractionsUtilisateurs,
+        recherchesCachees: nbRecherchesCachees,
+        tauxConversionReel: tauxConversionGlobal,
+        commandesAnnuleesRecentes: commandesAnnuleesRecentes,
         achatsPourRecommandations: totalRecommandationsPersonnalisees,
       },
     }
 
-    // Mise en cache
     setCache(cacheKey, stats)
-
     return NextResponse.json(stats)
+
   } catch (error: any) {
-    logger.error(error, "Crash dans GET /api/admin/stats")
-    return NextResponse.json({ error: "Erreur serveur interne" }, { status: 500 })
+    logger.error("Crash dans GET /api/admin/stats", error)
+    return NextResponse.json({ error: "Erreur serveur interne", details: process.env.NODE_ENV === 'development' ? error.message : undefined }, { status: 500 })
   }
 }

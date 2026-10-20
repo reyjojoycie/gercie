@@ -15,6 +15,7 @@ type SpinnerVariant =
   | 'accent'
   | 'warm'
   | 'luxury'
+  | 'gold'      // ← ajouté (utilisé par DeliveryProofUpload, LivraisonFilters...)
   | 'neutral'
   | 'white'
   | 'danger'
@@ -58,6 +59,7 @@ const variantMap: Record<Exclude<SpinnerVariant, 'premium'>, string> = {
   accent: 'text-accent-600 dark:text-accent-400',
   warm: 'text-warm-600 dark:text-warm-400',
   luxury: 'text-luxury-600 dark:text-luxury-400',
+  gold: 'text-gold-500 dark:text-gold-400',
   neutral: 'text-neutral-600 dark:text-neutral-400',
   white: 'text-white',
   danger: 'text-red-600 dark:text-red-400',

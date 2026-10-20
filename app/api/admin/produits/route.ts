@@ -139,7 +139,7 @@ export async function GET(request: Request) {
 
     const { data, error, count } = await query
     if (error) {
-      logger.error(error, 'Erreur récupération produits')
+      logger.error('Erreur récupération produits', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -178,7 +178,7 @@ export async function GET(request: Request) {
     setCache(cacheKey, response)
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/produits')
+    logger.error('Crash GET admin/produits', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -237,7 +237,7 @@ export async function POST(request: Request) {
       .single()
 
     if (error) {
-      logger.error(error, 'Erreur création produit')
+      logger.error('Erreur création produit', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -246,7 +246,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(data, { status: 201 })
   } catch (error: any) {
-    logger.error(error, 'Crash POST admin/produits')
+    logger.error('Crash POST admin/produits', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -312,14 +312,14 @@ export async function PATCH(request: Request) {
       .eq('id', parsedId.data)
 
     if (error) {
-      logger.error(error, `Erreur PATCH produit ${parsedId.data}`)
+      logger.error(`Erreur PATCH produit ${parsedId.data}`, error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     clearCachePrefix('admin-produits')
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash PATCH admin/produits')
+    logger.error('Crash PATCH admin/produits', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -364,7 +364,7 @@ export async function DELETE(request: Request) {
       .eq('id', parsedId.data)
 
     if (error) {
-      logger.error(error, `Erreur suppression produit ${parsedId.data}`)
+      logger.error(`Erreur suppression produit ${parsedId.data}`, error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -372,7 +372,7 @@ export async function DELETE(request: Request) {
     logger.info(`Produit ${parsedId.data} supprimé`)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash DELETE admin/produits')
+    logger.error('Crash DELETE admin/produits', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

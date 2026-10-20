@@ -80,7 +80,7 @@ async function updateLivreurStats(
       .single()
 
     if (selectError) {
-      logger.error(selectError, 'Erreur récupération stats livreur')
+      logger.error('Erreur récupération stats livreur', selectError)
       return
     }
 
@@ -121,7 +121,7 @@ async function addHistorique(
         created_at: new Date().toISOString(),
       })
   } catch (error) {
-    logger.error(error, 'Erreur ajout historique livreur')
+    logger.error('Erreur ajout historique livreur', error)
   }
 }
 
@@ -196,7 +196,7 @@ export async function POST(
       .eq('commande_id', commandeId)
 
     if (collectesError) {
-      logger.error(collectesError, 'Erreur vérification collectes')
+      logger.error('Erreur vérification collectes', collectesError)
       return NextResponse.json({ error: 'Erreur lors de la vérification des collectes' }, { status: 500 })
     }
 
@@ -235,7 +235,7 @@ export async function POST(
         .eq('commande_id', commandeId)
 
       if (updateAttemptError) {
-        logger.error(updateAttemptError, 'Erreur mise à jour tentatives PIN')
+        logger.error('Erreur mise à jour tentatives PIN', updateAttemptError)
       }
 
       // Bloquer la livraison après 3 échecs
@@ -300,7 +300,7 @@ export async function POST(
       .eq('livreur_id', user.id)
 
     if (updateError) {
-      logger.error(updateError, 'Erreur mise à jour livraison')
+      logger.error('Erreur mise à jour livraison', updateError)
       return NextResponse.json({ error: 'Erreur lors de la validation de la livraison' }, { status: 500 })
     }
 
@@ -311,7 +311,7 @@ export async function POST(
       .eq('id', commandeId)
 
     if (commandeError) {
-      logger.error(commandeError, 'Erreur mise à jour commande')
+      logger.error('Erreur mise à jour commande', commandeError)
       // Non bloquant
     }
 
@@ -330,7 +330,7 @@ export async function POST(
         .single()
 
       if (walletErr) {
-        logger.error(walletErr, 'Erreur récupération portefeuille livreur')
+        logger.error('Erreur récupération portefeuille livreur', walletErr)
       } else {
         const nouveauSolde = (walletLivreur?.solde_achat || 0) + gainsLivreur
         const { error: creditErr } = await supabase
@@ -339,7 +339,7 @@ export async function POST(
           .eq('id', user.id)
 
         if (creditErr) {
-          logger.error(creditErr, 'Erreur crédit livreur')
+          logger.error('Erreur crédit livreur', creditErr)
         } else {
           // Enregistrer la transaction
           await supabase.from('transactions').insert({
@@ -384,7 +384,7 @@ export async function POST(
         })
       }
     } catch (notifErr) {
-      logger.error(notifErr, 'Erreur notification client')
+      logger.error('Erreur notification client', notifErr)
     }
 
     // 13. Invalidation cache
@@ -410,7 +410,7 @@ export async function POST(
       },
     })
   } catch (err) {
-    logger.error(err, 'Erreur POST /api/livreur/courses/[id]/deliver')
+    logger.error('Erreur POST /api/livreur/courses/[id]/deliver', err)
     return NextResponse.json({ error: 'Erreur interne', trace_id: uuidv4() }, { status: 500 })
   }
 }

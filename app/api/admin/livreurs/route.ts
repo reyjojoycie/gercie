@@ -255,7 +255,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/livreurs')
+    logger.error('Crash GET admin/livreurs', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -437,7 +437,7 @@ export async function PUT(request: Request) {
     logger.info(`Livreur ${id} mis à jour`, { updates })
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash PUT admin/livreurs')
+    logger.error('Crash PUT admin/livreurs', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
@@ -500,7 +500,7 @@ export async function DELETE(request: Request) {
     cache.clear()
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash DELETE admin/livreurs')
+    logger.error('Crash DELETE admin/livreurs', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

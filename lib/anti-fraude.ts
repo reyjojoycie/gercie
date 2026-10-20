@@ -50,12 +50,12 @@ export async function recordAttempt(
       .single()
 
     if (error) {
-      logger.error(error, `Erreur enregistrement tentative validation ${typeCode} commande ${commandeId}`)
+      logger.error(`Erreur enregistrement tentative validation ${typeCode} commande ${commandeId}`, error)
       return null
     }
     return data.id
   } catch (err: any) {
-    logger.error(err, 'Crash recordAttempt')
+    logger.error('Crash recordAttempt', err)
     return null
   }
 }
@@ -81,12 +81,12 @@ export async function isCodeAlreadyUsed(
       .maybeSingle()
 
     if (error) {
-      logger.error(error, `Erreur vérification code déjà utilisé ${typeCode} commande ${commandeId}`)
+      logger.error(`Erreur vérification code déjà utilisé ${typeCode} commande ${commandeId}`, error)
       return false
     }
     return !!data
   } catch (err: any) {
-    logger.error(err, 'Crash isCodeAlreadyUsed')
+    logger.error('Crash isCodeAlreadyUsed', err)
     return false
   }
 }
@@ -114,12 +114,12 @@ export async function countRecentFailures(
       .gte('cree_le', since)
 
     if (error) {
-      logger.error(error, `Erreur comptage échecs ${typeCode} commande ${commandeId}`)
+      logger.error(`Erreur comptage échecs ${typeCode} commande ${commandeId}`, error)
       return 0
     }
     return count ?? 0
   } catch (err: any) {
-    logger.error(err, 'Crash countRecentFailures')
+    logger.error('Crash countRecentFailures', err)
     return 0
   }
 }
@@ -163,12 +163,12 @@ export async function isRateLimited(
       .gte('cree_le', since)
 
     if (error) {
-      logger.error(error, `Erreur rate limit check ${typeCode} commande ${commandeId}`)
+      logger.error(`Erreur rate limit check ${typeCode} commande ${commandeId}`, error)
       return false
     }
     return (count ?? 0) >= maxAttempts
   } catch (err: any) {
-    logger.error(err, 'Crash isRateLimited')
+    logger.error('Crash isRateLimited', err)
     return false
   }
 }
@@ -194,7 +194,7 @@ export async function getSuspiciousActivity(
       .order('commande_id')
 
     if (error) {
-      logger.error(error, 'Erreur récupération activité suspecte')
+      logger.error('Erreur récupération activité suspecte', error)
       return []
     }
 
@@ -206,7 +206,7 @@ export async function getSuspiciousActivity(
       .filter(([_, count]) => count >= minFailures)
       .map(([commande_id, failures]) => ({ commande_id, failures }))
   } catch (err: any) {
-    logger.error(err, 'Crash getSuspiciousActivity')
+    logger.error('Crash getSuspiciousActivity', err)
     return []
   }
 }

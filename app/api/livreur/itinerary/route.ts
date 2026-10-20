@@ -223,7 +223,7 @@ export async function GET(request: Request) {
     cacheSet(cacheKey, response)
     return NextResponse.json(response)
   } catch (error: any) {
-    logger.error(error, 'Crash dans /api/livreur/itinerary')
+    logger.error('Crash dans /api/livreur/itinerary', error)
     return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 })
   }
 }

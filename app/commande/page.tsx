@@ -44,20 +44,6 @@ const commandeSchema = z.object({
   express: z.boolean().default(false),
   messageCadeau: z.string().max(200).optional(),
 })
-// Après avoir chargé productLivraison, ajoutez :
-const modesDisponibles = useMemo(() => {
-  const ids = items.map(i => i.id)
-  const dispo = { domicile: true, point_retrait: true, express: true }
-  ids.forEach(id => {
-    const p = productLivraison[id]
-    if (p) {
-      if (p.livraison_domicile_active === false) dispo.domicile = false
-      if (p.livraison_point_retrait_active === false) dispo.point_retrait = false
-      if (p.livraison_express_active === false) dispo.express = false
-    }
-  })
-  return dispo
-}, [items, productLivraison])
 
 type CommandeForm = z.infer<typeof commandeSchema>
 
@@ -126,6 +112,22 @@ export default function CommandePage() {
   // Livraison dynamique
   const [productLivraison, setProductLivraison] = useState<Record<string, any>>({})
   const [globalFree, setGlobalFree] = useState(false)
+
+  // ✅ CORRECTION : useMemo déplacé à l'intérieur du composant
+  // (après les useState dont il dépend)
+  const modesDisponibles = useMemo(() => {
+    const ids = items.map(i => i.id)
+    const dispo = { domicile: true, point_retrait: true, express: true }
+    ids.forEach(id => {
+      const p = productLivraison[id]
+      if (p) {
+        if (p.livraison_domicile_active === false) dispo.domicile = false
+        if (p.livraison_point_retrait_active === false) dispo.point_retrait = false
+        if (p.livraison_express_active === false) dispo.express = false
+      }
+    })
+    return dispo
+  }, [items, productLivraison])
 
   const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<CommandeForm>({
     resolver: zodResolver(commandeSchema),
@@ -271,7 +273,7 @@ export default function CommandePage() {
       return
     }
     if (data.typeLivraison === 'domicile' && (!data.communeId || !data.adresseComplete)) {
-      setError('Veuillez compléter l’adresse de livraison.')
+      setError("Veuillez compléter l'adresse de livraison.")
       return
     }
     if (data.typeLivraison === 'point_retrait' && !data.pointRetraitId) {
@@ -422,76 +424,76 @@ export default function CommandePage() {
               />
 
               {/* Livraison */}
-<Controller
-  name="typeLivraison"
-  control={control}
-  render={({ field }) => (
-    <Card variant="glass" className="border-gold-400/20">
-      <CardContent className="p-5 space-y-4">
-        <h3 className="font-semibold">Mode de livraison</h3>
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* À domicile */}
-          <button
-            type="button"
-            onClick={() => field.onChange('domicile')}
-            disabled={!modesDisponibles.domicile}
-            className={cn(
-              'flex-1 flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left',
-              !modesDisponibles.domicile && 'opacity-50 cursor-not-allowed',
-              field.value === 'domicile'
-                ? 'border-gold-400 bg-gold-50/50 dark:bg-gold-900/20 shadow-gold'
-                : 'border-border hover:border-gold-400/50'
-            )}
-          >
-            <Truck size={22} className={field.value === 'domicile' ? 'text-gold-500' : 'text-muted-foreground'} />
-            <div>
-              <p className="font-semibold text-sm">À domicile</p>
-              <p className="text-xs text-muted-foreground">
-                {modesDisponibles.domicile
-                  ? `${fraisLivraison.toLocaleString()} FC · ${delaiEstime}`
-                  : 'Non disponible pour certains articles'}
-              </p>
-            </div>
-          </button>
+              <Controller
+                name="typeLivraison"
+                control={control}
+                render={({ field }) => (
+                  <Card variant="glass" className="border-gold-400/20">
+                    <CardContent className="p-5 space-y-4">
+                      <h3 className="font-semibold">Mode de livraison</h3>
+                      <div className="flex flex-col sm:flex-row gap-4">
+                        {/* À domicile */}
+                        <button
+                          type="button"
+                          onClick={() => field.onChange('domicile')}
+                          disabled={!modesDisponibles.domicile}
+                          className={cn(
+                            'flex-1 flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left',
+                            !modesDisponibles.domicile && 'opacity-50 cursor-not-allowed',
+                            field.value === 'domicile'
+                              ? 'border-gold-400 bg-gold-50/50 dark:bg-gold-900/20 shadow-gold'
+                              : 'border-border hover:border-gold-400/50'
+                          )}
+                        >
+                          <Truck size={22} className={field.value === 'domicile' ? 'text-gold-500' : 'text-muted-foreground'} />
+                          <div>
+                            <p className="font-semibold text-sm">À domicile</p>
+                            <p className="text-xs text-muted-foreground">
+                              {modesDisponibles.domicile
+                                ? `${fraisLivraison.toLocaleString()} FC · ${delaiEstime}`
+                                : 'Non disponible pour certains articles'}
+                            </p>
+                          </div>
+                        </button>
 
-          {/* Point de retrait */}
-          <button
-            type="button"
-            onClick={() => field.onChange('point_retrait')}
-            disabled={!modesDisponibles.point_retrait}
-            className={cn(
-              'flex-1 flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left',
-              !modesDisponibles.point_retrait && 'opacity-50 cursor-not-allowed',
-              field.value === 'point_retrait'
-                ? 'border-gold-400 bg-gold-50/50 dark:bg-gold-900/20 shadow-gold'
-                : 'border-border hover:border-gold-400/50'
-            )}
-          >
-            <MapPin size={22} className={field.value === 'point_retrait' ? 'text-gold-500' : 'text-muted-foreground'} />
-            <div>
-              <p className="font-semibold text-sm">Point de retrait</p>
-              <p className="text-xs text-muted-foreground">
-                {modesDisponibles.point_retrait
-                  ? `${fraisLivraison === 0 ? 'Gratuit' : `${fraisLivraison.toLocaleString()} FC`} · ${delaiEstime}`
-                  : 'Non disponible pour certains articles'}
-              </p>
-            </div>
-          </button>
-        </div>
+                        {/* Point de retrait */}
+                        <button
+                          type="button"
+                          onClick={() => field.onChange('point_retrait')}
+                          disabled={!modesDisponibles.point_retrait}
+                          className={cn(
+                            'flex-1 flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left',
+                            !modesDisponibles.point_retrait && 'opacity-50 cursor-not-allowed',
+                            field.value === 'point_retrait'
+                              ? 'border-gold-400 bg-gold-50/50 dark:bg-gold-900/20 shadow-gold'
+                              : 'border-border hover:border-gold-400/50'
+                          )}
+                        >
+                          <MapPin size={22} className={field.value === 'point_retrait' ? 'text-gold-500' : 'text-muted-foreground'} />
+                          <div>
+                            <p className="font-semibold text-sm">Point de retrait</p>
+                            <p className="text-xs text-muted-foreground">
+                              {modesDisponibles.point_retrait
+                                ? `${fraisLivraison === 0 ? 'Gratuit' : `${fraisLivraison.toLocaleString()} FC`} · ${delaiEstime}`
+                                : 'Non disponible pour certains articles'}
+                            </p>
+                          </div>
+                        </button>
+                      </div>
 
-        {/* Option express */}
-        <label className={cn('flex items-center gap-2 cursor-pointer mt-4', !modesDisponibles.express && 'opacity-50 cursor-not-allowed')}>
-          <input
-            type="checkbox"
-            checked={isExpress}
-            onChange={(e) => setValue('express', e.target.checked)}
-            disabled={!modesDisponibles.express}
-            className="text-gold-500 rounded"
-          />
-          <span className="text-sm font-medium">Livraison express</span>
-          <Badge variant="gold" size="sm">{isExpress ? 'Activé' : 'Option'}</Badge>
-          {!modesDisponibles.express && <span className="text-xs text-red-500">Non disponible pour certains articles</span>}
-        </label>
+                      {/* Option express */}
+                      <label className={cn('flex items-center gap-2 cursor-pointer mt-4', !modesDisponibles.express && 'opacity-50 cursor-not-allowed')}>
+                        <input
+                          type="checkbox"
+                          checked={isExpress}
+                          onChange={(e) => setValue('express', e.target.checked)}
+                          disabled={!modesDisponibles.express}
+                          className="text-gold-500 rounded"
+                        />
+                        <span className="text-sm font-medium">Livraison express</span>
+                        <Badge variant="gold" size="sm">{isExpress ? 'Activé' : 'Option'}</Badge>
+                        {!modesDisponibles.express && <span className="text-xs text-red-500">Non disponible pour certains articles</span>}
+                      </label>
 
                       {/* Message cadeau */}
                       <Controller

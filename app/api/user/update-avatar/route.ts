@@ -87,7 +87,7 @@ export async function PUT(request: Request) {
       .eq('id', user.id)
 
     if (error) {
-      logger.error(error, 'Erreur mise à jour avatar')
+      logger.error('Erreur mise à jour avatar', error)
       return NextResponse.json(
         { error: 'Impossible de mettre à jour l’avatar.', code: 'UPDATE_ERROR' },
         { status: 500 }
@@ -111,7 +111,7 @@ export async function PUT(request: Request) {
       data: { avatar_url: finalUrl },
     })
   } catch (error: any) {
-    logger.error(error, 'Crash PUT update-avatar')
+    logger.error('Crash PUT update-avatar', error)
     return NextResponse.json(
       { error: 'Erreur serveur interne. Veuillez réessayer.', code: 'INTERNAL_ERROR' },
       { status: 500 }

@@ -134,7 +134,7 @@ async function configureIndex(): Promise<void> {
     })
     logger.info('Index Meilisearch configuré')
   } catch (err) {
-    logger.error(err, 'Échec configuration index Meilisearch')
+    logger.error('Échec configuration index Meilisearch', err)
   }
 }
 
@@ -179,7 +179,7 @@ export async function indexProduct(product: IndexProductInput): Promise<boolean>
     logger.info(`Produit indexé: ${product.id}`)
     return true
   } catch (error) {
-    logger.error(error, 'Meilisearch: échec indexation produit')
+    logger.error('Meilisearch: échec indexation produit', error)
     return false
   }
 }
@@ -215,7 +215,7 @@ export async function indexProducts(products: IndexProductInput[]): Promise<numb
     logger.info(`${response.taskUid} - ${docs.length} produits indexés`)
     return docs.length
   } catch (error) {
-    logger.error(error, 'Meilisearch: échec indexation en masse')
+    logger.error('Meilisearch: échec indexation en masse', error)
     return 0
   }
 }
@@ -230,7 +230,7 @@ export async function removeProduct(productId: string): Promise<boolean> {
     await idx.deleteDocument(productId)
     return true
   } catch (error) {
-    logger.error(error, 'Meilisearch: échec suppression produit')
+    logger.error('Meilisearch: échec suppression produit', error)
     return false
   }
 }
@@ -245,7 +245,7 @@ export async function clearIndex(): Promise<boolean> {
     await idx.deleteAllDocuments()
     return true
   } catch (error) {
-    logger.error(error, 'Meilisearch: échec suppression index')
+    logger.error('Meilisearch: échec suppression index', error)
     return false
   }
 }
@@ -325,7 +325,7 @@ export async function searchProducts(params: SearchParamsInput): Promise<SearchR
     await cache.set(cacheKey, result, { ttl: 30 })
     return result
   } catch (error) {
-    logger.error(error, 'Meilisearch: échec recherche')
+    logger.error('Meilisearch: échec recherche', error)
     return {
       hits: [],
       totalHits: 0,
@@ -356,7 +356,7 @@ export async function quickSearch(query: string, limit = 5): Promise<{ nom: stri
       prix: hit.prix,
     }))
   } catch (error) {
-    logger.error(error, 'Meilisearch: échec quickSearch')
+    logger.error('Meilisearch: échec quickSearch', error)
     return []
   }
 }
@@ -374,7 +374,7 @@ export async function reindexFromDatabase(): Promise<number> {
     .eq('visible', true)
 
   if (error) {
-    logger.error(error, 'Meilisearch reindex: échec récupération produits')
+    logger.error('Meilisearch reindex: échec récupération produits', error)
     return 0
   }
   if (!products || products.length === 0) return 0
@@ -410,7 +410,7 @@ export async function addSynonyms(synonyms: Record<string, string[]>): Promise<b
     await idx.updateSynonyms(synonyms)
     return true
   } catch (error) {
-    logger.error(error, 'Meilisearch: échec ajout synonymes')
+    logger.error('Meilisearch: échec ajout synonymes', error)
     return false
   }
 }
@@ -425,7 +425,7 @@ export async function setStopWords(stopWords: string[]): Promise<boolean> {
     await idx.updateStopWords(stopWords)
     return true
   } catch (error) {
-    logger.error(error, 'Meilisearch: échec mise à jour stop words')
+    logger.error('Meilisearch: échec mise à jour stop words', error)
     return false
   }
 }

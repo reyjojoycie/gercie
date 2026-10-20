@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(systemStatus)
   } catch (error: any) {
-    logger.error(error, "Crash GET admin/stats/system")
+    logger.error("Crash GET admin/stats/system", error)
     return NextResponse.json({ error: "Erreur serveur interne" }, { status: 500 })
   }
 }

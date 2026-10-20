@@ -84,7 +84,7 @@ async function loadMessages(locale: Locale): Promise<any> {
     cacheTimestamps.set(locale, now)
     return messages
   } catch (error) {
-    logger.error(error, `Échec du chargement des messages pour ${locale}`)
+    logger.error(`Échec du chargement des messages pour ${locale}`, error)
     // Fallback vers le français
     if (locale !== defaultLocale) {
       return loadMessages(defaultLocale)

@@ -98,7 +98,7 @@ async function addHistorique(
       details: { ...details, timestamp: new Date().toISOString(), ip: ip || 'unknown' },
     })
   } catch (e) {
-    logger.error(e, 'Échec ajout historique livreur')
+    logger.error('Échec ajout historique livreur', e)
   }
 }
 
@@ -135,7 +135,7 @@ async function notifyArticleValidated(
       )
     }
   } catch (err) {
-    logger.error(err, 'Erreur notification validation article')
+    logger.error('Erreur notification validation article', err)
   }
 }
 
@@ -173,7 +173,7 @@ async function notifyArticleRefused(
       )
     }
   } catch (err) {
-    logger.error(err, 'Erreur notification refus article')
+    logger.error('Erreur notification refus article', err)
   }
 }
 
@@ -275,7 +275,7 @@ export async function GET(
       disponible: isAvailable,
     })
   } catch (error: any) {
-    logger.error(error, 'Erreur GET course')
+    logger.error('Erreur GET course', error)
     return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 })
   }
 }
@@ -309,7 +309,7 @@ export async function POST(
     try {
       livreur = await requireLivreur()
     } catch (authError: any) {
-      logger.warn(authError, 'Échec authentification livreur')
+      logger.warn('Échec authentification livreur', authError)
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
     }
 
@@ -643,7 +643,7 @@ export async function POST(
 
     return NextResponse.json({ error: 'Action inconnue' }, { status: 400 })
   } catch (error: any) {
-    logger.error(error, 'Erreur POST course')
+    logger.error('Erreur POST course', error)
     return NextResponse.json(
       { error: 'Erreur interne du serveur', detail: error.message },
       { status: 500 }

@@ -136,7 +136,8 @@ export async function GET(request: NextRequest) {
     /*  5. Construire la réponse                                        */
     /* ---------------------------------------------------------------- */
     const email_verified = profile?.email_verified ?? user.email_confirmed_at != null
-    const phone_verified = profile?.phone_verified ?? user.phone_confirmed_at != null || !user.phone
+    // ✅ CORRECTION ICI : Ajout de parenthèses autour de l'opérateur ??
+    const phone_verified = (profile?.phone_verified ?? user.phone_confirmed_at != null) || !user.phone
     const has_security_question = Boolean(profile?.question_secrete && profile?.reponse_secrete)
 
     const duration = Date.now() - startTime

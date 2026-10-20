@@ -111,7 +111,7 @@ export async function PUT(
       })
 
     if (insertErr) {
-      logger.error(insertErr, 'Erreur insertion validation_codes')
+      logger.error('Erreur insertion validation_codes', insertErr)
     }
 
     if (!estValide) {
@@ -132,7 +132,7 @@ export async function PUT(
       .eq('id', parsedId.data)
 
     if (updateErr) {
-      logger.error(updateErr, `Erreur mise à jour statut commande ${parsedId.data}`)
+      logger.error(`Erreur mise à jour statut commande ${parsedId.data}`, updateErr)
       return NextResponse.json({ error: updateErr.message }, { status: 500 })
     }
 
@@ -150,7 +150,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, nouveau_statut: 'en_livraison' })
   } catch (error: any) {
-    logger.error(error, 'Crash PUT valider-collecte')
+    logger.error('Crash PUT valider-collecte', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

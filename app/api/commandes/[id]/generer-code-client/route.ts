@@ -79,7 +79,7 @@ export async function PUT(
     .eq('id', parsedId.data)
 
   if (updateErr) {
-    logger.error(updateErr, `Erreur mise à jour code client commande ${parsedId.data}`)
+    logger.error(`Erreur mise à jour code client commande ${parsedId.data}`, updateErr)
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
 

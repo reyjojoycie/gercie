@@ -109,7 +109,7 @@ export async function PUT(
     .eq('valide', false)
 
   if (countErr) {
-    logger.error(countErr, 'Erreur comptage tentatives échouées')
+    logger.error('Erreur comptage tentatives échouées', countErr)
   }
   const tentativeActuelle = (failedAttempts ?? 0) + 1
 
@@ -132,7 +132,7 @@ export async function PUT(
     })
 
   if (insertErr) {
-    logger.error(insertErr, 'Erreur insertion validation_codes (livraison)')
+    logger.error('Erreur insertion validation_codes (livraison)', insertErr)
   }
 
   if (!estValide) {
@@ -157,7 +157,7 @@ export async function PUT(
     .eq('id', id)
 
   if (updateErr) {
-    logger.error(updateErr, `Erreur mise à jour statut commande ${id}`)
+    logger.error(`Erreur mise à jour statut commande ${id}`, updateErr)
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
 

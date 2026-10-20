@@ -182,7 +182,7 @@ export function useSessionStorage<T>(
       }
       return resolvedInitial
     } catch (err) {
-      logger.error(err, `[useSessionStorage] Erreur lecture: ${fullKey}`)
+      logger.error(`[useSessionStorage] Erreur lecture: ${fullKey}`, err)
       return resolvedInitial
     }
   })
@@ -211,7 +211,7 @@ export function useSessionStorage<T>(
             logger.error(`[useSessionStorage] Quota dépassé pour la clé: ${key}`)
             // Optionnel : notifier l'utilisateur ou tenter un nettoyage
           } else {
-            logger.error(err, `[useSessionStorage] Erreur écriture: ${key}`)
+            logger.error(`[useSessionStorage] Erreur écriture: ${key}`, err)
           }
         }
       }, 100),
@@ -229,7 +229,7 @@ export function useSessionStorage<T>(
             debouncedSetItem(fullKey, serialized)
             setIsPersisted(true)
           } catch (err) {
-            logger.error(err, `[useSessionStorage] Erreur stringify: ${fullKey}`)
+            logger.error(`[useSessionStorage] Erreur stringify: ${fullKey}`, err)
           }
         }
         // Notifier onChange
@@ -255,7 +255,7 @@ export function useSessionStorage<T>(
         setIsPersisted(false)
         if (debug) logger.debug(`[useSessionStorage] Supprimé: ${fullKey}`)
       } catch (err) {
-        logger.error(err, `[useSessionStorage] Erreur suppression: ${fullKey}`)
+        logger.error(`[useSessionStorage] Erreur suppression: ${fullKey}`, err)
       }
     }
     setStoredValue(resolvedInitial)

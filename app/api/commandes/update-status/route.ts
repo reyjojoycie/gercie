@@ -98,7 +98,7 @@ async function notifyStatusChange(
       await sendSMS(profile.telephone, `Gercie: Commande #${commandeNumero} – ${statutLabel}`)
     }
   } catch (err) {
-    logger.warn(err, 'Erreur notification changement statut')
+    logger.warn('Erreur notification changement statut', err)
   }
 }
 
@@ -294,7 +294,7 @@ export async function POST(request: Request) {
       .eq('id', commande_id)
 
     if (updateError) {
-      logger.error(updateError, 'Erreur mise à jour statut commande')
+      logger.error('Erreur mise à jour statut commande', updateError)
       return NextResponse.json({ error: 'Erreur lors de la mise à jour' }, { status: 500 })
     }
 
@@ -311,7 +311,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, statut: newStatus })
   } catch (error: any) {
-    logger.error(error, 'Crash dans update-status')
+    logger.error('Crash dans update-status', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

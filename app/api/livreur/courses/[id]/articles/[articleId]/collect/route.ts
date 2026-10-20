@@ -61,7 +61,7 @@ async function notifyVendeurCollecte(
       { commande_id: commandeId, article_id: article.id, montant: netVendeur }
     )
   } catch (err) {
-    logger.error(err, 'Échec notification vendeur collecte article')
+    logger.error('Échec notification vendeur collecte article', err)
   }
 }
 
@@ -80,7 +80,7 @@ async function notifyLivreurCollecteValidee(
       { commande_id: commandeId }
     )
   } catch (err) {
-    logger.error(err, 'Échec notification livreur validation article')
+    logger.error('Échec notification livreur validation article', err)
   }
 }
 
@@ -219,7 +219,7 @@ export async function POST(
       .eq('id', articleId)
 
     if (updateError) {
-      logger.error(updateError, 'Échec mise à jour statut article')
+      logger.error('Échec mise à jour statut article', updateError)
       return NextResponse.json({ error: 'Erreur lors de la validation' }, { status: 500 })
     }
 
@@ -237,7 +237,7 @@ export async function POST(
         .maybeSingle()
 
       if (walletError) {
-        logger.error(walletError, 'Erreur récupération portefeuille vendeur')
+        logger.error('Erreur récupération portefeuille vendeur', walletError)
       }
 
       const nouveauSolde = (wallet?.solde_vente || 0) + netVendeur
@@ -247,7 +247,7 @@ export async function POST(
         .eq('id', vendeurId)
 
       if (creditError) {
-        logger.error(creditError, 'Échec crédit vendeur – article validé mais solde non mis à jour')
+        logger.error('Échec crédit vendeur – article validé mais solde non mis à jour', creditError)
       }
 
       // Enregistrer la transaction
@@ -298,7 +298,7 @@ export async function POST(
         action: 'validate-article',
         details: { article_id: articleId, code_validated: true, ip },
       })
-      .catch(e => logger.error(e, 'Échec ajout historique'))
+      .catch(e => logger.error('Échec ajout historique', e))
 
     logger.info(
       { userId: user.id, articleId, commandeId, netVendeur, commission },
@@ -315,7 +315,7 @@ export async function POST(
       rateLimitHeaders
     )
   } catch (err: any) {
-    logger.error(err, 'Erreur interne collecte article')
+    logger.error('Erreur interne collecte article', err)
     return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 })
   }
 }

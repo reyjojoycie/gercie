@@ -96,7 +96,7 @@ export async function PUT(
     cache.clear()
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash PUT admin/promotions')
+    logger.error('Crash PUT admin/promotions', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
@@ -139,7 +139,7 @@ export async function DELETE(
     cache.clear()
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    logger.error(error, 'Crash DELETE admin/promotions')
+    logger.error('Crash DELETE admin/promotions', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

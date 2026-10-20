@@ -110,7 +110,7 @@ async function getAccessToken(): Promise<string> {
     cachedToken = { token: data.access_token, expiresAt }
     return data.access_token
   } catch (error) {
-    logger.error(error, 'Orange Money: impossible d’obtenir le token')
+    logger.error('Orange Money: impossible d’obtenir le token', error)
     throw new Error('Service Orange Money temporairement indisponible')
   }
 }
@@ -229,12 +229,12 @@ export async function initierPaiement(
         })
         .eq('id', orderId)
     } catch (updateErr) {
-      logger.error(updateErr, 'Orange Money: échec mise à jour commande')
+      logger.error('Orange Money: échec mise à jour commande', updateErr)
     }
 
     return result
   } catch (error) {
-    logger.error(error, 'Orange Money: échec initiation paiement')
+    logger.error('Orange Money: échec initiation paiement', error)
     throw new Error('Le paiement via Orange Money a échoué. Veuillez réessayer.')
   }
 }
@@ -295,7 +295,7 @@ export async function verifierStatut(
     await cache.set(cacheKey, result, { ttl: 300 })
     return result
   } catch (error) {
-    logger.error(error, 'Orange Money: échec vérification statut')
+    logger.error('Orange Money: échec vérification statut', error)
     throw new Error('Impossible de vérifier le statut du paiement. Veuillez réessayer.')
   }
 }
@@ -327,7 +327,7 @@ export async function gererCallback(
       .eq('id', orderId)
 
     if (updateErr) {
-      logger.error(updateErr, 'Orange Money callback: échec mise à jour commande')
+      logger.error('Orange Money callback: échec mise à jour commande', updateErr)
       return { success: false, message: 'Erreur lors de la mise à jour de la commande' }
     }
 
@@ -354,7 +354,7 @@ export async function gererCallback(
 
     return { success: true, message: 'Callback traité avec succès' }
   } catch (error) {
-    logger.error(error, 'Orange Money callback: erreur')
+    logger.error('Orange Money callback: erreur', error)
     return { success: false, message: 'Erreur interne lors du traitement du callback' }
   }
 }

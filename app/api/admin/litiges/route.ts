@@ -65,7 +65,7 @@ export async function GET(request: Request) {
     const { data, error, count } = await query
 
     if (error) {
-      logger.error(error, 'Erreur récupération litiges')
+      logger.error('Erreur récupération litiges', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -79,7 +79,7 @@ export async function GET(request: Request) {
       },
     })
   } catch (error: any) {
-    logger.error(error, 'Crash GET admin/litiges')
+    logger.error('Crash GET admin/litiges', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }

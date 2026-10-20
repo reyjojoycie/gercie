@@ -78,7 +78,7 @@ export async function GET(
       .order('id', { ascending: true })
 
     if (articlesError) {
-      logger.error(articlesError, 'Erreur récupération articles course')
+      logger.error('Erreur récupération articles course', articlesError)
       return NextResponse.json({ error: 'Impossible de charger les articles' }, { status: 500 })
     }
 
@@ -120,7 +120,7 @@ export async function GET(
       statut_livraison: livraison.statut,
     })
   } catch (err) {
-    logger.error(err, 'Erreur GET articles course')
+    logger.error('Erreur GET articles course', err)
     return NextResponse.json({ error: 'Erreur interne' }, { status: 500 })
   }
 }

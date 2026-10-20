@@ -83,7 +83,7 @@ export async function createProduct(data: Record<string, any>) {
     .select()
     .single()
   if (error) {
-    logger.error(error, 'Erreur création produit')
+    logger.error('Erreur création produit', error)
     throw new Error(`Erreur création produit: ${error.message}`)
   }
   logger.info(`Produit créé: ${product.id} – ${product.nom}`)
@@ -102,7 +102,7 @@ export async function updateProduct(id: string, data: Record<string, any>) {
     .select()
     .single()
   if (error) {
-    logger.error(error, `Erreur mise à jour produit ${id}`)
+    logger.error(`Erreur mise à jour produit ${id}`, error)
     throw new Error(`Erreur mise à jour produit: ${error.message}`)
   }
   logger.info(`Produit mis à jour: ${id}`)
@@ -119,7 +119,7 @@ export async function deleteProduct(id: string) {
     .delete()
     .eq('id', id)
   if (error) {
-    logger.error(error, `Erreur suppression produit ${id}`)
+    logger.error(`Erreur suppression produit ${id}`, error)
     throw new Error(`Erreur suppression produit: ${error.message}`)
   }
   logger.info(`Produit supprimé: ${id}`)

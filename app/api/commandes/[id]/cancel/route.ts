@@ -161,7 +161,7 @@ async function notifyCancellation(
       await sendSMS(profile.telephone, `Gercie: Votre commande #${commandeNumero} a été annulée. Remboursement de ${montant.toLocaleString()} FC effectué.`)
     }
   } catch (err) {
-    logger.warn(err, 'Erreur lors des notifications d’annulation')
+    logger.warn('Erreur lors des notifications d’annulation', err)
   }
 }
 
@@ -242,7 +242,7 @@ export async function PUT(
       .eq('id', commandeId)
 
     if (updateError) {
-      logger.error(updateError, 'Erreur annulation commande')
+      logger.error('Erreur annulation commande', updateError)
       return NextResponse.json({ error: 'Erreur lors de l\'annulation' }, { status: 500 })
     }
 
@@ -255,7 +255,7 @@ export async function PUT(
       try {
         await refundWallet(supabase, commande.acheteur_id, montantARembourser, commandeId)
       } catch (refundError: any) {
-        logger.error(refundError, 'Échec remboursement annulation commande')
+        logger.error('Échec remboursement annulation commande', refundError)
         // On ne bloque pas l'annulation, mais on notifie l'admin
         await createNotification(
           user.id,
@@ -282,7 +282,7 @@ export async function PUT(
       remboursement: STATUTS_REMBOURSABLES.includes(commande.statut) ? montantARembourser : 0,
     })
   } catch (error: any) {
-    logger.error(error, 'Crash dans l\'annulation de commande')
+    logger.error('Crash dans l\'annulation de commande', error)
     return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
   }
 }
