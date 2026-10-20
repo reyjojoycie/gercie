@@ -193,7 +193,7 @@ export async function DELETE(
   // ✅ AJOUT DE await ET UTILISATION DE checkRateLimit
   const { allowed, headers: rateLimitHeaders } = await checkRateLimit({
     id: `admin-produit-delete:${ip}`,
-    maxRequests: 10,
+    maxRequests: 900,
     windowSeconds: 60,
   })
   
