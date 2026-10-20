@@ -24,3 +24,12 @@ test-results/
 .turbo
 .vercel
 storybook-static/
+# Fichiers temporaires de debug
+errors.html
+errors.json
+errors.txt
+check-all-errors.js
+fix-*.js
+
+# Cache TypeScript
+tsconfig.tsbuildinfo
