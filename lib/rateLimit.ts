@@ -2,10 +2,11 @@
 // ---------------------------------------------------------------------------
 // Rate Limiting – Protection ultra‑premium des API sensibles
 // Compatible Next.js App Router (API routes), Edge, et Serverless.
-// Stockage : Map (in‑memory) en dev + Redis via Upstash (auto en prod).
+// Stockage : Map (in‑memory) en dev + Redis officiel via Upstash (auto en prod).
 // ---------------------------------------------------------------------------
 
 import { z } from 'zod'
+import { Redis } from '@upstash/redis'
 import logger from './logger'
 
 /* ========================================================================== */
@@ -38,7 +39,7 @@ interface WindowEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Store mémoire (Map) – utilisé par défaut en développement local
+// Store mémoire (Map) – utilisé par défaut en développement local ou en fallback
 // ---------------------------------------------------------------------------
 const memoryStore = new Map<string, WindowEntry>()
 
@@ -54,58 +55,14 @@ if (typeof setInterval !== 'undefined') {
 }
 
 // ---------------------------------------------------------------------------
-// Interface du store (mémoire ou Redis)
+// Initialisation d'Upstash Redis (Uniquement si les variables sont présentes)
 // ---------------------------------------------------------------------------
-interface RateLimitStore {
-  get(key: string): Promise<WindowEntry | null>
-  set(key: string, entry: WindowEntry): Promise<void>
-  delete(key: string): Promise<void>
-}
-
-const memoryAdapter: RateLimitStore = {
-  async get(key) { return memoryStore.get(key) ?? null },
-  async set(key, entry) { memoryStore.set(key, entry) },
-  async delete(key) { memoryStore.delete(key) },
-}
-
-// Redis adapter (si les variables d'environnement Upstash sont présentes)
-let redisAdapter: RateLimitStore | null = null
-
-async function getRedisAdapter(): Promise<RateLimitStore | null> {
-  if (redisAdapter) return redisAdapter
-
-  const url = process.env.UPSTASH_REDIS_REST_URL
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN
-  if (!url || !token) return null
-
-  // Utilisation de l'API REST Upstash (fetch natif, zéro dépendance supplémentaire)
-  const fetchRedis = async (command: string) => {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify([command]),
+const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+  ? new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
     })
-    if (!res.ok) throw new Error(`Redis error: ${res.statusText}`)
-    const data = await res.json()
-    return data.result
-  }
-
-  redisAdapter = {
-    async get(key) {
-      const result = await fetchRedis(`GET ${key}`)
-      return result ? JSON.parse(result) : null
-    },
-    async set(key, entry) {
-      // PX définit l'expiration en millisecondes
-      const ttl = entry.resetTime - Date.now() + 60000 
-      await fetchRedis(`SET ${key} ${JSON.stringify(entry)} PX ${ttl}`)
-    },
-    async delete(key) {
-      await fetchRedis(`DEL ${key}`)
-    },
-  }
-  return redisAdapter
-}
+  : null
 
 // ---------------------------------------------------------------------------
 // Fonction de rate limiting asynchrone (Recommandée pour les API routes)
@@ -140,108 +97,68 @@ export async function checkRateLimit(config: RateLimitConfig): Promise<RateLimit
     }
   }
 
-  // 🚀 AUTO-DETECTION PRODUCTION : 
-  // Utilise Redis si on est en prod ET que les variables Upstash sont présentes,
-  // OU si on le force manuellement via useRedis: true.
-  const isProd = process.env.NODE_ENV === 'production'
-  const hasUpstash = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
-
-  let store: RateLimitStore = memoryAdapter
-  if ((isProd && hasUpstash) || useRedis) {
-    const redis = await getRedisAdapter()
-    if (redis) store = redis
-  }
-
   const key = `ratelimit:${id}`
-  let entry = await store.get(key)
+  const metaKey = `${key}:meta`
 
-  // Pas d'entrée → première requête de la fenêtre
-  if (!entry || (now >= entry.resetTime && !entry.banUntil)) {
-    entry = { count: 1, resetTime: now + windowMs, banUntil: null, infractions: 0 }
-    await store.set(key, entry)
-    return buildResult(maxRequests + burstAllowance, maxRequests + burstAllowance - 1, entry.resetTime)
-  }
+  // 🚀 MODE PRODUCTION : Utilise la librairie officielle Upstash Redis
+  if (redis) {
+    try {
+      // 1. Incrémenter le compteur principal
+      const current = await redis.incr(key)
+      if (current === 1) {
+        await redis.expire(key, windowSeconds)
+      }
 
-  // Vérifier un bannissement actif
-  if (entry.banUntil && now < entry.banUntil) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetTime: entry.banUntil,
-      headers: buildHeaders(maxRequests, 0, entry.banUntil),
+      // 2. Récupérer les métadonnées (bans, infractions)
+      const metaStr = await redis.get(metaKey)
+      let entry: WindowEntry = metaStr 
+        ? JSON.parse(metaStr as string) 
+        : { count: current, resetTime: now + windowMs, banUntil: null, infractions: 0 }
+
+      // Synchroniser le compteur avec la valeur réelle de Redis
+      entry.count = current
+
+      // 3. Logique de bannissement et de fenêtre
+      if (entry.banUntil && now < entry.banUntil) {
+        return { allowed: false, remaining: 0, resetTime: entry.banUntil, headers: buildHeaders(maxRequests, 0, entry.banUntil) }
+      }
+      if (entry.banUntil && now >= entry.banUntil) {
+        entry.banUntil = null
+      }
+      if (now >= entry.resetTime) {
+        entry.count = 1
+        entry.resetTime = now + windowMs
+        entry.infractions = 0
+      }
+
+      // 4. Vérification de la limite
+      const effectiveLimit = maxRequests + burstAllowance
+      if (entry.count > effectiveLimit) {
+        const progressiveMultiplier = Math.min(Math.pow(2, entry.infractions), 8) // max x8
+        const banDuration = banMs * progressiveMultiplier
+        entry.banUntil = now + banDuration
+        entry.infractions++
+        
+        const ttl = Math.ceil((entry.banUntil - now) / 1000) + windowSeconds
+        await redis.set(metaKey, JSON.stringify(entry), { ex: ttl })
+        
+        logger.warn('Rate limit dépassé (Redis)', { id, count: entry.count, limit: effectiveLimit })
+        return { allowed: false, remaining: 0, resetTime: entry.banUntil, headers: buildHeaders(maxRequests, 0, entry.banUntil) }
+      }
+
+      // 5. Sauvegarder l'état
+      const ttl = Math.ceil((entry.resetTime - now) / 1000) + 60
+      await redis.set(metaKey, JSON.stringify(entry), { ex: ttl })
+      
+      return buildResult(maxRequests, effectiveLimit - entry.count, entry.resetTime)
+
+    } catch (error) {
+      // Fallback sécurisé : si Redis échoue, on utilise la mémoire pour ne pas casser l'app
+      logger.error('Erreur Redis Upstash, fallback sur mémoire', error)
     }
   }
 
-  // Lever le bannissement s'il est terminé
-  if (entry.banUntil && now >= entry.banUntil) {
-    entry.banUntil = null
-  }
-
-  // Nouvelle fenêtre si l'ancienne est expirée
-  if (now >= entry.resetTime) {
-    entry.count = 1
-    entry.resetTime = now + windowMs
-    entry.infractions = 0
-    await store.set(key, entry)
-    return buildResult(maxRequests + burstAllowance, maxRequests + burstAllowance - 1, entry.resetTime)
-  }
-
-  // Incrémenter
-  entry.count++
-  const effectiveLimit = maxRequests + burstAllowance
-
-  if (entry.count > effectiveLimit) {
-    // Calculer une durée de ban progressive (exponentielle en fonction des infractions)
-    const progressiveMultiplier = Math.min(Math.pow(2, entry.infractions), 8) // max x8
-    const banDuration = banMs * progressiveMultiplier
-    entry.banUntil = now + banDuration
-    entry.infractions++
-    await store.set(key, entry)
-    logger.warn('Rate limit dépassé', { id, count: entry.count, limit: effectiveLimit })
-    return {
-      allowed: false,
-      remaining: 0,
-      resetTime: entry.banUntil,
-      headers: buildHeaders(maxRequests, 0, entry.banUntil),
-    }
-  }
-
-  await store.set(key, entry)
-  return buildResult(maxRequests, effectiveLimit - entry.count, entry.resetTime)
-}
-
-// ---------------------------------------------------------------------------
-// Fonction synchrone (mémoire uniquement) – conservée pour compatibilité
-// (À n'utiliser que dans le middleware ou si l'asynchrone est impossible)
-// ---------------------------------------------------------------------------
-export function rateLimit(config: RateLimitConfig): RateLimitResult {
-  const parsed = rateLimitConfigSchema.safeParse(config)
-  if (!parsed.success) {
-    throw new Error(`Configuration de rate limit invalide: ${parsed.error.message}`)
-  }
-  
-  const { 
-    id, 
-    maxRequests, 
-    windowSeconds = 60, 
-    banDurationSeconds = 300, 
-    whitelist, 
-    burstAllowance = 0 
-  } = parsed.data
-  
-  const windowMs = windowSeconds * 1000
-  const banMs = banDurationSeconds * 1000
-  const now = Date.now()
-
-  if (whitelist?.includes(id)) {
-    return {
-      allowed: true,
-      remaining: maxRequests,
-      resetTime: now + windowMs,
-      headers: buildHeaders(maxRequests, maxRequests, now + windowMs),
-    }
-  }
-
+  // 🖥️ MODE DÉVELOPPEMENT (ou fallback) : Utilise la Map en mémoire
   let entry = memoryStore.get(id)
 
   if (!entry || (now >= entry.resetTime && !entry.banUntil)) {
@@ -251,12 +168,7 @@ export function rateLimit(config: RateLimitConfig): RateLimitResult {
   }
 
   if (entry.banUntil && now < entry.banUntil) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetTime: entry.banUntil,
-      headers: buildHeaders(maxRequests, 0, entry.banUntil),
-    }
+    return { allowed: false, remaining: 0, resetTime: entry.banUntil, headers: buildHeaders(maxRequests, 0, entry.banUntil) }
   }
 
   if (entry.banUntil && now >= entry.banUntil) {
@@ -280,13 +192,67 @@ export function rateLimit(config: RateLimitConfig): RateLimitResult {
     entry.banUntil = now + banDuration
     entry.infractions++
     memoryStore.set(id, entry)
-    logger.warn('Rate limit dépassé', { id, count: entry.count, limit: effectiveLimit })
-    return {
-      allowed: false,
-      remaining: 0,
-      resetTime: entry.banUntil,
-      headers: buildHeaders(maxRequests, 0, entry.banUntil),
-    }
+    logger.warn('Rate limit dépassé (Mémoire)', { id, count: entry.count, limit: effectiveLimit })
+    return { allowed: false, remaining: 0, resetTime: entry.banUntil, headers: buildHeaders(maxRequests, 0, entry.banUntil) }
+  }
+
+  memoryStore.set(id, entry)
+  return buildResult(maxRequests, effectiveLimit - entry.count, entry.resetTime)
+}
+
+// ---------------------------------------------------------------------------
+// Fonction synchrone (mémoire uniquement) – conservée pour compatibilité
+// ---------------------------------------------------------------------------
+export function rateLimit(config: RateLimitConfig): RateLimitResult {
+  const parsed = rateLimitConfigSchema.safeParse(config)
+  if (!parsed.success) {
+    throw new Error(`Configuration de rate limit invalide: ${parsed.error.message}`)
+  }
+  
+  const { id, maxRequests, windowSeconds = 60, banDurationSeconds = 300, whitelist, burstAllowance = 0 } = parsed.data
+  const windowMs = windowSeconds * 1000
+  const banMs = banDurationSeconds * 1000
+  const now = Date.now()
+
+  if (whitelist?.includes(id)) {
+    return { allowed: true, remaining: maxRequests, resetTime: now + windowMs, headers: buildHeaders(maxRequests, maxRequests, now + windowMs) }
+  }
+
+  let entry = memoryStore.get(id)
+
+  if (!entry || (now >= entry.resetTime && !entry.banUntil)) {
+    entry = { count: 1, resetTime: now + windowMs, banUntil: null, infractions: 0 }
+    memoryStore.set(id, entry)
+    return buildResult(maxRequests + burstAllowance, maxRequests + burstAllowance - 1, entry.resetTime)
+  }
+
+  if (entry.banUntil && now < entry.banUntil) {
+    return { allowed: false, remaining: 0, resetTime: entry.banUntil, headers: buildHeaders(maxRequests, 0, entry.banUntil) }
+  }
+
+  if (entry.banUntil && now >= entry.banUntil) {
+    entry.banUntil = null
+  }
+
+  if (now >= entry.resetTime) {
+    entry.count = 1
+    entry.resetTime = now + windowMs
+    entry.infractions = 0
+    memoryStore.set(id, entry)
+    return buildResult(maxRequests + burstAllowance, maxRequests + burstAllowance - 1, entry.resetTime)
+  }
+
+  entry.count++
+  const effectiveLimit = maxRequests + burstAllowance
+
+  if (entry.count > effectiveLimit) {
+    const progressiveMultiplier = Math.min(Math.pow(2, entry.infractions), 8)
+    const banDuration = banMs * progressiveMultiplier
+    entry.banUntil = now + banDuration
+    entry.infractions++
+    memoryStore.set(id, entry)
+    logger.warn('Rate limit dépassé (Mémoire)', { id, count: entry.count, limit: effectiveLimit })
+    return { allowed: false, remaining: 0, resetTime: entry.banUntil, headers: buildHeaders(maxRequests, 0, entry.banUntil) }
   }
 
   memoryStore.set(id, entry)
@@ -297,12 +263,7 @@ export function rateLimit(config: RateLimitConfig): RateLimitResult {
 // Helpers
 // ---------------------------------------------------------------------------
 function buildResult(max: number, remaining: number, resetTime: number): RateLimitResult {
-  return {
-    allowed: true,
-    remaining,
-    resetTime,
-    headers: buildHeaders(max, remaining, resetTime),
-  }
+  return { allowed: true, remaining, resetTime, headers: buildHeaders(max, remaining, resetTime) }
 }
 
 function buildHeaders(max: number, remaining: number, resetTime: number) {
@@ -313,7 +274,6 @@ function buildHeaders(max: number, remaining: number, resetTime: number) {
   }
 }
 
-// Appliquer les headers à une Response existante
 export function applyRateLimitHeaders(response: Response, headers: Record<string, string>): Response {
   Object.entries(headers).forEach(([key, value]) => {
     response.headers.set(key, value)
@@ -321,9 +281,6 @@ export function applyRateLimitHeaders(response: Response, headers: Record<string
   return response
 }
 
-// ---------------------------------------------------------------------------
-// Helper pratique pour les API routes : throw une Response 429 si bloqué
-// ---------------------------------------------------------------------------
 export async function requireRateLimit(config: RateLimitConfig): Promise<RateLimitResult> {
   const result = await checkRateLimit(config)
   if (!result.allowed) {
@@ -336,13 +293,10 @@ export async function requireRateLimit(config: RateLimitConfig): Promise<RateLim
   return result
 }
 
-// ---------------------------------------------------------------------------
-// Réinitialisation manuelle (pour tests ou admin)
-// ---------------------------------------------------------------------------
 export async function resetRateLimit(id: string): Promise<void> {
   memoryStore.delete(id)
-  const redis = await getRedisAdapter()
   if (redis) {
-    await redis.delete(`ratelimit:${id}`)
+    await redis.del(`ratelimit:${id}`)
+    await redis.del(`ratelimit:${id}:meta`)
   }
 }
