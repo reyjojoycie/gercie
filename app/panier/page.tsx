@@ -1003,7 +1003,7 @@ export default function PanierPage() {
       if (typeof fn !== 'function') {
         toast?.addToast?.({
           type: 'error',
-          message: 'La mise à jour de quantité n'est pas disponible.',
+          message: "La mise à jour de quantité n'est pas disponible.",
         })
         return
       }
@@ -1044,7 +1044,7 @@ export default function PanierPage() {
       if (typeof fn !== 'function') {
         toast?.addToast?.({
           type: 'error',
-          message: 'La suppression n'est pas disponible.',
+          message: "La suppression n'est pas disponible.",
         })
         return
       }
@@ -1116,7 +1116,7 @@ export default function PanierPage() {
     if (typeof fn !== 'function') {
       toast?.addToast?.({
         type: 'error',
-        message: 'La suppression multiple n'est pas disponible.',
+        message: "La suppression multiple n'est pas disponible.",
       })
       return
     }
