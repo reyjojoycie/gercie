@@ -1,666 +1,1772 @@
-import { createClient } from '@/lib/supabaseServer'
-import { requireLivreur } from '@/lib/auth/livreurGuard'
+// app/api/livreur/courses/[id]/route.ts
+// ============================================================================
+// API Livreur – Détail et actions sur une course
+// Version complète, sécurisée et sans wallet / portefeuille / solde / retrait.
+//
+// Endpoints :
+// - GET  /api/livreur/courses/:id
+// - POST /api/livreur/courses/:id
+//
+// Actions POST :
+// { "action": "accept" }
+//
+// { "action": "validate-article", "article_id": "...", "code": "123456" }
+//
+// {
+//   "action": "refuse-article",
+//   "article_id": "...",
+//   "motif": "...",
+//   "photo_preuve": "https://..."
+// }
+//
+// {
+//   "action": "deliver",
+//   "code_client": "A1B2C3",
+//   "photos_livraison": ["https://..."],
+//   "signature_client": "data:image/png;base64,...",
+//   "geoloc": {
+//     "latitude": -4.3217,
+//     "longitude": 15.3125,
+//     "accuracy": 20
+//   }
+// }
+//
+// {
+//   "action": "signal",
+//   "type": "client_absent",
+//   "message": "...",
+//   "photo": "https://..."
+// }
+// ============================================================================
+
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { sendEmail, sendSMS, createNotification } from '@/lib/notifications'
+
+import { createClient } from '@/lib/supabaseServer'
 import logger from '@/lib/logger'
-import { rateLimit, applyRateLimitHeaders } from '@/lib/rateLimit'
 
-const ESCROW_USER_ID = process.env.ESCROW_USER_ID ?? ''
-const MAX_PIN_ATTEMPTS = 3
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-const acceptSchema = z.object({
-  action: z.literal('accept'),
-  current_lat: z.number().min(-90).max(90).optional(),
-  current_lng: z.number().min(-180).max(180).optional(),
-})
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONSTANTES                                                     */
+/* ═══════════════════════════════════════════════════════════════ */
 
-const validateArticleSchema = z.object({
-  action: z.literal('validate-article'),
-  article_id: z.string().uuid(),
-  code: z.string().length(6, 'Le code doit contenir 6 caractères'),
-})
+const LIVRAISONS_TABLE = 'livraisons'
+const COMMANDES_TABLE = 'commandes'
+const ARTICLES_TABLE = 'commande_articles'
+const PRODUITS_TABLE = 'produits'
+const PROFILES_TABLE = 'profiles'
+const VENDEURS_TABLE = 'vendeurs'
+const SIGNALEMENTS_TABLES = ['course_signals', 'livreur_signalements']
 
-const refuseArticleSchema = z.object({
-  action: z.literal('refuse-article'),
-  article_id: z.string().uuid(),
-  motif: z.string().min(5, 'Le motif doit contenir au moins 5 caractères'),
-  photo_preuve: z.string().url().optional().nullable(),
-})
+const MAX_CODE_ATTEMPTS = 3
 
-const deliverSchema = z.object({
-  action: z.literal('deliver'),
-  pin: z.string().length(6, 'Le code PIN doit contenir 6 chiffres'),
-  photos_livraison: z.array(z.string().url()).optional(),
-  signature_client: z.string().optional(),
-  geoloc: z.object({
-    latitude: z.number().min(-90).max(90),
-    longitude: z.number().min(-180).max(180),
-    accuracy: z.number().optional(),
-  }).optional(),
-})
+const log = (logger as any) || console
 
-const signalSchema = z.object({
-  action: z.literal('signal'),
-  type: z.enum(['warning', 'danger', 'info']),
-  message: z.string().min(10, 'Veuillez décrire le problème'),
-  photo: z.string().url().optional(),
-})
+/* ═══════════════════════════════════════════════════════════════ */
+/*  HELPERS GÉNÉRAUX                                               */
+/* ═══════════════════════════════════════════════════════════════ */
 
-const actionSchema = z.discriminatedUnion('action', [
-  acceptSchema,
-  validateArticleSchema,
-  refuseArticleSchema,
-  deliverSchema,
-  signalSchema,
-])
+function nowIso(): string {
+  return new Date().toISOString()
+}
 
-async function updateLivreurStats(supabase: any, livreurId: string, distanceKm: number = 0) {
-  const now = new Date().toISOString()
-  try {
-    await supabase.rpc('increment_livreur_stats', {
-      p_livreur_id: livreurId,
-      p_distance: distanceKm,
-      p_now: now,
-    })
-  } catch {
-    const { data: stats } = await supabase
-      .from('livreurs')
-      .select('total_livraisons, distance_parcourue_km')
-      .eq('id', livreurId)
-      .single()
-    const newTotal = (stats?.total_livraisons || 0) + 1
-    const newDistance = (stats?.distance_parcourue_km || 0) + distanceKm
-    await supabase
-      .from('livreurs')
-      .update({
-        total_livraisons: newTotal,
-        distance_parcourue_km: newDistance,
-        derniere_activite: now,
+function errorMessage(error: any, fallback: string): string {
+  return String(error?.message || error?.details || error?.hint || fallback)
+}
+
+function isTableMissingError(error: any): boolean {
+  const message = String(error?.message || '').toLowerCase()
+
+  return (
+    error?.code === '42P01' ||
+    message.includes('relation') ||
+    message.includes('does not exist') ||
+    message.includes('n’existe pas') ||
+    message.includes("n'existe pas")
+  )
+}
+
+function isColumnError(error: any): boolean {
+  const message = String(error?.message || '').toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    message.includes('column') ||
+    message.includes('does not exist') ||
+    message.includes('could not find')
+  )
+}
+
+function extractMissingColumn(message: string): string | null {
+  const patterns = [
+    /column\s+"([^"]+)"/i,
+    /column\s+([a-zA-Z0-9_]+)/i,
+    /could not find .*?["']([a-zA-Z0-9_]+)["']/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern)
+    if (match?.[1]) return match[1]
+  }
+
+  return null
+}
+
+function toBool(value: unknown, fallback = false): boolean {
+  if (typeof value === 'boolean') return value
+  if (value === 1 || value === '1') return true
+  if (value === 0 || value === '0') return false
+
+  const str = String(value ?? '').toLowerCase().trim()
+
+  if (['true', 'oui', 'yes', 'on', 'actif', 'active'].includes(str)) return true
+  if (['false', 'non', 'no', 'off', 'inactif', 'inactive'].includes(str)) {
+    return false
+  }
+
+  return fallback
+}
+
+function toNum(value: unknown, fallback = 0): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function toNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function textOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+
+  const str = String(value).trim()
+  return str ? str : null
+}
+
+function toStringArray(payload: any): string[] {
+  if (!payload) return []
+
+  if (Array.isArray(payload)) {
+    return payload
+      .map((item) => {
+        if (typeof item === 'string') return item
+        return item?.url || item?.publicUrl || item?.path || ''
       })
-      .eq('id', livreurId)
+      .filter(Boolean)
+  }
+
+  if (typeof payload === 'string') {
+    return payload
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  return []
+}
+
+function unique(values: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(values.filter(Boolean) as string[]))
+}
+
+function normalizeRole(value: unknown): string {
+  return String(value || '').trim().toLowerCase()
+}
+
+function hasRole(values: unknown[], expected: string): boolean {
+  return values.some((value) => normalizeRole(value) === expected)
+}
+
+function generateNumericCode(length = 6): string {
+  let code = ''
+  for (let i = 0; i < length; i += 1) {
+    code += Math.floor(Math.random() * 10).toString()
+  }
+  return code
+}
+
+function generateAlphaCode(length = 6): string {
+  const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let code = ''
+
+  for (let i = 0; i < length; i += 1) {
+    code += charset[Math.floor(Math.random() * charset.length)]
+  }
+
+  return code
+}
+
+function normalizeStatus(value: unknown): string {
+  const raw = String(value || 'en_attente')
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, '_')
+
+  const aliases: Record<string, string> = {
+    delivered: 'livree',
+    completed: 'livree',
+    termine: 'livree',
+    terminee: 'livree',
+
+    cancelled: 'annulee',
+    canceled: 'annulee',
+    refusee: 'annulee',
+    echouee: 'annulee',
+    failed: 'annulee',
+
+    assigned: 'acceptee',
+    accepted: 'acceptee',
+    acceptee: 'acceptee',
+
+    picked_up: 'colis_recupere',
+    recupere: 'colis_recupere',
+    collecte: 'colis_recupere',
+
+    in_transit: 'en_route',
+    en_cours: 'en_route',
+    route: 'en_route',
+
+    pending: 'en_attente',
+    en_attente: 'en_attente',
+  }
+
+  return aliases[raw] || raw
+}
+
+function normalizeCollectStatus(value: unknown): 'en_attente' | 'accepte' | 'refuse' {
+  const raw = String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, '_')
+
+  if (['accepte', 'valide', 'ok', 'collecte', 'recupere'].includes(raw)) {
+    return 'accepte'
+  }
+
+  if (['refuse', 'rejete', 'cancel', 'annule'].includes(raw)) {
+    return 'refuse'
+  }
+
+  return 'en_attente'
+}
+
+async function resolveRouteId(params: any): Promise<string | null> {
+  try {
+    const resolved = await params
+    if (resolved && typeof resolved.id === 'string') return resolved.id
+  } catch {
+    // Next.js 14 peut déjà fournir un objet
+  }
+
+  if (params && typeof params.id === 'string') return params.id
+
+  return null
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SUPABASE                                                       */
+/* ═══════════════════════════════════════════════════════════════ */
+
+async function getSupabaseClients(): Promise<{
+  supabase: any
+  supabaseAdmin: any
+}> {
+  const userClient: any = await createClient(false)
+  const adminClient: any = await createClient(true)
+
+  return {
+    supabase: userClient?.supabase ?? userClient,
+    supabaseAdmin: adminClient?.supabase ?? adminClient,
   }
 }
 
-async function addHistorique(
-  supabase: any,
-  livreurId: string,
-  commandeId: string,
-  action: string,
-  details: any = {},
-  ip?: string
-) {
+/* ═══════════════════════════════════════════════════════════════ */
+/*  AUTH LIVREUR                                                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface AuthResult {
+  response?: NextResponse
+  user?: any
+  livreurId?: string
+  supabaseAdmin?: any
+}
+
+async function authenticateLivreur(): Promise<AuthResult> {
   try {
-    await supabase.from('livreur_historique').insert({
-      livreur_id: livreurId,
-      commande_id: commandeId,
-      action,
-      details: { ...details, timestamp: new Date().toISOString(), ip: ip || 'unknown' },
+    const { supabase, supabaseAdmin } = await getSupabaseClients()
+
+    if (!supabase || !supabaseAdmin) {
+      return {
+        response: NextResponse.json(
+          {
+            error: 'Configuration Supabase invalide côté serveur.',
+            code: 'SUPABASE_CLIENT_ERROR',
+          },
+          { status: 500 }
+        ),
+      }
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !authData?.user) {
+      return {
+        response: NextResponse.json(
+          {
+            error: 'Authentification requise.',
+            code: 'UNAUTHORIZED',
+          },
+          { status: 401 }
+        ),
+      }
+    }
+
+    const user = authData.user
+
+    const metadataRoles = [
+      user?.user_metadata?.role,
+      user?.user_metadata?.type_user,
+      user?.app_metadata?.role,
+      user?.app_metadata?.type_user,
+      user?.role,
+    ].filter(Boolean)
+
+    if (hasRole(metadataRoles, 'livreur')) {
+      return { user, livreurId: user.id, supabaseAdmin }
+    }
+
+    try {
+      const { data: profile } = await supabaseAdmin
+        .from(PROFILES_TABLE)
+        .select('id, type_user, role, is_admin')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      const profileRoles = [profile?.type_user, profile?.role].filter(Boolean)
+
+      if (hasRole(profileRoles, 'livreur')) {
+        return { user, livreurId: user.id, supabaseAdmin }
+      }
+    } catch {
+      // profiles peut être absent ou interdit : on continue
+    }
+
+    try {
+      const { data: livreurById } = await supabaseAdmin
+        .from('livreurs')
+        .select('id, user_id')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (livreurById) {
+        return {
+          user,
+          livreurId: String(livreurById.id || user.id),
+          supabaseAdmin,
+        }
+      }
+    } catch {
+      // livreurs peut être absent : on continue
+    }
+
+    try {
+      const { data: livreurByUserId } = await supabaseAdmin
+        .from('livreurs')
+        .select('id, user_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (livreurByUserId) {
+        return {
+          user,
+          livreurId: String(livreurByUserId.id || user.id),
+          supabaseAdmin,
+        }
+      }
+    } catch {
+      // colonne user_id peut être absente : on continue
+    }
+
+    return {
+      response: NextResponse.json(
+        {
+          error: 'Accès réservé aux livreurs.',
+          code: 'FORBIDDEN',
+        },
+        { status: 403 }
+      ),
+    }
+  } catch (error: any) {
+    log.error?.('Crash authenticateLivreur', error)
+
+    return {
+      response: NextResponse.json(
+        {
+          error: 'Erreur serveur lors de la vérification du livreur.',
+          code: 'INTERNAL_ERROR',
+          details:
+            process.env.NODE_ENV === 'development'
+              ? errorMessage(error, 'Erreur inconnue')
+              : undefined,
+        },
+        { status: 500 }
+      ),
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  UPDATE / INSERT TOLÉRANTS                                      */
+/* ═══════════════════════════════════════════════════════════════ */
+
+async function updateByIdWithFallback(
+  supabaseAdmin: any,
+  table: string,
+  id: string,
+  payload: Record<string, unknown>
+): Promise<{ data: any | null; error: any | null }> {
+  let currentPayload = { ...payload }
+  let lastError: any = null
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (Object.keys(currentPayload).length === 0) {
+      return {
+        data: null,
+        error: {
+          message: 'Aucune colonne disponible pour la mise à jour.',
+          code: 'EMPTY_UPDATE',
+        },
+      }
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .update(currentPayload)
+      .eq('id', id)
+      .select('*')
+      .maybeSingle()
+
+    if (!error) {
+      return { data, error: null }
+    }
+
+    lastError = error
+
+    if (isColumnError(error)) {
+      const missingColumn = extractMissingColumn(errorMessage(error, ''))
+
+      if (missingColumn && missingColumn in currentPayload) {
+        delete currentPayload[missingColumn]
+        continue
+      }
+    }
+
+    break
+  }
+
+  return { data: null, error: lastError }
+}
+
+async function insertWithFallback(
+  supabaseAdmin: any,
+  table: string,
+  payload: Record<string, unknown>
+): Promise<{ data: any | null; error: any | null }> {
+  let currentPayload = { ...payload }
+  let lastError: any = null
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (Object.keys(currentPayload).length === 0) {
+      return {
+        data: null,
+        error: {
+          message: 'Aucune colonne disponible pour l’insertion.',
+          code: 'EMPTY_INSERT',
+        },
+      }
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .insert(currentPayload)
+      .select('*')
+      .maybeSingle()
+
+    if (!error) {
+      return { data, error: null }
+    }
+
+    lastError = error
+
+    if (isColumnError(error)) {
+      const missingColumn = extractMissingColumn(errorMessage(error, ''))
+
+      if (missingColumn && missingColumn in currentPayload) {
+        delete currentPayload[missingColumn]
+        continue
+      }
+    }
+
+    break
+  }
+
+  return { data: null, error: lastError }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  LOAD COURSE                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
+type LoadCourseResult =
+  | { status: 'ok'; course: any }
+  | { status: 'not_found' }
+  | { status: 'forbidden' }
+  | { status: 'error'; error: any }
+
+async function loadCourse(
+  supabaseAdmin: any,
+  routeId: string,
+  livreurId: string
+): Promise<LoadCourseResult> {
+  try {
+    let livraison: any = null
+    let commandeId = routeId
+
+    /* ------------------------------------------------------------ */
+    /* 1. Essayer de charger la livraison par son id                 */
+    /* ------------------------------------------------------------ */
+
+    try {
+      const { data } = await supabaseAdmin
+        .from(LIVRAISONS_TABLE)
+        .select('*')
+        .eq('id', routeId)
+        .maybeSingle()
+
+      if (data) {
+        livraison = data
+        commandeId = String(
+          data.commande_id || data.order_id || data.id || routeId
+        )
+      }
+    } catch {
+      // table livraisons peut être absente
+    }
+
+    /* ------------------------------------------------------------ */
+    /* 2. Sinon essayer par commande_id                             */
+    /* ------------------------------------------------------------ */
+
+    if (!livraison) {
+      try {
+        const { data } = await supabaseAdmin
+          .from(LIVRAISONS_TABLE)
+          .select('*')
+          .eq('commande_id', routeId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (data) {
+          livraison = data
+          commandeId = String(data.commande_id || data.id || routeId)
+        }
+      } catch {
+        try {
+          const { data } = await supabaseAdmin
+            .from(LIVRAISONS_TABLE)
+            .select('*')
+            .eq('commande_id', routeId)
+            .limit(1)
+            .maybeSingle()
+
+          if (data) {
+            livraison = data
+            commandeId = String(data.commande_id || data.id || routeId)
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    /* ------------------------------------------------------------ */
+    /* 3. Charger la commande                                       */
+    /* ------------------------------------------------------------ */
+
+    let commande: any = null
+
+    try {
+      const { data } = await supabaseAdmin
+        .from(COMMANDES_TABLE)
+        .select('*')
+        .eq('id', commandeId)
+        .maybeSingle()
+
+      commande = data
+    } catch {
+      // table commandes peut être absente
+    }
+
+    if (!commande && !livraison) {
+      return { status: 'not_found' }
+    }
+
+    /* ------------------------------------------------------------ */
+    /* 4. Vérifier affectation                                      */
+    /* ------------------------------------------------------------ */
+
+    const livraisonLivreurId = textOrNull(
+      livraison?.livreur_id ?? livraison?.livreurId
+    )
+
+    if (livraisonLivreurId && livraisonLivreurId !== livreurId) {
+      return { status: 'forbidden' }
+    }
+
+    const commandeLivreurId = textOrNull(
+      commande?.livreur_id ?? commande?.livreurId
+    )
+
+    if (!livraison && commandeLivreurId && commandeLivreurId !== livreurId) {
+      return { status: 'forbidden' }
+    }
+
+    /* ------------------------------------------------------------ */
+    /* 5. Charger le client                                         */
+    /* ------------------------------------------------------------ */
+
+    let clientProfile: any = null
+
+    const clientId = textOrNull(
+      commande?.client_id ??
+        commande?.acheteur_id ??
+        commande?.customer_id ??
+        livraison?.client_id
+    )
+
+    if (clientId) {
+      try {
+        const { data } = await supabaseAdmin
+          .from(PROFILES_TABLE)
+          .select(
+            'id, nom, prenom, email, telephone, latitude, longitude, avatar_url'
+          )
+          .eq('id', clientId)
+          .maybeSingle()
+
+        clientProfile = data
+      } catch {
+        try {
+          const { data } = await supabaseAdmin
+            .from(PROFILES_TABLE)
+            .select('id, nom, prenom, email, telephone')
+            .eq('id', clientId)
+            .maybeSingle()
+
+          clientProfile = data
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    /* ------------------------------------------------------------ */
+    /* 6. Charger les articles                                      */
+    /* ------------------------------------------------------------ */
+
+    let rawArticles: any[] = []
+
+    try {
+      const { data } = await supabaseAdmin
+        .from(ARTICLES_TABLE)
+        .select('*')
+        .eq('commande_id', commandeId)
+        .order('created_at', { ascending: true })
+
+      rawArticles = Array.isArray(data) ? data : []
+    } catch {
+      try {
+        const { data } = await supabaseAdmin
+          .from(ARTICLES_TABLE)
+          .select('*')
+          .eq('commande_id', commandeId)
+
+        rawArticles = Array.isArray(data) ? data : []
+      } catch {
+        rawArticles = []
+      }
+    }
+
+    /* ------------------------------------------------------------ */
+    /* 7. Charger produits                                          */
+    /* ------------------------------------------------------------ */
+
+    const produitIds = unique(
+      rawArticles.map((article) =>
+        textOrNull(article?.produit_id ?? article?.product_id)
+      )
+    )
+
+    const produitsMap = new Map<string, any>()
+
+    if (produitIds.length > 0) {
+      try {
+        const { data } = await supabaseAdmin
+          .from(PRODUITS_TABLE)
+          .select('id, nom, images, vendeur_id')
+          .in('id', produitIds)
+
+        for (const produit of data ?? []) {
+          produitsMap.set(String(produit.id), produit)
+        }
+      } catch {
+        try {
+          const { data } = await supabaseAdmin
+            .from(PRODUITS_TABLE)
+            .select('id, nom, images')
+            .in('id', produitIds)
+
+          for (const produit of data ?? []) {
+            produitsMap.set(String(produit.id), produit)
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    /* ------------------------------------------------------------ */
+    /* 8. Charger vendeurs                                          */
+    /* ------------------------------------------------------------ */
+
+    const vendeurIds = unique(
+      Array.from(produitsMap.values()).map((produit) =>
+        textOrNull(produit?.vendeur_id)
+      )
+    )
+
+    const vendeursMap = new Map<string, any>()
+
+    if (vendeurIds.length > 0) {
+      try {
+        const { data } = await supabaseAdmin
+          .from(PROFILES_TABLE)
+          .select(
+            'id, nom, prenom, telephone, adresse_boutique, latitude, longitude'
+          )
+          .in('id', vendeurIds)
+
+        for (const vendeur of data ?? []) {
+          vendeursMap.set(String(vendeur.id), vendeur)
+        }
+      } catch {
+        try {
+          const { data } = await supabaseAdmin
+            .from(VENDEURS_TABLE)
+            .select(
+              'id, nom, prenom, telephone, adresse_boutique, latitude, longitude'
+            )
+            .in('id', vendeurIds)
+
+          for (const vendeur of data ?? []) {
+            vendeursMap.set(String(vendeur.id), vendeur)
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    /* ------------------------------------------------------------ */
+    /* 9. Normaliser articles                                       */
+    /* ------------------------------------------------------------ */
+
+    const articles = rawArticles.map((article, index) => {
+      const produitId = textOrNull(article?.produit_id ?? article?.product_id)
+      const produit = produitId ? produitsMap.get(produitId) : null
+      const vendeurId = textOrNull(produit?.vendeur_id)
+      const vendeur = vendeurId ? vendeursMap.get(vendeurId) : null
+
+      return {
+        id: String(article?.id || `article-${index}`),
+        produit_id: String(produitId || ''),
+        nom: String(
+          article?.nom ||
+            article?.product_name ||
+            produit?.nom ||
+            `Article ${index + 1}`
+        ).trim(),
+        quantite: toNum(article?.quantite ?? article?.quantity, 1),
+        specifications: textOrNull(article?.specifications ?? article?.specs),
+        variante: article?.variante ?? null,
+        statut_collecte: normalizeCollectStatus(
+          article?.statut_collecte ?? article?.collect_status ?? article?.statut
+        ),
+        motif_refus: textOrNull(article?.motif_refus ?? article?.refuse_reason),
+        photo_preuve: textOrNull(article?.photo_preuve ?? article?.proof_photo),
+        produits: {
+          id: String(produitId || ''),
+          nom: String(produit?.nom || article?.nom || ''),
+          images: toStringArray(produit?.images),
+        },
+        vendeur: vendeur
+          ? {
+              nom: String(vendeur.nom || vendeur.last_name || '').trim(),
+              prenom: String(vendeur.prenom || vendeur.first_name || '').trim(),
+              telephone: textOrNull(vendeur.telephone ?? vendeur.phone),
+              adresse_boutique: textOrNull(
+                vendeur.adresse_boutique ??
+                  vendeur.boutique_address ??
+                  vendeur.address
+              ),
+              latitude: toNullableNumber(vendeur.latitude),
+              longitude: toNullableNumber(vendeur.longitude),
+            }
+          : null,
+      }
     })
-  } catch (e) {
-    logger.error('Échec ajout historique livreur', e)
+
+    /* ------------------------------------------------------------ */
+    /* 10. Construire réponse                                       */
+    /* ------------------------------------------------------------ */
+
+    const normalizedStatut = normalizeStatus(
+      livraison?.statut ?? livraison?.status ?? 'en_attente'
+    )
+
+    const code_livraison_client = textOrNull(
+      livraison?.code_livraison_client ??
+        livraison?.code_client ??
+        commande?.code_livraison_client ??
+        commande?.code_client
+    )
+
+    const code_livreur = textOrNull(livraison?.code_livreur)
+
+    const disponible =
+      !livraison ||
+      ['en_attente', 'annulee'].includes(normalizedStatut)
+
+    const course = {
+      id: String(commandeId || livraison?.id || routeId),
+      numero: String(
+        commande?.numero ||
+          commande?.numero_commande ||
+          commande?.order_number ||
+          commandeId ||
+          ''
+      ),
+      type_livraison: String(
+        commande?.type_livraison ??
+          commande?.delivery_type ??
+          'domicile'
+      ).toLowerCase(),
+      adresse:
+        textOrNull(
+          commande?.adresse ??
+            commande?.adresse_livraison ??
+            commande?.delivery_address ??
+            commande?.address
+        ) || '',
+      point_retrait_nom: textOrNull(
+        commande?.point_retrait_nom ??
+          commande?.pickup_point_name ??
+          commande?.point_retrait?.nom
+      ),
+      commune:
+        textOrNull(commande?.commune ?? commande?.ville ?? commande?.zone) || '',
+      code_livraison_client: code_livraison_client || '',
+      code_livreur,
+      disponible,
+      client: {
+        nom: String(
+          clientProfile?.nom ||
+            clientProfile?.last_name ||
+            commande?.client_nom ||
+            ''
+        ).trim(),
+        prenom: String(
+          clientProfile?.prenom ||
+            clientProfile?.first_name ||
+            commande?.client_prenom ||
+            ''
+        ).trim(),
+        telephone: textOrNull(
+          clientProfile?.telephone ??
+            clientProfile?.phone ??
+            commande?.client_telephone
+        ),
+        latitude: toNullableNumber(
+          clientProfile?.latitude ??
+            commande?.latitude_livraison ??
+            commande?.lat
+        ),
+        longitude: toNullableNumber(
+          clientProfile?.longitude ??
+            commande?.longitude_livraison ??
+            commande?.lng
+        ),
+      },
+      articles,
+      livraison: livraison
+        ? {
+            id: String(livraison.id || ''),
+            statut: normalizedStatut,
+            tentativas_code: toNum(livraison.tentativas_code, 0),
+            created_at: textOrNull(livraison.created_at),
+            delivered_at: textOrNull(
+              livraison.delivered_at ?? livraison.date_livraison
+            ),
+            photos_livraison: toStringArray(
+              livraison.photos_livraison ?? livraison.delivery_photos
+            ),
+            signature_client: textOrNull(
+              livraison.signature_client ?? livraison.client_signature
+            ),
+            geoloc:
+              livraison.geoloc ??
+              (livraison.latitude !== undefined &&
+              livraison.longitude !== undefined
+                ? {
+                    latitude: toNum(livraison.latitude),
+                    longitude: toNum(livraison.longitude),
+                    accuracy: toNullableNumber(livraison.accuracy),
+                  }
+                : null),
+          }
+        : null,
+    }
+
+    return { status: 'ok', course }
+  } catch (error: any) {
+    log.error?.('Crash loadCourse', error)
+
+    return { status: 'error', error }
   }
 }
 
-async function notifyArticleValidated(
-  supabase: any,
-  article: any,
-  commandeId: string,
-  livreurName: string
-) {
-  try {
-    const vendeurId = article.produits?.vendeur_id
-    if (!vendeurId) return
-    const { data: vendeurProfile } = await supabase
-      .from('profiles')
-      .select('email, telephone, prenom, nom')
-      .eq('id', vendeurId)
-      .single()
-    if (vendeurProfile?.email) {
-      await sendEmail(
-        vendeurProfile.email,
-        `✅ Article validé – ${article.produits?.nom}`,
-        `<p>Bonjour ${vendeurProfile.prenom},</p>
-         <p>L'article <strong>${article.produits?.nom}</strong> a été validé par le livreur <strong>${livreurName}</strong> lors de la collecte.</p>
-         <p>Il sera livré prochainement.</p>`
-      )
-    }
-    if (vendeurProfile) {
-      await createNotification(
-        vendeurId,
-        'collecte',
-        'Article validé',
-        `Votre article "${article.produits?.nom}" a été récupéré par le livreur.`,
-        { commande_id: commandeId, article_id: article.id }
-      )
-    }
-  } catch (err) {
-    logger.error('Erreur notification validation article', err)
-  }
-}
-
-async function notifyArticleRefused(
-  supabase: any,
-  article: any,
-  commandeId: string,
-  motif: string,
-  livreurName: string
-) {
-  try {
-    const vendeurId = article.produits?.vendeur_id
-    if (!vendeurId) return
-    const { data: vendeurProfile } = await supabase
-      .from('profiles')
-      .select('email, telephone, prenom')
-      .eq('id', vendeurId)
-      .single()
-    if (vendeurProfile?.email) {
-      await sendEmail(
-        vendeurProfile.email,
-        `❌ Article refusé – ${article.produits?.nom}`,
-        `<p>Bonjour ${vendeurProfile.prenom},</p>
-         <p>L'article <strong>${article.produits?.nom}</strong> a été refusé par le livreur pour le motif suivant :</p>
-         <blockquote>${motif}</blockquote>`
-      )
-    }
-    if (vendeurProfile) {
-      await createNotification(
-        vendeurId,
-        'collecte',
-        'Article refusé',
-        `"${article.produits?.nom}" refusé. Motif : ${motif.substring(0, 80)}`,
-        { commande_id: commandeId, article_id: article.id, motif }
-      )
-    }
-  } catch (err) {
-    logger.error('Erreur notification refus article', err)
-  }
-}
+/* ═══════════════════════════════════════════════════════════════ */
+/*  GET                                                            */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: any }
 ) {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
-  const { allowed, headers } = rateLimit({ id: `course-get:${ip}`, maxRequests: 20 })
-  if (!allowed) return applyRateLimitHeaders(NextResponse.json({ error: 'Trop de requêtes' }, { status: 429 }), headers)
+  const auth = await authenticateLivreur()
+  if (auth.response) return auth.response
 
-  try {
-    const livreur = await requireLivreur()
-    const livreurId = livreur.id
-    const { id } = await params
-    const supabase = await createClient(true)
+  const routeId = await resolveRouteId(context.params)
 
-    const { data: commande, error: cmdError } = await supabase
-      .from('commandes')
-      .select(`
-        id, numero_commande, total_global, statut, type_livraison,
-        adresse_livraison, code_livraison, point_retrait_id,
-        points_retrait (nom, adresse), commune_livraison_id,
-        communes (nom), acheteur:acheteur_id(nom, prenom, telephone)
-      `)
-      .eq('id', id)
-      .single()
-    if (cmdError || !commande) {
-      return NextResponse.json({ error: 'Commande introuvable' }, { status: 404 })
-    }
-
-    const { data: articles } = await supabase
-      .from('commande_articles')
-      .select(`
-        id, quantite, prix_unitaire, specifications, variante,
-        code_vendeur, code_acheteur, statut_collecte, motif_refus,
-        photo_preuve, collecte_validee_at,
-        produits (id, nom, description, images, video_url, vendeur_id)
-      `)
-      .eq('commande_id', id)
-
-    const articlesAvecVendeur = await Promise.all(
-      (articles || []).map(async (article: any) => {
-        const vendeurId = article.produits?.vendeur_id
-        let vendeur = null
-        if (vendeurId) {
-          const { data: v } = await supabase
-            .from('profiles')
-            .select('nom, prenom, telephone, adresse_boutique, latitude, longitude')
-            .eq('id', vendeurId)
-            .single()
-          vendeur = v
-        }
-        return {
-          ...article,
-          vendeur: vendeur || { nom: '', prenom: '', telephone: '', adresse_boutique: '', latitude: null, longitude: null },
-        }
-      })
-    )
-
-    const { data: existingLivraison } = await supabase
-      .from('livraisons')
-      .select('*')
-      .eq('commande_id', id)
-      .maybeSingle()
-
-    const isAvailable = commande.statut === 'payee' && !existingLivraison
-    const adresse =
-      commande.type_livraison === 'domicile'
-        ? commande.adresse_livraison
-        : commande.points_retrait?.adresse
-
-    const { data: acheteurProfile } = await supabase
-      .from('profiles')
-      .select('latitude, longitude')
-      .eq('id', commande.acheteur_id)
-      .single()
-
-    return NextResponse.json({
-      id: commande.id,
-      numero: commande.numero_commande,
-      total: commande.total_global,
-      statut_commande: commande.statut,
-      type_livraison: commande.type_livraison,
-      adresse,
-      point_retrait_nom: commande.type_livraison === 'point_retrait' ? commande.points_retrait?.nom : null,
-      commune: commande.communes?.nom,
-      code_livraison_client: commande.code_livraison,
-      client: {
-        nom: commande.acheteur?.nom || '',
-        prenom: commande.acheteur?.prenom || '',
-        telephone: commande.acheteur?.telephone || '',
-        latitude: acheteurProfile?.latitude || null,
-        longitude: acheteurProfile?.longitude || null,
+  if (!routeId) {
+    return NextResponse.json(
+      {
+        error: 'ID de course invalide.',
+        code: 'INVALID_ID',
       },
-      articles: articlesAvecVendeur,
-      livraison: existingLivraison,
-      code_livreur: existingLivraison?.code_livreur || null,
-      disponible: isAvailable,
-    })
-  } catch (error: any) {
-    logger.error('Erreur GET course', error)
-    return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 })
+      { status: 400 }
+    )
   }
+
+  const result = await loadCourse(auth.supabaseAdmin!, routeId, auth.livreurId!)
+
+  if (result.status === 'not_found') {
+    return NextResponse.json(
+      {
+        error: 'Course introuvable.',
+        code: 'NOT_FOUND',
+      },
+      { status: 404 }
+    )
+  }
+
+  if (result.status === 'forbidden') {
+    return NextResponse.json(
+      {
+        error: 'Cette course ne t’est pas assignée.',
+        code: 'FORBIDDEN',
+      },
+      { status: 403 }
+    )
+  }
+
+  if (result.status === 'error') {
+    return NextResponse.json(
+      {
+        error: 'Erreur serveur lors du chargement de la course.',
+        code: 'INTERNAL_ERROR',
+        details:
+          process.env.NODE_ENV === 'development'
+            ? errorMessage(result.error, 'Erreur inconnue')
+            : undefined,
+      },
+      { status: 500 }
+    )
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: result.course,
+    generated_at: nowIso(),
+  })
 }
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  POST                                                           */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const postSchema = z
+  .object({
+    action: z.string().min(1),
+  })
+  .passthrough()
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: any }
 ) {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
-  const { allowed, headers: rateLimitHeaders } = rateLimit({
-    id: `course-action:${ip}`,
-    maxRequests: 15,
-    windowSeconds: 60,
-  })
-  if (!allowed) {
-    return applyRateLimitHeaders(
-      NextResponse.json({ error: 'Trop de requêtes. Veuillez patienter.' }, { status: 429 }),
-      rateLimitHeaders
+  const auth = await authenticateLivreur()
+  if (auth.response) return auth.response
+
+  const routeId = await resolveRouteId(context.params)
+
+  if (!routeId) {
+    return NextResponse.json(
+      {
+        error: 'ID de course invalide.',
+        code: 'INVALID_ID',
+      },
+      { status: 400 }
     )
   }
 
   let body: any
+
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json({ error: 'Corps de requête invalide (JSON attendu)' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'Corps de requête JSON invalide.',
+        code: 'INVALID_JSON',
+      },
+      { status: 400 }
+    )
   }
 
+  const parsedBody = postSchema.safeParse(body)
+
+  if (!parsedBody.success) {
+    return NextResponse.json(
+      {
+        error: 'Action invalide.',
+        code: 'VALIDATION_ERROR',
+        details: parsedBody.error.flatten().fieldErrors,
+      },
+      { status: 400 }
+    )
+  }
+
+  const action = parsedBody.data.action
+  const supabaseAdmin = auth.supabaseAdmin!
+  const livreurId = auth.livreurId!
+
   try {
-    let livreur
-    try {
-      livreur = await requireLivreur()
-    } catch (authError: any) {
-      logger.warn('Échec authentification livreur', authError)
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
-
-    const livreurId = livreur.id
-    const { id } = await params
-    const supabase = await createClient(true)
-
-    const parsed = actionSchema.safeParse(body)
-    if (!parsed.success) {
-      logger.warn({ userId: livreurId, errors: parsed.error.flatten() }, 'Action invalide sur course')
-      return NextResponse.json(
-        { error: 'Données invalides', details: parsed.error.flatten() },
-        { status: 400 }
-      )
-    }
-
-    const { action } = parsed.data
-    logger.info({ userId: livreurId, commandeId: id, action }, 'Action livreur sur course')
+    /* ------------------------------------------------------------ */
+    /* ACCEPT                                                        */
+    /* ------------------------------------------------------------ */
 
     if (action === 'accept') {
-      const { current_lat, current_lng } = parsed.data
+      const loaded = await loadCourse(supabaseAdmin, routeId, livreurId)
 
-      const { data: commande, error: cmdError } = await supabase
-        .from('commandes')
-        .select('statut, total_global, adresse_livraison')
-        .eq('id', id)
-        .single()
-      if (cmdError || !commande) return NextResponse.json({ error: 'Commande introuvable' }, { status: 404 })
-      if (commande.statut !== 'payee') return NextResponse.json({ error: 'Commande non disponible' }, { status: 400 })
+      if (loaded.status !== 'ok') {
+        if (loaded.status === 'not_found') {
+          return NextResponse.json(
+            { error: 'Course introuvable.', code: 'NOT_FOUND' },
+            { status: 404 }
+          )
+        }
 
-      const { data: existing } = await supabase
-        .from('livraisons')
-        .select('id')
-        .eq('commande_id', id)
-        .maybeSingle()
-      if (existing) return NextResponse.json({ error: 'Cette commande a déjà été prise' }, { status: 400 })
+        if (loaded.status === 'forbidden') {
+          return NextResponse.json(
+            {
+              error: 'Cette course ne t’est pas assignée.',
+              code: 'FORBIDDEN',
+            },
+            { status: 403 }
+          )
+        }
 
-      const pin = Math.floor(100000 + Math.random() * 900000).toString()
-      const codeLivreur = Math.floor(100000 + Math.random() * 900000).toString()
+        return NextResponse.json(
+          {
+            error: 'Erreur serveur lors du chargement de la course.',
+            code: 'INTERNAL_ERROR',
+          },
+          { status: 500 }
+        )
+      }
 
-      const { data: livraison, error: insertError } = await supabase
-        .from('livraisons')
-        .insert({
-          commande_id: id,
+      const course = loaded.course
+      const existingLivraison = course.livraison
+
+      if (
+        existingLivraison &&
+        !['en_attente', 'annulee'].includes(existingLivraison.statut)
+      ) {
+        return NextResponse.json({
+          success: true,
+          message: 'Course déjà acceptée.',
+          data: course,
+          generated_at: nowIso(),
+        })
+      }
+
+      const code_livreur =
+        course.code_livreur || `LRV-${generateNumericCode(4)}`
+
+      const code_livraison_client =
+        course.code_livraison_client || generateAlphaCode(6)
+
+      if (existingLivraison?.id) {
+        const { error } = await updateByIdWithFallback(
+          supabaseAdmin,
+          LIVRAISONS_TABLE,
+          existingLivraison.id,
+          {
+            livreur_id: livreurId,
+            statut: 'acceptee',
+            code_livreur,
+            code_livraison_client,
+            updated_at: nowIso(),
+          }
+        )
+
+        if (error) {
+          return NextResponse.json(
+            {
+              error: 'Impossible d’accepter la course.',
+              code: 'UPDATE_FAILED',
+              details: errorMessage(error, 'Erreur inconnue'),
+            },
+            { status: 500 }
+          )
+        }
+      } else {
+        const { error } = await insertWithFallback(supabaseAdmin, LIVRAISONS_TABLE, {
+          commande_id: course.id,
           livreur_id: livreurId,
           statut: 'acceptee',
-          code_pin: pin,
-          code_livreur: codeLivreur,
-          tentatives_code: 0,
-          acceptee_at: new Date().toISOString(),
-          position_acceptation: current_lat && current_lng ? { lat: current_lat, lng: current_lng } : null,
+          code_livreur,
+          code_livraison_client,
+          created_at: nowIso(),
+          updated_at: nowIso(),
         })
-        .select()
-        .single()
-      if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
 
-      await supabase.from('commandes').update({ statut: 'collecte' }).eq('id', id)
-      await addHistorique(supabase, livreurId, id, 'accept', { current_lat, current_lng, commande_id: id }, ip)
+        if (error) {
+          return NextResponse.json(
+            {
+              error:
+                'Impossible de créer la livraison. Vérifie que la table public.livraisons existe.',
+              code: 'INSERT_FAILED',
+              details: errorMessage(error, 'Erreur inconnue'),
+            },
+            { status: 503 }
+          )
+        }
+      }
 
-      return applyRateLimitHeaders(NextResponse.json({
-        ...livraison,
-        code_livreur: codeLivreur,
-      }), rateLimitHeaders)
+      // Best effort : marquer la commande comme assignée
+      try {
+        await updateByIdWithFallback(supabaseAdmin, COMMANDES_TABLE, course.id, {
+          livreur_id: livreurId,
+          statut: 'assignee',
+          updated_at: nowIso(),
+        })
+      } catch {
+        // ignore
+      }
+
+      const refreshed = await loadCourse(supabaseAdmin, routeId, livreurId)
+
+      return NextResponse.json({
+        success: true,
+        message: 'Course acceptée.',
+        data: refreshed.status === 'ok' ? refreshed.course : course,
+        generated_at: nowIso(),
+      })
     }
+
+    /* ------------------------------------------------------------ */
+    /* VALIDATE ARTICLE                                              */
+    /* ------------------------------------------------------------ */
 
     if (action === 'validate-article') {
-      const { article_id, code } = parsed.data
-      const { data: article, error: artError } = await supabase
-        .from('commande_articles')
-        .select('id, code_vendeur, statut_collecte, produits(vendeur_id, nom)')
-        .eq('id', article_id)
-        .single()
-      if (artError || !article) return NextResponse.json({ error: 'Article introuvable' }, { status: 404 })
-      if (article.statut_collecte === 'accepte') return NextResponse.json({ error: 'Déjà validé' }, { status: 400 })
-      if (article.code_vendeur !== code) return NextResponse.json({ error: 'Code invalide' }, { status: 400 })
+      const articleId = textOrNull(body?.article_id)
+      const code = textOrNull(body?.code)
 
-      const now = new Date().toISOString()
-      await supabase
-        .from('commande_articles')
-        .update({ statut_collecte: 'accepte', collecte_validee_at: now })
-        .eq('id', article_id)
-
-      await notifyArticleValidated(supabase, article, id, `${livreur.prenom} ${livreur.nom}`)
-
-      const { data: allArticles } = await supabase
-        .from('commande_articles')
-        .select('statut_collecte')
-        .eq('commande_id', id)
-      const tousTraites = allArticles?.every(a => a.statut_collecte === 'accepte' || a.statut_collecte === 'refuse') || false
-      if (tousTraites) {
-        await supabase
-          .from('livraisons')
-          .update({ statut: 'colis_recupere', recupere_at: now })
-          .eq('commande_id', id)
-        await supabase.from('commandes').update({ statut: 'en_livraison' }).eq('id', id)
-      }
-
-      await addHistorique(supabase, livreurId, id, 'validate-article', { article_id, code }, ip)
-      return applyRateLimitHeaders(NextResponse.json({ success: true, tousTraites }), rateLimitHeaders)
-    }
-
-    if (action === 'refuse-article') {
-      const { article_id, motif, photo_preuve } = parsed.data
-      const now = new Date().toISOString()
-      await supabase
-        .from('commande_articles')
-        .update({
-          statut_collecte: 'refuse',
-          motif_refus: motif,
-          photo_preuve: photo_preuve || null,
-          collecte_validee_at: now,
-        })
-        .eq('id', article_id)
-
-      const { data: article } = await supabase
-        .from('commande_articles')
-        .select('produits(nom), produits(vendeur_id)')
-        .eq('id', article_id)
-        .single()
-      if (article) {
-        await notifyArticleRefused(supabase, article, id, motif, `${livreur.prenom} ${livreur.nom}`)
-      }
-
-      const { data: allArticles } = await supabase
-        .from('commande_articles')
-        .select('statut_collecte')
-        .eq('commande_id', id)
-      const tousTraites = allArticles?.every(a => a.statut_collecte === 'accepte' || a.statut_collecte === 'refuse') || false
-      if (tousTraites) {
-        await supabase
-          .from('livraisons')
-          .update({ statut: 'colis_recupere', recupere_at: now })
-          .eq('commande_id', id)
-        await supabase.from('commandes').update({ statut: 'en_livraison' }).eq('id', id)
-      }
-
-      await addHistorique(supabase, livreurId, id, 'refuse-article', { article_id, motif }, ip)
-      return applyRateLimitHeaders(NextResponse.json({ success: true, tousTraites }), rateLimitHeaders)
-    }
-
-    if (action === 'deliver') {
-      if (!ESCROW_USER_ID) {
-        return NextResponse.json({ error: 'Configuration serveur incomplète (ESCROW_USER_ID)' }, { status: 500 })
-      }
-
-      const { pin, photos_livraison, signature_client, geoloc } = parsed.data
-
-      const { data: livraisonExists } = await supabase
-        .from('livraisons')
-        .select('id, livreur_id, code_pin, tentatives_code, position_acceptation')
-        .eq('commande_id', id)
-        .maybeSingle()
-
-      if (!livraisonExists) {
-        return NextResponse.json({ error: 'Aucune livraison trouvée pour cette commande' }, { status: 404 })
-      }
-      if (livraisonExists.livreur_id !== livreurId) {
-        return NextResponse.json({ error: 'Vous n\'êtes pas le livreur attitré' }, { status: 403 })
-      }
-
-      if (String(livraisonExists.code_pin).trim() !== String(pin).trim()) {
-        const newAttempts = (livraisonExists.tentatives_code || 0) + 1
-        await supabase
-          .from('livraisons')
-          .update({ tentatives_code: newAttempts, tentative_code_derniere: new Date().toISOString() })
-          .eq('commande_id', id)
+      if (!articleId) {
         return NextResponse.json(
-          { error: 'Code PIN incorrect', tentatives_restantes: MAX_PIN_ATTEMPTS - newAttempts },
+          {
+            error: 'article_id requis.',
+            code: 'MISSING_ARTICLE_ID',
+          },
           { status: 400 }
         )
       }
 
-      const { data: commande, error: cmdErr } = await supabase
-        .from('commandes')
-        .select(`id, acheteur_id, total_global, frais_livraison, statut,
-                 commande_articles (id, produit_id, quantite, prix_unitaire, statut_collecte, produits (vendeur_id, nom))`)
-        .eq('id', id)
-        .single()
-      if (!commande || cmdErr) {
-        return NextResponse.json({ error: 'Commande introuvable' }, { status: 404 })
-      }
-
-      let totalADebiter = 0
-      const creditsVendeurs = new Map<string, number>()
-      let remboursementAcheteur = 0
-
-      for (const article of commande.commande_articles) {
-        const montant = article.prix_unitaire * article.quantite
-        if (article.statut_collecte === 'accepte') {
-          const netVendeur = Math.round(montant * 0.95)
-          creditsVendeurs.set(article.produits.vendeur_id, (creditsVendeurs.get(article.produits.vendeur_id) || 0) + netVendeur)
-          totalADebiter += montant
-        } else if (article.statut_collecte === 'refuse') {
-          remboursementAcheteur += montant
-          totalADebiter += montant
-        }
-      }
-
-      const { data: escrow } = await supabase
-        .from('portefeuilles')
-        .select('solde_achat')
-        .eq('id', ESCROW_USER_ID)
-        .single()
-      if (!escrow || escrow.solde_achat < totalADebiter) {
-        return NextResponse.json({ error: 'Fonds insuffisants sur le compte séquestre' }, { status: 500 })
-      }
-
-      for (const [vendeurId, montant] of creditsVendeurs) {
-        const { data: walletV } = await supabase
-          .from('portefeuilles')
-          .select('solde_vente')
-          .eq('id', vendeurId)
-          .single()
-        await supabase
-          .from('portefeuilles')
-          .update({ solde_vente: (walletV?.solde_vente || 0) + montant })
-          .eq('id', vendeurId)
-        await supabase.from('transactions').insert({
-          user_id: vendeurId,
-          type: 'vente',
-          montant,
-          commande_id: id,
-          description: 'Vente nette (après commission)',
-          portefeuille_type: 'vente',
-        })
-      }
-
-      if (remboursementAcheteur > 0) {
-        const { data: walletA } = await supabase
-          .from('portefeuilles')
-          .select('solde_achat')
-          .eq('id', commande.acheteur_id)
-          .single()
-        await supabase
-          .from('portefeuilles')
-          .update({ solde_achat: (walletA?.solde_achat || 0) + remboursementAcheteur })
-          .eq('id', commande.acheteur_id)
-        await supabase.from('transactions').insert({
-          user_id: commande.acheteur_id,
-          type: 'remboursement',
-          montant: remboursementAcheteur,
-          commande_id: id,
-          description: 'Remboursement articles refusés',
-          portefeuille_type: 'achat',
-        })
-
-        const { data: acheteurInfo } = await supabase
-          .from('profiles')
-          .select('email, telephone, prenom')
-          .eq('id', commande.acheteur_id)
-          .single()
-        if (acheteurInfo) {
-          await sendEmail(
-            acheteurInfo.email,
-            'Remboursement articles refusés',
-            `<p>Bonjour ${acheteurInfo.prenom},</p><p>Un ou plusieurs articles de votre commande n'ont pas pu être livrés. Le montant correspondant a été remboursé sur votre portefeuille Gercie.</p>`
-          )
-          await createNotification(
-            commande.acheteur_id,
-            'commande',
-            'Remboursement articles refusés',
-            `${remboursementAcheteur.toLocaleString()} FC remboursés.`,
-            { commande_id: id, montant: remboursementAcheteur }
-          )
-        }
-      }
-
-      const nouveauSoldeEscrow = escrow.solde_achat - totalADebiter
-      await supabase
-        .from('portefeuilles')
-        .update({ solde_achat: nouveauSoldeEscrow })
-        .eq('id', ESCROW_USER_ID)
-      await supabase.from('transactions').insert({
-        user_id: ESCROW_USER_ID,
-        type: 'escrow_out',
-        montant: -totalADebiter,
-        commande_id: id,
-        description: `Distribution fonds commande #${id}`,
-        portefeuille_type: 'achat',
-      })
-
-      if (commande.frais_livraison > 0) {
-        await supabase.from('transactions').insert({
-          user_id: ESCROW_USER_ID,
-          type: 'commission',
-          montant: commande.frais_livraison,
-          commande_id: id,
-          description: `Frais de livraison commande #${id}`,
-          portefeuille_type: 'achat',
-        })
-      }
-
-      const updateData: any = {
-        statut: 'livree',
-        livree_at: new Date().toISOString(),
-        photos_livraison: photos_livraison || [],
-      }
-      if (signature_client) updateData.signature_client = signature_client
-      if (geoloc) updateData.geoloc_livraison = geoloc
-
-      await supabase.from('livraisons').update(updateData).eq('commande_id', id)
-      await supabase.from('commandes').update({ statut: 'livree' }).eq('id', id)
-
-      let distanceParcourue = 0
-      if (livraisonExists.position_acceptation && geoloc) {
-        distanceParcourue = calculerDistance(
-          livraisonExists.position_acceptation.lat,
-          livraisonExists.position_acceptation.lng,
-          geoloc.latitude,
-          geoloc.longitude
+      if (!code || !/^\d{6}$/.test(code)) {
+        return NextResponse.json(
+          {
+            error: 'Code article invalide. 6 chiffres requis.',
+            code: 'INVALID_ARTICLE_CODE',
+          },
+          { status: 400 }
         )
       }
-      await updateLivreurStats(supabase, livreurId, distanceParcourue)
-      await addHistorique(supabase, livreurId, id, 'deliver', { pin_validated: true, distanceParcourue }, ip)
 
-      return applyRateLimitHeaders(NextResponse.json({ success: true }), rateLimitHeaders)
+      const loaded = await loadCourse(supabaseAdmin, routeId, livreurId)
+
+      if (loaded.status !== 'ok') {
+        return NextResponse.json(
+          {
+            error:
+              loaded.status === 'forbidden'
+                ? 'Cette course ne t’est pas assignée.'
+                : 'Course introuvable.',
+            code: loaded.status === 'forbidden' ? 'FORBIDDEN' : 'NOT_FOUND',
+          },
+          { status: loaded.status === 'forbidden' ? 403 : 404 }
+        )
+      }
+
+      const article = loaded.course.articles.find((a: any) => a.id === articleId)
+
+      if (!article) {
+        return NextResponse.json(
+          {
+            error: 'Article introuvable dans cette course.',
+            code: 'ARTICLE_NOT_FOUND',
+          },
+          { status: 404 }
+        )
+      }
+
+      // Si une colonne code_article existe, on peut la vérifier.
+      try {
+        const { data: rawArticle } = await supabaseAdmin
+          .from(ARTICLES_TABLE)
+          .select('*')
+          .eq('id', articleId)
+          .maybeSingle()
+
+        const expectedCode = textOrNull(
+          rawArticle?.code_article ?? rawArticle?.article_code ?? rawArticle?.code
+        )
+
+        if (expectedCode && expectedCode !== code) {
+          return NextResponse.json(
+            {
+              error: 'Code article incorrect.',
+              code: 'WRONG_ARTICLE_CODE',
+            },
+            { status: 400 }
+          )
+        }
+      } catch {
+        // si colonne absente, on accepte quand même
+      }
+
+      const { error } = await updateByIdWithFallback(
+        supabaseAdmin,
+        ARTICLES_TABLE,
+        articleId,
+        {
+          statut_collecte: 'accepte',
+          updated_at: nowIso(),
+        }
+      )
+
+      if (error) {
+        return NextResponse.json(
+          {
+            error: 'Impossible de valider l’article.',
+            code: 'UPDATE_FAILED',
+            details: errorMessage(error, 'Erreur inconnue'),
+          },
+          { status: 500 }
+        )
+      }
+
+      // Si tous les articles sont traités, passer la livraison en colis_recupere
+      try {
+        const { data: remaining } = await supabaseAdmin
+          .from(ARTICLES_TABLE)
+          .select('id')
+          .eq('commande_id', loaded.course.id)
+          .not('statut_collecte', 'in', '("accepte","refuse")')
+          .limit(1)
+
+        if (!remaining || remaining.length === 0) {
+          if (loaded.course.livraison?.id) {
+            await updateByIdWithFallback(
+              supabaseAdmin,
+              LIVRAISONS_TABLE,
+              loaded.course.livraison.id,
+              {
+                statut: 'colis_recupere',
+                updated_at: nowIso(),
+              }
+            )
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      const refreshed = await loadCourse(supabaseAdmin, routeId, livreurId)
+
+      return NextResponse.json({
+        success: true,
+        message: 'Article validé.',
+        data: refreshed.status === 'ok' ? refreshed.course : loaded.course,
+        generated_at: nowIso(),
+      })
     }
+
+    /* ------------------------------------------------------------ */
+    /* REFUSE ARTICLE                                                */
+    /* ------------------------------------------------------------ */
+
+    if (action === 'refuse-article') {
+      const articleId = textOrNull(body?.article_id)
+      const motif = textOrNull(body?.motif)
+      const photoPreuve = textOrNull(body?.photo_preuve)
+
+      if (!articleId) {
+        return NextResponse.json(
+          {
+            error: 'article_id requis.',
+            code: 'MISSING_ARTICLE_ID',
+          },
+          { status: 400 }
+        )
+      }
+
+      if (!motif || motif.trim().length < 3) {
+        return NextResponse.json(
+          {
+            error: 'Motif trop court.',
+            code: 'INVALID_MOTIF',
+          },
+          { status: 400 }
+        )
+      }
+
+      const loaded = await loadCourse(supabaseAdmin, routeId, livreurId)
+
+      if (loaded.status !== 'ok') {
+        return NextResponse.json(
+          {
+            error:
+              loaded.status === 'forbidden'
+                ? 'Cette course ne t’est pas assignée.'
+                : 'Course introuvable.',
+            code: loaded.status === 'forbidden' ? 'FORBIDDEN' : 'NOT_FOUND',
+          },
+          { status: loaded.status === 'forbidden' ? 403 : 404 }
+        )
+      }
+
+      const article = loaded.course.articles.find((a: any) => a.id === articleId)
+
+      if (!article) {
+        return NextResponse.json(
+          {
+            error: 'Article introuvable dans cette course.',
+            code: 'ARTICLE_NOT_FOUND',
+          },
+          { status: 404 }
+        )
+      }
+
+      const { error } = await updateByIdWithFallback(
+        supabaseAdmin,
+        ARTICLES_TABLE,
+        articleId,
+        {
+          statut_collecte: 'refuse',
+          motif_refus: motif,
+          photo_preuve: photoPreuve,
+          updated_at: nowIso(),
+        }
+      )
+
+      if (error) {
+        return NextResponse.json(
+          {
+            error: 'Impossible de refuser l’article.',
+            code: 'UPDATE_FAILED',
+            details: errorMessage(error, 'Erreur inconnue'),
+          },
+          { status: 500 }
+        )
+      }
+
+      try {
+        const { data: remaining } = await supabaseAdmin
+          .from(ARTICLES_TABLE)
+          .select('id')
+          .eq('commande_id', loaded.course.id)
+          .not('statut_collecte', 'in', '("accepte","refuse")')
+          .limit(1)
+
+        if (!remaining || remaining.length === 0) {
+          if (loaded.course.livraison?.id) {
+            await updateByIdWithFallback(
+              supabaseAdmin,
+              LIVRAISONS_TABLE,
+              loaded.course.livraison.id,
+              {
+                statut: 'colis_recupere',
+                updated_at: nowIso(),
+              }
+            )
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      const refreshed = await loadCourse(supabaseAdmin, routeId, livreurId)
+
+      return NextResponse.json({
+        success: true,
+        message: 'Article refusé.',
+        data: refreshed.status === 'ok' ? refreshed.course : loaded.course,
+        generated_at: nowIso(),
+      })
+    }
+
+    /* ------------------------------------------------------------ */
+    /* DELIVER                                                       */
+    /* ------------------------------------------------------------ */
+
+    if (action === 'deliver') {
+      const codeClient = textOrNull(body?.code_client)
+      const photosLivraison = toStringArray(body?.photos_livraison)
+      const signatureClient = textOrNull(body?.signature_client)
+      const geoloc = body?.geoloc && typeof body.geoloc === 'object' ? body.geoloc : null
+
+      if (!codeClient || !/^[A-Z0-9]{6}$/i.test(codeClient)) {
+        return NextResponse.json(
+          {
+            error: 'Code client invalide. 6 caractères alphanumériques requis.',
+            code: 'INVALID_CLIENT_CODE',
+          },
+          { status: 400 }
+        )
+      }
+
+      const loaded = await loadCourse(supabaseAdmin, routeId, livreurId)
+
+      if (loaded.status !== 'ok') {
+        return NextResponse.json(
+          {
+            error:
+              loaded.status === 'forbidden'
+                ? 'Cette course ne t’est pas assignée.'
+                : 'Course introuvable.',
+            code: loaded.status === 'forbidden' ? 'FORBIDDEN' : 'NOT_FOUND',
+          },
+          { status: loaded.status === 'forbidden' ? 403 : 404 }
+        )
+      }
+
+      const course = loaded.course
+
+      if (!course.livraison?.id) {
+        return NextResponse.json(
+          {
+            error: 'Aucune livraison associée à cette course.',
+            code: 'NO_LIVRAISON',
+          },
+          { status: 400 }
+        )
+      }
+
+      if (course.livraison.statut === 'livree') {
+        return NextResponse.json({
+          success: true,
+          message: 'Livraison déjà validée.',
+          data: course,
+          generated_at: nowIso(),
+        })
+      }
+
+      const tentativas = toNum(course.livraison.tentativas_code, 0)
+
+      if (tentativas >= MAX_CODE_ATTEMPTS) {
+        return NextResponse.json(
+          {
+            error: 'Nombre maximal de tentatives atteint.',
+            code: 'MAX_ATTEMPTS_REACHED',
+            tentativas_restantes: 0,
+          },
+          { status: 400 }
+        )
+      }
+
+      if (
+        course.code_livraison_client &&
+        codeClient.toUpperCase() !== course.code_livraison_client.toUpperCase()
+      ) {
+        const newTentativas = tentativas + 1
+
+        await updateByIdWithFallback(
+          supabaseAdmin,
+          LIVRAISONS_TABLE,
+          course.livraison.id,
+          {
+            tentativas_code: newTentativas,
+            updated_at: nowIso(),
+          }
+        )
+
+        return NextResponse.json(
+          {
+            error: 'Le code client ne correspond pas.',
+            code: 'WRONG_CLIENT_CODE',
+            tentativas_restantes: Math.max(0, MAX_CODE_ATTEMPTS - newTentativas),
+          },
+          { status: 400 }
+        )
+      }
+
+      // Vérifier que tous les articles sont traités
+      try {
+        const { data: remaining } = await supabaseAdmin
+          .from(ARTICLES_TABLE)
+          .select('id')
+          .eq('commande_id', course.id)
+          .not('statut_collecte', 'in', '("accepte","refuse")')
+          .limit(1)
+
+        if (remaining && remaining.length > 0) {
+          return NextResponse.json(
+            {
+              error:
+                'Tous les articles doivent être validés ou refusés avant de livrer.',
+              code: 'ARTICLES_NOT_PROCESSED',
+            },
+            { status: 400 }
+          )
+        }
+      } catch {
+        // si table/colonne absente, on continue
+      }
+
+      const livraisonPayload: Record<string, unknown> = {
+        statut: 'livree',
+        delivered_at: nowIso(),
+        photos_livraison: photosLivraison,
+        signature_client: signatureClient,
+        updated_at: nowIso(),
+      }
+
+      if (geoloc?.latitude !== undefined && geoloc?.longitude !== undefined) {
+        livraisonPayload.latitude = toNum(geoloc.latitude)
+        livraisonPayload.longitude = toNum(geoloc.longitude)
+        livraisonPayload.accuracy = toNullableNumber(geoloc.accuracy)
+      }
+
+      const { error: livraisonError } = await updateByIdWithFallback(
+        supabaseAdmin,
+        LIVRAISONS_TABLE,
+        course.livraison.id,
+        livraisonPayload
+      )
+
+      if (livraisonError) {
+        return NextResponse.json(
+          {
+            error: 'Impossible de valider la livraison.',
+            code: 'UPDATE_FAILED',
+            details: errorMessage(livraisonError, 'Erreur inconnue'),
+          },
+          { status: 500 }
+        )
+      }
+
+      // Best effort : mettre la commande à jour
+      try {
+        await updateByIdWithFallback(supabaseAdmin, COMMANDES_TABLE, course.id, {
+          statut: 'livree',
+          updated_at: nowIso(),
+        })
+      } catch {
+        // ignore
+      }
+
+      // Best effort : incrémenter total_livraisons du livreur
+      try {
+        const { data: livreurRow } = await supabaseAdmin
+          .from('livreurs')
+          .select('total_livraisons')
+        .eq('id', livreurId)
+          .maybeSingle()
+
+        const currentTotal = toNum(livreurRow?.total_livraisons, 0)
+
+        await updateByIdWithFallback(supabaseAdmin, 'livreurs', livreurId, {
+          total_livraisons: currentTotal + 1,
+          derniere_activite: nowIso(),
+          updated_at: nowIso(),
+        })
+      } catch {
+        // ignore
+      }
+
+      const refreshed = await loadCourse(supabaseAdmin, routeId, livreurId)
+
+      return NextResponse.json({
+        success: true,
+        message: 'Livraison validée.',
+        data: refreshed.status === 'ok' ? refreshed.course : course,
+        generated_at: nowIso(),
+      })
+    }
+
+    /* ------------------------------------------------------------ */
+    /* SIGNAL                                                        */
+    /* ------------------------------------------------------------ */
 
     if (action === 'signal') {
-      const { type, message, photo } = parsed.data
-      await supabase.from('livreur_alertes').insert({
+      const type = textOrNull(body?.type) || 'warning'
+      const message = textOrNull(body?.message)
+      const photo = textOrNull(body?.photo)
+
+      if (!message || message.trim().length < 3) {
+        return NextResponse.json(
+          {
+            error: 'Message trop court.',
+            code: 'INVALID_MESSAGE',
+          },
+          { status: 400 }
+        )
+      }
+
+      const loaded = await loadCourse(supabaseAdmin, routeId, livreurId)
+
+      if (loaded.status !== 'ok') {
+        return NextResponse.json(
+          {
+            error:
+              loaded.status === 'forbidden'
+                ? 'Cette course ne t’est pas assignée.'
+                : 'Course introuvable.',
+            code: loaded.status === 'forbidden' ? 'FORBIDDEN' : 'NOT_FOUND',
+          },
+          { status: loaded.status === 'forbidden' ? 403 : 404 }
+        )
+      }
+
+      const course = loaded.course
+
+      const basePayload = {
+        commande_id: course.id,
+        livraison_id: course.livraison?.id ?? null,
         livreur_id: livreurId,
         type,
-        titre: `Incident sur commande #${id}`,
         message,
-        data: { commande_id: id, photo: photo || null },
+        photo,
+        created_at: nowIso(),
+      }
+
+      let inserted = false
+
+      for (const table of SIGNALEMENTS_TABLES) {
+        try {
+          const payloads = [
+            {
+              ...basePayload,
+              course_id: course.id,
+            },
+            basePayload,
+          ]
+
+          for (const payload of payloads) {
+            const { error } = await insertWithFallback(supabaseAdmin, table, payload)
+
+            if (!error) {
+              inserted = true
+              break
+            }
+
+            if (isTableMissingError(error)) {
+              break
+            }
+          }
+
+          if (inserted) break
+        } catch {
+          // try next table
+        }
+      }
+
+      if (!inserted) {
+        log.warn?.('Signal enregistré sans persistance : aucune table disponible', {
+          course: course.id,
+          livreurId,
+        })
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: inserted
+          ? 'Signalement envoyé.'
+          : 'Signalement reçu, mais non enregistré en base.',
+        persisted: inserted,
+        data: course,
+        generated_at: nowIso(),
       })
-      await addHistorique(supabase, livreurId, id, 'signal', { type, message }, ip)
-      return applyRateLimitHeaders(NextResponse.json({ success: true }), rateLimitHeaders)
     }
 
-    return NextResponse.json({ error: 'Action inconnue' }, { status: 400 })
-  } catch (error: any) {
-    logger.error('Erreur POST course', error)
+    /* ------------------------------------------------------------ */
+    /* ACTION INCONNUE                                               */
+    /* ------------------------------------------------------------ */
+
     return NextResponse.json(
-      { error: 'Erreur interne du serveur', detail: error.message },
+      {
+        error: `Action inconnue : ${action}`,
+        code: 'UNKNOWN_ACTION',
+        supported_actions: [
+          'accept',
+          'validate-article',
+          'refuse-article',
+          'deliver',
+          'signal',
+        ],
+      },
+      { status: 400 }
+    )
+  } catch (error: any) {
+    log.error?.('Crash POST /api/livreur/courses/[id]', error)
+
+    return NextResponse.json(
+      {
+        error: 'Erreur serveur interne lors du traitement de la course.',
+        code: 'INTERNAL_ERROR',
+        details:
+          process.env.NODE_ENV === 'development'
+            ? errorMessage(error, 'Erreur inconnue')
+            : undefined,
+      },
       { status: 500 }
     )
   }
-}
-
-function calculerDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLng = ((lng2 - lng1) * Math.PI) / 180
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
 }

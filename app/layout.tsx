@@ -1,52 +1,111 @@
-//app/layout.tsx
+// app/layout.tsx
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
-import { getMessages } from 'next-intl/server'
+import { getLocale, getMessages } from 'next-intl/server'
 import { NextIntlClientProvider } from 'next-intl'
-import { Inter, Outfit } from 'next/font/google'
-import { Suspense } from 'react'
+import { Inter, Outfit, Plus_Jakarta_Sans } from 'next/font/google'
+
 import './globals.css'
 import Providers from './Providers'
-import Navbar from '@/components/navbar/Navbar'
-import Footer from '@/components/layout/Footer'
-import { LoadingScreen } from '@/components/ui/LoadingScreen'
+import AppShell from '@/components/layout/AppShell'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 
-// Optimisation des polices avec next/font
+/* ═══════════════════════════════════════════════════════════════ */
+/*  POLICES                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
 const outfit = Outfit({
   subsets: ['latin'],
-  variable: '--font-sans',
+  variable: '--font-outfit',
   display: 'swap',
   preload: true,
 })
 
 const inter = Inter({
   subsets: ['latin'],
-  variable: '--font-body',
+  variable: '--font-inter',
   display: 'swap',
   preload: true,
 })
 
-// URLs pour preconnect (optimisation performance)
-const PRECONNECT_URLS = [
-  'https://fonts.googleapis.com',
-  'https://fonts.gstatic.com',
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-heading',
+  display: 'swap',
+  preload: true,
+})
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONFIG                                                         */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+const OG_IMAGE = '/og-image.jpg'
+const SITE_NAME = 'Gercie Market Place'
+
+const SITE_DESCRIPTION =
+  'Marketplace premium en RDC : produits, commandes, livraison, paiement Mobile Money, carte bancaire, virement et paiement à la livraison. Prix affichés en USD avec conversion CDF.'
+
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || ''
+const isProduction = process.env.NODE_ENV === 'production'
+
+const shouldLoadGoogleAnalytics =
+  isProduction &&
+  Boolean(GA_MEASUREMENT_ID) &&
+  GA_MEASUREMENT_ID !== 'G-XXXXXXXXXX'
+
+const rawPreconnectUrls = [
   'https://www.googletagmanager.com',
   'https://www.google-analytics.com',
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-].filter(Boolean)
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+]
+
+const preconnectUrls = Array.from(
+  new Set(
+    rawPreconnectUrls.filter(
+      (url): url is string => Boolean(url) && /^https?:\/\//.test(url)
+    )
+  )
+)
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  MÉTADONNÉES                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
+  metadataBase: new URL(APP_URL),
   title: {
-    default: 'Gercie Market Place',
+    default: SITE_NAME,
     template: '%s | Gercie',
   },
-  description: 'Gercie Market Place',
-  keywords: ['Gercie', 'Market Place', 'e-commerce'],
-  authors: [{ name: 'Gercie', url: 'https://gercie.com' }],
+  description: SITE_DESCRIPTION,
+  keywords: [
+    'Gercie',
+    'Gercie Market Place',
+    'marketplace RDC',
+    'e-commerce République Démocratique du Congo',
+    'achat en ligne Kinshasa',
+    'livraison RDC',
+    'paiement Mobile Money',
+    'Orange Money',
+    'Airtel Money',
+    'M-Pesa',
+    'carte bancaire',
+    'virement bancaire',
+    'paiement à la livraison',
+    'USD',
+    'CDF',
+    'taux de change USD CDF',
+  ],
+  authors: [
+    {
+      name: 'Gercie',
+      url: APP_URL,
+    },
+  ],
   creator: 'Gercie',
   publisher: 'Gercie',
+  category: 'shopping',
   formatDetection: {
     email: false,
     address: false,
@@ -54,25 +113,27 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: 'website',
-    locale: 'fr_FR',
-    url: 'https://gercie.com',
-    siteName: 'Gercie Market Place',
-    title: 'Gercie Market Place',
-    description: 'Gercie Market Place',
+    locale: 'fr_CD',
+    url: APP_URL,
+    siteName: SITE_NAME,
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
     images: [
       {
-        url: '/og-image.jpg',
+        url: OG_IMAGE,
         width: 1200,
         height: 630,
-        alt: 'Gercie Market Place',
+        alt: SITE_NAME,
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Gercie Market Place',
-    description: 'Gercie Market Place',
-    images: ['/og-image.jpg'],
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
+    images: [OG_IMAGE],
+    creator: '@Gercie',
+    site: '@Gercie',
   },
   robots: {
     index: true,
@@ -92,9 +153,11 @@ export const metadata: Metadata = {
       'en-US': '/en',
     },
   },
-  verification: {
-    google: process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION || '',
-  },
+  verification: process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION
+    ? {
+        google: process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION,
+      }
+    : undefined,
   manifest: '/site.webmanifest',
   icons: {
     icon: [
@@ -103,7 +166,11 @@ export const metadata: Metadata = {
       { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
     ],
     apple: [
-      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+      {
+        url: '/apple-touch-icon.png',
+        sizes: '180x180',
+        type: 'image/png',
+      },
     ],
   },
   other: {
@@ -111,93 +178,276 @@ export const metadata: Metadata = {
     'apple-mobile-web-app-status-bar-style': 'default',
     'apple-mobile-web-app-title': 'Gercie',
     'mobile-web-app-capable': 'yes',
-    'application-name': 'Gercie Market Place',
+    'application-name': SITE_NAME,
+    referrer: 'strict-origin-when-cross-origin',
   },
 }
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  VIEWPORT                                                       */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#040715' },
-  ],
+  viewportFit: 'cover',
   colorScheme: 'light dark',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f8f8f5' },
+    { media: '(prefers-color-scheme: dark)', color: '#070a14' },
+  ],
 }
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  STRUCTURED DATA                                                */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      name: 'Gercie',
+      url: APP_URL,
+      logo: `${APP_URL}/logo.png`,
+      description: SITE_DESCRIPTION,
+      foundingDate: '2024',
+      areaServed: {
+        '@type': 'Country',
+        name: 'Democratic Republic of the Congo',
+      },
+    },
+    {
+      '@type': 'WebSite',
+      name: SITE_NAME,
+      url: APP_URL,
+      inLanguage: 'fr-CD',
+      description: SITE_DESCRIPTION,
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: `${APP_URL}/recherche?q={search_term_string}`,
+        'query-input': 'required name=search_term_string',
+      },
+    },
+  ],
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  LAYOUT RACINE                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  // Utilisation de next-intl pour la locale
-  const messages = await getMessages()
-  
-  // Mode production pour scripts analytics
-  const isProduction = process.env.NODE_ENV === 'production'
-  const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || 'G-XXXXXXXXXX'
+  const [messages, locale] = await Promise.all([
+    getMessages(),
+    getLocale(),
+  ])
 
   return (
     <html
-      lang="fr"
+      lang={locale || 'fr'}
+      dir="ltr"
       suppressHydrationWarning
       data-scroll-behavior="smooth"
-      className={`${outfit.variable} ${inter.variable}`}
+      className={`${outfit.variable} ${inter.variable} ${jakarta.variable}`}
     >
       <head>
-        {/* Preconnect pour optimiser les connexions aux domaines tiers */}
-        {PRECONNECT_URLS.map((url) => (
-          <link key={url} rel="preconnect" href={url} crossOrigin="anonymous" />
+        {/*
+          Style critique anti-flash.
+          Il pose immédiatement le fond clair/sombre avant l'hydratation complète.
+        */}
+        <style
+          id="critical-theme-style"
+          dangerouslySetInnerHTML={{
+            __html: `
+              :root {
+                color-scheme: light;
+              }
+
+              html {
+                background-color: #f8f8f5;
+                color: #151518;
+              }
+
+              html.dark {
+                color-scheme: dark;
+                background-color: #070a14;
+                color: #e8ebf2;
+              }
+
+              body {
+                margin: 0;
+                min-height: 100dvh;
+                background-color: inherit;
+                color: inherit;
+              }
+            `,
+          }}
+        />
+
+        {/*
+          Pont typographique sécurisé.
+          Même si certaines classes Tailwind sont encore anciennes,
+          les polices optimisées Next.js sont appliquées proprement.
+        */}
+        <style
+          id="font-bridge-style"
+          dangerouslySetInnerHTML={{
+            __html: `
+              html {
+                font-family: var(--font-inter), var(--font-outfit), system-ui, -apple-system, 'Segoe UI', sans-serif;
+              }
+
+              h1,
+              h2,
+              h3,
+              h4,
+              h5,
+              h6,
+              .font-heading {
+                font-family: var(--font-heading), var(--font-outfit), system-ui, -apple-system, 'Segoe UI', sans-serif;
+              }
+
+              .font-sans {
+                font-family: var(--font-outfit), var(--font-inter), system-ui, -apple-system, 'Segoe UI', sans-serif !important;
+              }
+
+              .font-body {
+                font-family: var(--font-inter), var(--font-outfit), system-ui, -apple-system, 'Segoe UI', sans-serif !important;
+              }
+
+              .font-heading {
+                font-family: var(--font-heading), var(--font-outfit), system-ui, -apple-system, 'Segoe UI', sans-serif !important;
+              }
+            `,
+          }}
+        />
+
+        {/* Preconnect / DNS prefetch */}
+        {preconnectUrls.map((url) => (
+          <link key={`preconnect-${url}`} rel="preconnect" href={url} />
         ))}
-        
-        {/* DNS prefetch pour résolution rapide */}
-        {PRECONNECT_URLS.map((url) => (
+
+        {preconnectUrls.map((url) => (
           <link key={`dns-${url}`} rel="dns-prefetch" href={url} />
         ))}
 
-        {/* Theme initializer - script critique avant hydratation */}
-        <Script
+        {/*
+          Initialisation du thème avant hydratation.
+          Clé principale : gercie-theme
+          Compatibilité ancienne : gercie-theme-choice, theme, gercie-admin-theme
+        */}
+        <script
           id="theme-initializer"
-          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
-              (function() {
+              (function () {
                 try {
-                  var theme = localStorage.getItem('theme');
-                  var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                  var isDark = theme === 'dark' || (!theme && systemDark);
-                  if (isDark) {
-                    document.documentElement.classList.add('dark');
+                  var doc = document.documentElement;
+
+                  var keys = [
+                    'gercie-theme',
+                    'gercie-theme-choice',
+                    'theme',
+                    'gercie-admin-theme'
+                  ];
+
+                  var stored = null;
+
+                  for (var i = 0; i < keys.length; i += 1) {
+                    try {
+                      var value = localStorage.getItem(keys[i]);
+                      if (value) {
+                        stored = value;
+                        break;
+                      }
+                    } catch (error) {}
                   }
-                  // Détection connexion lente
-                  var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-                  if (conn) {
-                    var isSlow = conn.saveData || conn.effectiveType === 'slow-2g' || conn.effectiveType === '2g';
+
+                  var systemDark =
+                    window.matchMedia &&
+                    window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+                  var isDark =
+                    stored === 'dark' ||
+                    (
+                      (stored === null || stored === '' || stored === 'system' || stored === 'auto') &&
+                      systemDark
+                    );
+
+                  doc.classList.toggle('dark', isDark);
+                  doc.dataset.theme = isDark ? 'dark' : 'light';
+                  doc.style.colorScheme = isDark ? 'dark' : 'light';
+
+                  var themeMeta = document.querySelector('meta[name="theme-color"]');
+                  if (themeMeta) {
+                    themeMeta.setAttribute('content', isDark ? '#070a14' : '#f8f8f5');
+                  }
+
+                  var appleMeta = document.querySelector(
+                    'meta[name="apple-mobile-web-app-status-bar-style"]'
+                  );
+
+                  if (appleMeta) {
+                    appleMeta.setAttribute(
+                      'content',
+                      isDark ? 'black-translucent' : 'default'
+                    );
+                  }
+
+                  var connection =
+                    navigator.connection ||
+                    navigator.mozConnection ||
+                    navigator.webkitConnection;
+
+                  if (connection) {
+                    var isSlow =
+                      connection.saveData ||
+                      connection.effectiveType === 'slow-2g' ||
+                      connection.effectiveType === '2g';
+
                     if (isSlow) {
-                      document.documentElement.classList.add('low-bandwidth');
+                      doc.classList.add('low-bandwidth');
                     }
                   }
-                } catch(e) {}
+
+                  if (
+                    window.matchMedia &&
+                    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                  ) {
+                    doc.classList.add('reduced-motion');
+                  }
+                } catch (error) {}
               })();
             `,
           }}
         />
 
-        {/* Métadonnées pour applications mobiles */}
+        {/* Métadonnées Windows / mobile */}
         <meta name="msapplication-TileColor" content="#0f1b5c" />
         <meta name="msapplication-tap-highlight" content="no" />
-        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-        <meta name="theme-color" content="#040715" media="(prefers-color-scheme: dark)" />
 
-        {/* Google Analytics - uniquement en production */}
-        {isProduction && (
+        {/* Structured data */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(jsonLd),
+          }}
+        />
+
+        {/* Google Analytics uniquement en production */}
+        {shouldLoadGoogleAnalytics && (
           <>
             <Script
-              src={`https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}`}
+              src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
               strategy="afterInteractive"
             />
+
             <Script
               id="google-analytics"
               strategy="afterInteractive"
@@ -206,7 +456,7 @@ export default async function RootLayout({
                   window.dataLayer = window.dataLayer || [];
                   function gtag(){dataLayer.push(arguments);}
                   gtag('js', new Date());
-                  gtag('config', '${gaMeasurementId}', {
+                  gtag('config', '${GA_MEASUREMENT_ID}', {
                     page_path: window.location.pathname,
                     anonymize_ip: true,
                     cookie_flags: 'SameSite=None;Secure'
@@ -217,13 +467,12 @@ export default async function RootLayout({
           </>
         )}
       </head>
-      <body
-        className="relative antialiased bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] font-body"
-      >
-        {/* Skip link pour accessibilité */}
+
+      <body className="relative min-h-[100dvh] bg-canvas text-fg antialiased">
+        {/* Skip link accessibilité premium */}
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-brand-600 focus:text-white focus:rounded-md focus:shadow-lg"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:rounded-control focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-accent-contrast focus:shadow-raised focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-canvas"
         >
           Aller au contenu principal
         </a>
@@ -231,17 +480,9 @@ export default async function RootLayout({
         <NextIntlClientProvider messages={messages}>
           <Providers>
             <ErrorBoundary>
-              <Navbar />
-              <Suspense fallback={<LoadingScreen />}>
-                <main 
-                  id="main-content"
-                  className="relative w-full min-h-[calc(100dvh-4rem)] flex flex-col isolation-isolate"
-                  tabIndex={-1}
-                >
-                  {children}
-                </main>
-              </Suspense>
-              <Footer />
+              <div className="flex min-h-[100dvh] flex-col isolate">
+                <AppShell>{children}</AppShell>
+              </div>
             </ErrorBoundary>
           </Providers>
         </NextIntlClientProvider>

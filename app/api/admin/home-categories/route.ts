@@ -8,17 +8,17 @@ import { z } from 'zod'
  * GET : Récupère la configuration des catégories populaires
  */
 export async function GET() {
-  try { 
+  try {
     // Vérification des droits de l'administrateur
-    await requireAdmin() 
-  } catch (e: any) { 
-    return NextResponse.json({ error: e.message || 'Accès interdit' }, { status: 403 }) 
+    await requireAdmin()
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || 'Accès interdit' }, { status: 403 })
   }
 
   try {
     // Utilisation du Service Client (Admin, sans cookies, contourne la RLS)
     const supabase = createServiceClient()
-    
+
     const { data, error } = await supabase
       .from('popular_categories_config')
       .select('*')
@@ -31,7 +31,7 @@ export async function GET() {
     return NextResponse.json(data || [])
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || 'Erreur interne du serveur lors de la récupération' }, 
+      { error: error.message || 'Erreur interne du serveur lors de la récupération' },
       { status: 500 }
     )
   }
@@ -52,11 +52,11 @@ const updateSchema = z.array(
  * PUT : Mise à jour en masse des catégories (Noms, Images, Ordre, Visibilité)
  */
 export async function PUT(request: Request) {
-  try { 
+  try {
     // Vérification des droits de l'administrateur
-    await requireAdmin() 
-  } catch (e: any) { 
-    return NextResponse.json({ error: e.message || 'Accès interdit' }, { status: 403 }) 
+    await requireAdmin()
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || 'Accès interdit' }, { status: 403 })
   }
 
   // 1. Extraction et sécurisation du corps de la requête
@@ -71,7 +71,7 @@ export async function PUT(request: Request) {
   const parsed = updateSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json(
-      { error: 'Données invalides', details: parsed.error.flatten() }, 
+      { error: 'Données invalides', details: parsed.error.flatten() },
       { status: 400 }
     )
   }
@@ -84,7 +84,6 @@ export async function PUT(request: Request) {
     const updates = parsed.data.map((item) => {
       // Extraction de l'id pour ne pas l'inclure dans le corps de la mise à jour PostgreSQL
       const { id, ...updateData } = item
-      
       return supabase
         .from('popular_categories_config')
         .update(updateData)
@@ -93,12 +92,12 @@ export async function PUT(request: Request) {
 
     // 4. Exécution parallèle et sécurisée de toutes les requêtes en base de données
     const results = await Promise.all(updates)
-    
+
     // 5. Analyse et traitement des erreurs SQL potentielles
     const errors = results.filter((r) => r.error).map((r) => r.error!.message)
     if (errors.length > 0) {
       return NextResponse.json(
-        { error: `Erreur lors des mises à jour en base de données : ${errors.join(', ')}` }, 
+        { error: `Erreur lors des mises à jour en base de données : ${errors.join(', ')}` },
         { status: 500 }
       )
     }
@@ -106,7 +105,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ success: true })
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || 'Erreur interne du serveur lors de la sauvegarde' }, 
+      { error: error.message || 'Erreur interne du serveur lors de la sauvegarde' },
       { status: 500 }
     )
   }

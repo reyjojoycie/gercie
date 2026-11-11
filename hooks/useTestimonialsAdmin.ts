@@ -1,163 +1,129 @@
 // hooks/useTestimonialsAdmin.ts
 'use client'
 
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+
 import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-  keepPreviousData
-} from '@tanstack/react-query'
-import {
-  testimonialService,
-  type TestimonialAdmin,
+  DEFAULT_TESTIMONIAL_SETTINGS,
+  DEFAULT_TESTIMONIAL_STATS,
+  testimonialsToCsv,
+  type Testimonial,
   type TestimonialFilters,
+  type TestimonialSettings,
   type TestimonialSort,
-  type CreateTestimonialPayload,
-  type UpdateTestimonialPayload
-} from '@/lib/services/testimonialService'
+  type TestimonialStats,
+  type TestimonialAuditLog,
+} from '@/lib/testimonials'
 
-/* ========================================================================== */
-/* Types réutilisables                                                       */
-/* ========================================================================== */
-
-export type { TestimonialAdmin, TestimonialFilters, TestimonialSort }
-
-export interface UseTestimonialsAdminOptions {
-  /** Filtres initiaux */
-  initialFilters?: TestimonialFilters
-  /** Tri initial */
-  initialSort?: TestimonialSort
-  /** Page initiale */
-  initialPage?: number
-  /** Nombre d'éléments par page */
+interface UseTestimonialsAdminOptions {
   limit?: number
-  /** Activer la synchronisation avec l'URL (non implémentée ici, placeholder) */
-  syncWithUrl?: boolean
 }
 
-export interface UseTestimonialsAdminReturn {
-  // Données
-  testimonials: TestimonialAdmin[]
-  totalItems: number
-  totalPages: number
-  stats: {
+interface AdminResponse {
+  success: boolean
+  data: Testimonial[]
+  meta: {
     total: number
-    published: number
-    pending: number
-    rejected: number
-    avgRating: string
-    fiveStars: number
+    page: number
+    limit: number
+    totalPages: number
+    stats: TestimonialStats
+    products: string[]
   }
-
-  // État de la requête
-  isLoading: boolean
-  isFetching: boolean
-  isError: boolean
-  error: Error | null
-  refetch: () => void
-
-  // Filtres, tri, pagination
-  filters: TestimonialFilters
-  setFilters: (filters: TestimonialFilters) => void
-  sort: TestimonialSort
-  setSort: (sort: TestimonialSort) => void
-  page: number
-  setPage: (page: number) => void
-  limit: number
-
-  // Sélection multiple
-  selected: Set<string>
-  toggleSelect: (id: string) => void
-  toggleSelectAll: () => void
-  clearSelection: () => void
-
-  // Mutations
-  createTestimonial: (data: CreateTestimonialPayload) => Promise<any>
-  updateTestimonial: (id: string, data: UpdateTestimonialPayload) => Promise<any>
-  deleteTestimonial: (id: string) => Promise<any>
-  changeStatus: (id: string, status: 'published' | 'pending' | 'rejected') => Promise<any>
-  toggleFeatured: (id: string, isFeatured: boolean) => Promise<any>
-  reply: (id: string, response: string) => Promise<any>
-  removeReply: (id: string) => Promise<any>
-
-  // Actions groupées
-  bulkUpdateStatus: (ids: string[], status: 'published' | 'pending' | 'rejected') => Promise<void>
-  bulkDelete: (ids: string[]) => Promise<void>
-
-  // Export
-  exportCSV: () => void
-
-  // État des mutations (pratique pour les loaders)
-  isMutating: boolean
+  logs?: TestimonialAuditLog[]
+  settings?: TestimonialSettings
 }
 
-/* ========================================================================== */
-/* Hook principal                                                            */
-/* ========================================================================== */
-
-export function useTestimonialsAdmin(
-  options: UseTestimonialsAdminOptions = {}
-): UseTestimonialsAdminReturn {
-  const {
-    initialFilters = {},
-    initialSort = { field: 'date', order: 'desc' },
-    initialPage = 1,
-    limit = 20
-  } = options
-
-  // États locaux
-  const [filters, setFilters] = useState<TestimonialFilters>(initialFilters)
-  const [sort, setSort] = useState<TestimonialSort>(initialSort)
-  const [page, setPage] = useState(initialPage)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-
-  const queryClient = useQueryClient()
-
-  // Récupération des témoignages
-  const {
-    data,
-    isLoading,
-    isFetching,
-    isError,
-    error,
-    refetch
-  } = useQuery({
-    queryKey: ['admin-testimonials', { filters, sort, page, limit }],
-    queryFn: ({ signal }) =>
-      testimonialService.list(filters, sort, { page, limit }, signal),
-    placeholderData: keepPreviousData, // évite les flashs lors du changement de page
-    staleTime: 30_000
+export function useTestimonialsAdmin({ limit = 10 }: UseTestimonialsAdminOptions = {}) {
+  const [filters, setFilters] = useState<TestimonialFilters>({
+    search: '',
+    status: 'all',
+    rating: 'all',
+    verified: 'all',
+    featured: 'all',
+    product: '',
   })
 
-  const testimonials = data?.data ?? []
-  const meta = data?.meta
+  const [sort, setSort] = useState<TestimonialSort>({
+    field: 'created_at',
+    order: 'desc',
+  })
+
+  const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [isMutating, setIsMutating] = useState(false)
+
+  const query = useQuery<AdminResponse>({
+    queryKey: ['admin-testimonials', filters, sort, page, limit],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      params.set('page', String(page))
+      params.set('limit', String(limit))
+      params.set('status', filters.status)
+      params.set('rating', filters.rating)
+      params.set('verified', filters.verified)
+      params.set('featured', filters.featured)
+      params.set('sort', sort.field)
+      params.set('order', sort.order)
+
+      if (filters.search) params.set('search', filters.search)
+      if (filters.product) params.set('product', filters.product)
+
+      const res = await fetch(`/api/admin/testimonials?${params.toString()}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        throw new Error(json?.error || 'Erreur lors du chargement des témoignages.')
+      }
+
+      return json as AdminResponse
+    },
+    staleTime: 30_000,
+    retry: 1,
+    placeholderData: (previous) => previous,
+  })
+
+  const testimonials = useMemo(
+    () => query.data?.data ?? [],
+    [query.data?.data]
+  )
+
+  const meta = query.data?.meta
+
+  const stats = useMemo(
+    () => meta?.stats ?? DEFAULT_TESTIMONIAL_STATS,
+    [meta?.stats]
+  )
+
+  const settings = useMemo(
+    () => query.data?.settings ?? DEFAULT_TESTIMONIAL_SETTINGS,
+    [query.data?.settings]
+  )
+
+  const logs = useMemo(
+    () => query.data?.logs ?? [],
+    [query.data?.logs]
+  )
+
+  const productOptions = useMemo(
+    () => meta?.products ?? stats.products ?? [],
+    [meta?.products, stats.products]
+  )
+
   const totalItems = meta?.total ?? 0
   const totalPages = meta?.totalPages ?? 1
 
-  // Statistiques dérivées
-  const stats = useMemo(() => {
-    const published = meta?.stats?.published ?? testimonials.filter(t => t.status === 'published').length
-    const pending = meta?.stats?.pending ?? testimonials.filter(t => t.status === 'pending').length
-    const rejected = meta?.stats?.rejected ?? testimonials.filter(t => t.status === 'rejected').length
-    const avgRating = meta?.stats?.avgRating ?? (totalItems > 0
-      ? (testimonials.reduce((sum, t) => sum + t.rating, 0) / testimonials.length).toFixed(1)
-      : '0.0')
-    const fiveStars = testimonials.filter(t => t.rating >= 5).length
+  useEffect(() => {
+    setSelected(new Set())
+  }, [page, filters, sort])
 
-    return {
-      total: totalItems,
-      published,
-      pending,
-      rejected,
-      avgRating,
-      fiveStars
-    }
-  }, [testimonials, meta, totalItems])
-
-  // Sélection
   const toggleSelect = useCallback((id: string) => {
-    setSelected(prev => {
+    setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -166,155 +132,173 @@ export function useTestimonialsAdmin(
   }, [])
 
   const toggleSelectAll = useCallback(() => {
-    if (selected.size === testimonials.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(testimonials.map(t => t.id)))
-    }
-  }, [selected.size, testimonials])
+    setSelected((prev) => {
+      if (prev.size === testimonials.length) return new Set()
+      return new Set(testimonials.map((item) => item.id))
+    })
+  }, [testimonials])
 
-  const clearSelection = useCallback(() => setSelected(new Set()), [])
+  const clearSelection = useCallback(() => {
+    setSelected(new Set())
+  }, [])
 
-  // 💡 FIX 1 : Remplacement du useMemo par un useEffect propre pour éviter les effets de bord
-  useEffect(() => {
-    clearSelection()
-  }, [page, filters, sort, clearSelection])
+  const apiPost = useCallback(async (action: string, payload?: any) => {
+    setIsMutating(true)
 
-  // Mutation : création
-  const createMutation = useMutation({
-    mutationFn: (payload: CreateTestimonialPayload) =>
-      testimonialService.create(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
-    }
-  })
-
-  // Mutation : mise à jour
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateTestimonialPayload }) =>
-      testimonialService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
-    }
-  })
-
-  // Mutation : suppression
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => testimonialService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
-    }
-  })
-
-  // Mutation : changement de statut (optimiste)
-  const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: 'published' | 'pending' | 'rejected' }) =>
-      testimonialService.changeStatus(id, status),
-    onMutate: async ({ id, status }) => {
-      await queryClient.cancelQueries({ queryKey: ['admin-testimonials'] })
-      const previousData = queryClient.getQueryData(['admin-testimonials'])
-      queryClient.setQueryData(['admin-testimonials'], (old: any) => {
-        if (!old) return old
-        return {
-          ...old,
-          data: old.data.map((t: TestimonialAdmin) =>
-            t.id === id ? { ...t, status } : t
-          )
-        }
+    try {
+      const res = await fetch('/api/admin/testimonials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action, payload }),
       })
-      return { previousData }
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(['admin-testimonials'], context.previousData)
+
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        throw new Error(json?.error || 'Erreur serveur.')
       }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
+
+      return json
+    } finally {
+      setIsMutating(false)
     }
-  })
+  }, [])
 
-  // Mutation : toggle featured (optimiste)
-  const featuredMutation = useMutation({
-    mutationFn: ({ id, is_featured }: { id: string; is_featured: boolean }) =>
-      testimonialService.toggleFeatured(id, is_featured),
-    onMutate: async ({ id, is_featured }) => {
-      await queryClient.cancelQueries({ queryKey: ['admin-testimonials'] })
-      const previousData = queryClient.getQueryData(['admin-testimonials'])
-      queryClient.setQueryData(['admin-testimonials'], (old: any) => {
-        if (!old) return old
-        return {
-          ...old,
-          data: old.data.map((t: TestimonialAdmin) =>
-            t.id === id ? { ...t, is_featured } : t
-          )
-        }
-      })
-      return { previousData }
+  const refresh = useCallback(async () => {
+    await query.refetch()
+  }, [query])
+
+  const createTestimonial = useCallback(
+    async (data: Partial<Testimonial>) => {
+      await apiPost('save', data)
+      await refresh()
     },
-    onError: (_err, _vars, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(['admin-testimonials'], context.previousData)
-      }
+    [apiPost, refresh]
+  )
+
+  const updateTestimonial = useCallback(
+    async (id: string, data: Partial<Testimonial>) => {
+      await apiPost('save', { ...data, id })
+      await refresh()
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
-    }
-  })
+    [apiPost, refresh]
+  )
 
-  // Mutation : réponse admin
-  const replyMutation = useMutation({
-    mutationFn: ({ id, response }: { id: string; response: string | null }) =>
-      response === null 
-        ? testimonialService.update(id, { admin_response: null }) // Nettoyage de la réponse
-        : testimonialService.reply(id, response),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
-    }
-  })
+  const deleteTestimonial = useCallback(
+    async (id: string) => {
+      await apiPost('delete', { id })
+      await refresh()
+    },
+    [apiPost, refresh]
+  )
 
-  // Déterminer si une mutation est en cours
-  const isMutating =
-    createMutation.isPending ||
-    updateMutation.isPending ||
-    deleteMutation.isPending ||
-    statusMutation.isPending ||
-    featuredMutation.isPending ||
-    replyMutation.isPending
+  const changeStatus = useCallback(
+    async (id: string, status: Testimonial['status']) => {
+      await apiPost('status', { id, status })
+      await refresh()
+    },
+    [apiPost, refresh]
+  )
 
-  // Actions groupées
+  const toggleFeatured = useCallback(
+    async (id: string, isFeatured: boolean) => {
+      await apiPost('toggle-featured', { id, is_featured: isFeatured })
+      await refresh()
+    },
+    [apiPost, refresh]
+  )
+
+  const reply = useCallback(
+    async (id: string, responseText: string) => {
+      await apiPost('reply', { id, response: responseText })
+      await refresh()
+    },
+    [apiPost, refresh]
+  )
+
   const bulkUpdateStatus = useCallback(
-    async (ids: string[], status: 'published' | 'pending' | 'rejected') => {
-      await testimonialService.bulkUpdateStatus(ids, status)
-      queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
+    async (ids: string[], status: Testimonial['status']) => {
+      await apiPost('bulk-status', { ids, status })
+      await refresh()
     },
-    [queryClient]
+    [apiPost, refresh]
   )
 
   const bulkDelete = useCallback(
     async (ids: string[]) => {
-      await testimonialService.bulkDelete(ids)
-      queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
+      await apiPost('bulk-delete', { ids })
+      await refresh()
     },
-    [queryClient]
+    [apiPost, refresh]
   )
 
-  // Export CSV
-  const exportCSV = useCallback(() => {
-    testimonialService.exportCSV(filters)
-  }, [filters])
+  const saveSettings = useCallback(
+    async (nextSettings: Partial<TestimonialSettings>) => {
+      await apiPost('save-settings', nextSettings)
+      await refresh()
+    },
+    [apiPost, refresh]
+  )
+
+  const clearLogs = useCallback(async () => {
+    await apiPost('clear-logs', {})
+    await refresh()
+  }, [apiPost, refresh])
+
+  const exportCSV = useCallback(async () => {
+    const params = new URLSearchParams()
+    params.set('page', '1')
+    params.set('limit', '1000')
+    params.set('status', filters.status)
+    params.set('rating', filters.rating)
+    params.set('verified', filters.verified)
+    params.set('featured', filters.featured)
+    params.set('sort', sort.field)
+    params.set('order', sort.order)
+
+    if (filters.search) params.set('search', filters.search)
+    if (filters.product) params.set('product', filters.product)
+
+    const res = await fetch(`/api/admin/testimonials?${params.toString()}`, {
+      credentials: 'include',
+      cache: 'no-store',
+    })
+
+    const json = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      throw new Error(json?.error || 'Erreur lors de l’export.')
+    }
+
+    const items: Testimonial[] = Array.isArray(json?.data) ? json.data : []
+    const csv = testimonialsToCsv(items)
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `temoignages-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [filters, sort])
 
   return {
     testimonials,
     totalItems,
     totalPages,
     stats,
+    settings,
+    logs,
+    productOptions,
 
-    isLoading,
-    isFetching,
-    isError,
-    error: error as Error | null,
-    refetch,
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    isError: query.isError,
+    error: query.error,
+    refetch: query.refetch,
 
     filters,
     setFilters,
@@ -322,29 +306,24 @@ export function useTestimonialsAdmin(
     setSort,
     page,
     setPage,
-    limit,
 
     selected,
     toggleSelect,
     toggleSelectAll,
     clearSelection,
 
-    createTestimonial: (data) => createMutation.mutateAsync(data),
-    updateTestimonial: (id, data) => updateMutation.mutateAsync({ id, data }),
-    deleteTestimonial: (id) => deleteMutation.mutateAsync(id),
-    changeStatus: (id, status) => statusMutation.mutateAsync({ id, status }),
-    toggleFeatured: (id, isFeatured) => featuredMutation.mutateAsync({ id, is_featured: isFeatured }),
-    reply: (id, response) => replyMutation.mutateAsync({ id, response }),
-    // 💡 FIX 2 : Utilise maintenant de manière sûre l'infrastructure de traitement unifiée de replyMutation
-    removeReply: (id) => replyMutation.mutateAsync({ id, response: null }),
-
+    createTestimonial,
+    updateTestimonial,
+    deleteTestimonial,
+    changeStatus,
+    toggleFeatured,
+    reply,
     bulkUpdateStatus,
     bulkDelete,
-
+    saveSettings,
+    clearLogs,
     exportCSV,
 
-    isMutating
+    isMutating,
   }
 }
-
-export default useTestimonialsAdmin

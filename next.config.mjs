@@ -15,11 +15,6 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
 
-  // ✅ AJOUTÉ : Ignorer les erreurs ESLint lors du build de production
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
   // ============================================================
   // MODULES EXTERNES DU SERVEUR
   // ============================================================
@@ -65,6 +60,10 @@ const nextConfig = {
     minimumCacheTTL: 60 * 60 * 24 * 30,
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+    
+    // ✅ AJOUTÉ : Qualités d'image autorisées (résout le warning quality "85")
+    qualities: [25, 50, 75, 85, 90, 100],
+    
     remotePatterns: [
       {
         protocol: 'https',

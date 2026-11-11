@@ -1,94 +1,456 @@
 // components/ProductVariants.tsx
 'use client'
 
-import React, { useMemo, useCallback, forwardRef, useState } from 'react'
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+
 import { motion, AnimatePresence } from 'framer-motion'
+
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { Badge } from '@/components/ui/Badge'
+
 import { useExchangeRate } from '@/hooks/useExchangeRate'
 
-/* ========================================================================== */
-/*  Types                                                                     */
-/* ========================================================================== */
+import {
+  formatCdf,
+  formatUsd,
+  roundCdf,
+  roundUsd,
+} from '@/lib/currency'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export type Currency = 'USD' | 'CDF'
 
 export interface Variant {
-  id: string
+  id?: string
+
   attributes: Record<string, string>
+
   stock: number
-  prix_specifique?: number   // prix alternatif pour cette variante
-  image?: string             // image éventuelle (couleur)
+
+  /**
+   * USD = source principale.
+   */
+  prix_specifique_usd?: number | null
+  price_specifique_usd?: number | null
+
+  /**
+   * CDF = conversion ou valeur legacy.
+   * Si un prix USD existe, le CDF doit être recalculé depuis USD.
+   */
+  prix_specifique_cdf?: number | null
+  price_specifique_cdf?: number | null
+
+  /**
+   * Legacy : ancien prix CDF.
+   * Conservé pour compatibilité.
+   */
+  prix_specifique?: number | null
+  price_specifique?: number | null
+
+  /**
+   * Autres champs éventuels venant de Supabase.
+   */
+  prix?: number | null
+  price?: number | null
+
+  image?: string | null
+  images?: string[] | null
+
+  poids_kg?: number | null
+
+  [key: string]: any
 }
 
 export interface ProductVariantsProps {
   /** Liste de toutes les variantes */
   variants: Variant[]
+
   /** Attributs sélectionnés (ex: { Couleur: 'Noir', Taille: 'M' }) */
   selectedAttributes: Record<string, string>
+
   /** Callback lorsqu'un attribut change */
   onAttributeChange: (attributeName: string, value: string) => void
-  /** Prix de base du produit (hors variante) */
-  basePrice?: number
+
+  /**
+   * Prix de base du produit.
+   *
+   * Compatibilité legacy :
+   * si `basePriceUsd` n'est pas fourni, `basePrice` est interprété comme CDF.
+   */
+  basePrice?: number | null
+
+  /** Prix de base USD principal */
+  basePriceUsd?: number | null
+
+  /** Prix de base CDF */
+  basePriceCdf?: number | null
+
   /** Afficher le prix spécifique de la variante sélectionnée */
   showPrice?: boolean
+
   /** Afficher le stock restant */
   showStock?: boolean
+
   /** Taille des boutons */
   size?: 'sm' | 'md' | 'lg'
+
   /** Classe additionnelle */
   className?: string
-  /** Fonction pour obtenir les options disponibles pour un attribut (gère le grisage) */
-  getAvailableOptions?: (attributeName: string, currentSelections: Record<string, string>) => string[]
+
+  /** Fonction pour obtenir les options disponibles pour un attribut */
+  getAvailableOptions?: (
+    attributeName: string,
+    currentSelections: Record<string, string>
+  ) => string[]
+
   /** Afficher uniquement les attributs sélectionnés (mode compact) */
   compact?: boolean
+
   /** Nombre maximum d'options avant de basculer en select natif */
   maxOptionsBeforeSelect?: number
+
+  /** Devise principale souhaitée. Par défaut USD. */
+  preferredCurrency?: Currency
+
+  /** Callback quand la variante complète sélectionnée change */
+  onVariantChange?: (variant: Variant | null) => void
 }
 
-/* ========================================================================== */
-/*  Utilitaires internes                                                      */
-/* ========================================================================== */
+interface PricePair {
+  usd: number | null
+  cdf: number | null
+  primaryCurrency: Currency | null
+  primaryAmount: number
+  secondaryCurrency: Currency | null
+  secondaryAmount: number | null
+  displayPrimary: string
+  displaySecondary: string | null
+  hasPrice: boolean
+}
 
-// Détection automatique d'un attribut de type couleur
+interface PriceDifference {
+  primaryCurrency: Currency
+  primaryAmount: number
+  display: string
+  tone: 'success' | 'danger'
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  UTILITAIRES PRIX                                               */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function positiveNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+
+  const n = Number(value)
+
+  if (!Number.isFinite(n) || n <= 0) return null
+
+  return n
+}
+
+function nonNegativeNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+
+  const n = Number(value)
+
+  if (!Number.isFinite(n) || n < 0) return null
+
+  return n
+}
+
+function getVariantDirectUsd(variant?: Variant | null): number | null {
+  if (!variant) return null
+
+  return positiveNumber(
+    variant.prix_specifique_usd ??
+      variant.price_specifique_usd ??
+      null
+  )
+}
+
+function getVariantDirectCdf(variant?: Variant | null): number | null {
+  if (!variant) return null
+
+  return positiveNumber(
+    variant.prix_specifique_cdf ??
+      variant.price_specifique_cdf ??
+      variant.prix_specifique ??
+      variant.price_specifique ??
+      variant.prix ??
+      variant.price ??
+      null
+  )
+}
+
+function resolveBasePrices(
+  props: Pick<
+    ProductVariantsProps,
+    'basePrice' | 'basePriceUsd' | 'basePriceCdf'
+  >,
+  rate: number | null
+): { usd: number | null; cdf: number | null } {
+  const directUsd = positiveNumber(props.basePriceUsd)
+
+  /*
+   * Compatibilité legacy :
+   * si only `basePrice` est fourni, on le traite comme CDF.
+   */
+  const directCdf =
+    positiveNumber(props.basePriceCdf) ??
+    positiveNumber(props.basePrice)
+
+  let usd = directUsd
+  let cdf = directCdf
+
+  if (usd == null && cdf != null && rate != null && rate > 0) {
+    usd = roundUsd(cdf / rate)
+  }
+
+  if (usd != null && rate != null && rate > 0) {
+    cdf = roundCdf(usd * rate)
+  }
+
+  return { usd, cdf }
+}
+
+function resolveVariantPrices(
+  variant: Variant | null,
+  baseUsd: number | null,
+  baseCdf: number | null,
+  rate: number | null
+): { usd: number | null; cdf: number | null } {
+  const directUsd = getVariantDirectUsd(variant)
+  const directCdf = getVariantDirectCdf(variant)
+
+  let usd = directUsd
+  let cdf = directCdf
+
+  /*
+   * Si la variante n'a aucun prix spécifique,
+   * on retombe sur le prix de base du produit.
+   */
+  if (usd == null && cdf == null) {
+    usd = baseUsd
+    cdf = baseCdf
+  }
+
+  /*
+   * USD = source principale.
+   * Si un prix USD existe et que le taux est disponible,
+   * le CDF est toujours recalculé depuis USD.
+   */
+  if (usd != null && rate != null && rate > 0) {
+    cdf = roundCdf(usd * rate)
+  } else if (cdf != null && rate != null && rate > 0) {
+    usd = roundUsd(cdf / rate)
+  }
+
+  return { usd, cdf }
+}
+
+function makePricePair(
+  usd: number | null,
+  cdf: number | null,
+  preferred: Currency = 'USD'
+): PricePair {
+  const safeUsd = positiveNumber(usd)
+  const safeCdf = positiveNumber(cdf)
+
+  let primaryCurrency: Currency | null = null
+
+  if (preferred === 'CDF' && safeCdf != null) {
+    primaryCurrency = 'CDF'
+  } else if (safeUsd != null) {
+    primaryCurrency = 'USD'
+  } else if (safeCdf != null) {
+    primaryCurrency = 'CDF'
+  }
+
+  const primaryAmount =
+    primaryCurrency === 'USD'
+      ? safeUsd ?? 0
+      : primaryCurrency === 'CDF'
+        ? safeCdf ?? 0
+        : 0
+
+  const secondaryCurrency: Currency | null =
+    primaryCurrency === 'USD'
+      ? 'CDF'
+      : primaryCurrency === 'CDF'
+        ? 'USD'
+        : null
+
+  const secondaryAmount =
+    secondaryCurrency === 'USD'
+      ? safeUsd
+      : secondaryCurrency === 'CDF'
+        ? safeCdf
+        : null
+
+  const displayPrimary =
+    primaryCurrency === 'USD'
+      ? formatUsd(primaryAmount)
+      : primaryCurrency === 'CDF'
+        ? formatCdf(primaryAmount)
+        : '—'
+
+  const displaySecondary =
+    secondaryAmount != null &&
+    secondaryAmount > 0 &&
+    secondaryAmount !== primaryAmount
+      ? `≈ ${
+          secondaryCurrency === 'USD'
+            ? formatUsd(secondaryAmount)
+            : formatCdf(secondaryAmount)
+        }`
+      : null
+
+  return {
+    usd: safeUsd,
+    cdf: safeCdf,
+    primaryCurrency,
+    primaryAmount,
+    secondaryCurrency,
+    secondaryAmount,
+    displayPrimary,
+    displaySecondary,
+    hasPrice: primaryAmount > 0,
+  }
+}
+
+function computePriceDifference(
+  finalPair: PricePair,
+  basePair: PricePair,
+  rate: number | null
+): PriceDifference | null {
+  if (!finalPair.hasPrice || !basePair.hasPrice) return null
+
+  let diffUsd: number | null = null
+  let diffCdf: number | null = null
+
+  if (finalPair.usd != null && basePair.usd != null) {
+    diffUsd = roundUsd(finalPair.usd - basePair.usd)
+  }
+
+  if (diffUsd != null && rate != null && rate > 0) {
+    diffCdf = roundCdf(diffUsd * rate)
+  } else if (finalPair.cdf != null && basePair.cdf != null) {
+    diffCdf = roundCdf(finalPair.cdf - basePair.cdf)
+  }
+
+  if (diffUsd == null && diffCdf == null) return null
+
+  const primaryCurrency: Currency =
+    finalPair.primaryCurrency === 'CDF' ? 'CDF' : 'USD'
+
+  let primaryAmount: number | null = null
+
+  if (primaryCurrency === 'USD') {
+    if (diffUsd != null) {
+      primaryAmount = diffUsd
+    } else if (diffCdf != null && rate != null && rate > 0) {
+      primaryAmount = roundUsd(diffCdf / rate)
+    }
+  } else {
+    if (diffCdf != null) {
+      primaryAmount = diffCdf
+    } else if (diffUsd != null && rate != null && rate > 0) {
+      primaryAmount = roundCdf(diffUsd * rate)
+    }
+  }
+
+  if (primaryAmount == null || primaryAmount === 0) return null
+
+  const absolute = Math.abs(primaryAmount)
+
+  const display = `${primaryAmount < 0 ? '-' : '+'}${
+    primaryCurrency === 'USD'
+      ? formatUsd(absolute)
+      : formatCdf(absolute)
+  }`
+
+  return {
+    primaryCurrency,
+    primaryAmount,
+    display,
+    tone: primaryAmount < 0 ? 'success' : 'danger',
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  UTILITAIRES VISUELLES                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
 const isColorAttribute = (name: string): boolean => {
   const lower = name.toLowerCase()
-  return lower.includes('couleur') || lower.includes('color') || lower.includes('teinte')
+  return (
+    lower.includes('couleur') ||
+    lower.includes('color') ||
+    lower.includes('teinte')
+  )
 }
 
-// Mapping des noms de couleurs vers des codes hex (extensible)
 const colorNameToHex: Record<string, string> = {
   noir: '#000000',
+  black: '#000000',
   blanc: '#ffffff',
+  white: '#ffffff',
   rouge: '#dc2626',
+  red: '#dc2626',
   bleu: '#2563eb',
+  blue: '#2563eb',
   vert: '#16a34a',
+  green: '#16a34a',
   jaune: '#facc15',
+  yellow: '#facc15',
   orange: '#f97316',
   violet: '#8b5cf6',
+  purple: '#8b5cf6',
   rose: '#f472b6',
+  pink: '#f472b6',
   gris: '#6b7280',
+  gray: '#6b7280',
+  grey: '#6b7280',
   marron: '#78350f',
+  brown: '#78350f',
   or: '#f59e0b',
+  gold: '#f59e0b',
   argent: '#cbd5e1',
+  silver: '#cbd5e1',
 }
 
-// Obtient la couleur d'affichage pour une option de type couleur
-const getColorPreview = (option: string): string | null => {
-  const lower = option.toLowerCase()
+function getColorPreview(option: string): string | null {
+  const lower = option.toLowerCase().trim()
   return colorNameToHex[lower] || null
 }
 
-/* ========================================================================== */
-/*  Composant principal                                                        */
-/* ========================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  COMPOSANT PRINCIPAL                                            */
+/* ═══════════════════════════════════════════════════════════════ */
 
-export const ProductVariants = forwardRef<HTMLDivElement, ProductVariantsProps>(
+export const ProductVariants = forwardRef<
+  HTMLDivElement,
+  ProductVariantsProps
+>(
   (
     {
       variants,
       selectedAttributes,
       onAttributeChange,
       basePrice,
+      basePriceUsd,
+      basePriceCdf,
       showPrice = true,
       showStock = true,
       size = 'md',
@@ -96,167 +458,373 @@ export const ProductVariants = forwardRef<HTMLDivElement, ProductVariantsProps>(
       getAvailableOptions,
       compact = false,
       maxOptionsBeforeSelect = 6,
+      preferredCurrency = 'USD',
+      onVariantChange,
     },
     ref
   ) => {
     const { rate } = useExchangeRate()
 
-    // Extraire les noms d'attributs uniques (dans l'ordre d'apparition)
+    const [mounted, setMounted] = useState(false)
+
+    useEffect(() => {
+      setMounted(true)
+    }, [])
+
+    /*
+     * FIX HYDRATION :
+     * Le taux peut être chargé côté client seulement.
+     * On évite donc de calculer une conversion avant hydratation.
+     */
+    const safeRate = mounted ? positiveNumber(rate) : null
+
+    const basePrices = useMemo(
+      () =>
+        resolveBasePrices(
+          {
+            basePrice,
+            basePriceUsd,
+            basePriceCdf,
+          },
+          safeRate
+        ),
+      [basePrice, basePriceCdf, basePriceUsd, safeRate]
+    )
+
     const attributeNames = useMemo(() => {
       const names = new Set<string>()
-      variants.forEach(v => Object.keys(v.attributes).forEach(k => names.add(k)))
+
+      variants.forEach((variant) => {
+        Object.keys(variant.attributes || {}).forEach((key) => {
+          if (key) names.add(key)
+        })
+      })
+
       return Array.from(names)
     }, [variants])
 
-    // Trouver la variante courante correspondant aux sélections
     const currentVariant = useMemo(() => {
-      return variants.find(v =>
-        Object.entries(selectedAttributes).every(([k, val]) => v.attributes[k] === val)
-      ) || null
-    }, [variants, selectedAttributes])
+      if (!variants.length) return null
 
-    // Calculer le prix final et l'économie
-    const finalPrice = currentVariant?.prix_specifique ?? basePrice
-    const priceDifference = basePrice ? (finalPrice ?? basePrice) - basePrice : 0
+      const entries = Object.entries(selectedAttributes || {}).filter(
+        ([key, value]) => Boolean(key) && Boolean(value)
+      )
 
-    // Gestion du clic sur une option
+      if (entries.length === 0) return null
+
+      return (
+        variants.find((variant) =>
+          entries.every(([key, value]) => {
+            return variant.attributes?.[key] === value
+          })
+        ) || null
+      )
+    }, [selectedAttributes, variants])
+
+    const finalPrices = useMemo(
+      () =>
+        resolveVariantPrices(
+          currentVariant,
+          basePrices.usd,
+          basePrices.cdf,
+          safeRate
+        ),
+      [basePrices.cdf, basePrices.usd, currentVariant, safeRate]
+    )
+
+    const finalPair = useMemo(
+      () => makePricePair(finalPrices.usd, finalPrices.cdf, preferredCurrency),
+      [finalPrices.cdf, finalPrices.usd, preferredCurrency]
+    )
+
+    const basePair = useMemo(
+      () => makePricePair(basePrices.usd, basePrices.cdf, preferredCurrency),
+      [basePrices.cdf, basePrices.usd, preferredCurrency]
+    )
+
+    const priceDifference = useMemo(
+      () => computePriceDifference(finalPair, basePair, safeRate),
+      [basePair, finalPair, safeRate]
+    )
+
+    useEffect(() => {
+      if (!onVariantChange) return
+
+      onVariantChange(currentVariant)
+    }, [currentVariant, onVariantChange])
+
+    const findVariantForOption = useCallback(
+      (attributeName: string, value: string): Variant | null => {
+        if (!attributeName || !value) return null
+
+        return (
+          variants.find((variant) => {
+            if (variant.attributes?.[attributeName] !== value) return false
+
+            return Object.entries(selectedAttributes || {}).every(
+              ([key, selectedValue]) => {
+                if (key === attributeName) return true
+                if (!key || !selectedValue) return true
+
+                return variant.attributes?.[key] === selectedValue
+              }
+            )
+          }) || null
+        )
+      },
+      [selectedAttributes, variants]
+    )
+
+    const getOptionTooltip = useCallback(
+      (attributeName: string, value: string, available: boolean): string => {
+        if (!available) return 'Indisponible'
+
+        const variant = findVariantForOption(attributeName, value)
+
+        if (!variant) return ''
+
+        const prices = resolveVariantPrices(
+          variant,
+          basePrices.usd,
+          basePrices.cdf,
+          safeRate
+        )
+
+        const pair = makePricePair(
+          prices.usd,
+          prices.cdf,
+          preferredCurrency
+        )
+
+        if (!pair.hasPrice) return ''
+
+        return pair.displaySecondary
+          ? `${pair.displayPrimary} ${pair.displaySecondary}`
+          : pair.displayPrimary
+      },
+      [
+        basePrices.cdf,
+        basePrices.usd,
+        findVariantForOption,
+        preferredCurrency,
+        safeRate,
+      ]
+    )
+
     const handleOptionClick = useCallback(
-      (attrName: string, value: string) => {
-        onAttributeChange(attrName, value)
+      (attributeName: string, value: string) => {
+        onAttributeChange(attributeName, value)
       },
       [onAttributeChange]
     )
 
-    // Taille des boutons
-    const sizeClasses = {
+    const sizeClasses: Record<'sm' | 'md' | 'lg', string> = {
       sm: 'px-2 py-1 text-xs',
       md: 'px-3 py-1.5 text-sm',
       lg: 'px-4 py-2 text-base',
     }
 
-    if (variants.length === 0) return null
+    /*
+     * FIX IMPORTANT :
+     * Tous les calculs par attribut sont faits dans un seul useMemo.
+     * Avant, des useMemo étaient appelés dans un .map(), ce qui cassait les règles React.
+     */
+    const attributeData = useMemo(() => {
+      return attributeNames.map((attributeName) => {
+        const allValues = Array.from(
+          new Set(
+            variants
+              .map((variant) => variant.attributes?.[attributeName])
+              .filter((value): value is string => Boolean(value))
+          )
+        )
+
+        const availableValues = getAvailableOptions
+          ? getAvailableOptions(attributeName, selectedAttributes)
+          : allValues.filter((value) => {
+              return variants.some((variant) => {
+                if (variant.attributes?.[attributeName] !== value) {
+                  return false
+                }
+
+                return Object.entries(selectedAttributes || {}).every(
+                  ([key, selectedValue]) => {
+                    if (key === attributeName) return true
+                    if (!key || !selectedValue) return true
+
+                    return variant.attributes?.[key] === selectedValue
+                  }
+                )
+              })
+            })
+
+        const isColor = isColorAttribute(attributeName)
+        const useNativeSelect = allValues.length > maxOptionsBeforeSelect
+
+        return {
+          attributeName,
+          allValues,
+          availableValues,
+          isColor,
+          useNativeSelect,
+        }
+      })
+    }, [
+      attributeNames,
+      getAvailableOptions,
+      maxOptionsBeforeSelect,
+      selectedAttributes,
+      variants,
+    ])
+
+    if (!variants.length) return null
+
+    const displayPair = currentVariant ? finalPair : basePair
+
+    const displayLabel = currentVariant
+      ? 'Variante sélectionnée'
+      : variants.length > 0
+        ? 'À partir de'
+        : 'Prix'
+
+    const showPriceBlock =
+      showPrice && displayPair.hasPrice
+
+    const showDifferenceBadge =
+      Boolean(currentVariant) && Boolean(priceDifference)
 
     return (
       <div ref={ref} className={cn('space-y-4', className)}>
-        {attributeNames.map(attrName => {
-          // Récupérer toutes les valeurs possibles pour cet attribut (dédupliquées)
-          const allValues = useMemo(() => {
-            const vals = new Set<string>()
-            variants.forEach(v => {
-              if (v.attributes[attrName]) vals.add(v.attributes[attrName])
-            })
-            return Array.from(vals)
-          }, [variants, attrName])
-
-          // Options disponibles (tenant compte des sélections actuelles)
-          const availableValues = useMemo(() => {
-            if (getAvailableOptions) {
-              return getAvailableOptions(attrName, selectedAttributes)
-            }
-            // Comportement par défaut : une option est indisponible si aucune variante ne la supporte avec les autres sélections actuelles
-            return allValues.filter(val => {
-              return variants.some(v => {
-                const match = Object.entries(selectedAttributes).every(([k, sel]) => {
-                  if (k === attrName) return true // on ignore l'attribut courant
-                  return v.attributes[k] === sel
-                })
-                return match && v.attributes[attrName] === val
-              })
-            })
-          }, [allValues, attrName, selectedAttributes, variants, getAvailableOptions])
-
-          const isColor = isColorAttribute(attrName)
-          const useNativeSelect = allValues.length > maxOptionsBeforeSelect
-
+        {attributeData.map(({
+          attributeName,
+          allValues,
+          availableValues,
+          isColor,
+          useNativeSelect,
+        }) => {
           if (compact && allValues.length <= 1) return null
 
           return (
-            <div key={attrName}>
-              <p className="text-sm font-medium text-foreground mb-2 capitalize">
-                {attrName}
-                {selectedAttributes[attrName] && (
-                  <span className="text-gold-600 ml-1">: {selectedAttributes[attrName]}</span>
+            <div key={attributeName}>
+              <p className="mb-2 text-sm font-medium capitalize text-foreground">
+                {attributeName}
+
+                {selectedAttributes[attributeName] && (
+                  <span className="ml-1 text-gold-600">
+                    : {selectedAttributes[attributeName]}
+                  </span>
                 )}
               </p>
 
               {useNativeSelect ? (
                 <select
-                  value={selectedAttributes[attrName] || ''}
-                  onChange={e => handleOptionClick(attrName, e.target.value)}
-                  className="bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground w-full sm:w-auto"
+                  value={selectedAttributes[attributeName] || ''}
+                  onChange={(event) =>
+                    handleOptionClick(attributeName, event.target.value)
+                  }
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground sm:w-auto"
                 >
-                  <option value="">Choisir {attrName}</option>
-                  {allValues.map(val => (
-                    <option key={val} value={val} disabled={!availableValues.includes(val)}>
-                      {val}
-                    </option>
-                  ))}
+                  <option value="">Choisir {attributeName}</option>
+
+                  {allValues.map((value) => {
+                    const available = availableValues.includes(value)
+
+                    return (
+                      <option
+                        key={value}
+                        value={value}
+                        disabled={!available}
+                      >
+                        {value}
+                      </option>
+                    )
+                  })}
                 </select>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {allValues.map(val => {
-                    const available = availableValues.includes(val)
-                    const selected = selectedAttributes[attrName] === val
-                    const colorHex = isColor ? getColorPreview(val) : null
+                  {allValues.map((value) => {
+                    const available = availableValues.includes(value)
+                    const selected =
+                      selectedAttributes[attributeName] === value
 
-                    // Prix spécifique si cette option correspond à une variante avec prix modifié
-                    const variantWithAttr = variants.find(v =>
-                      v.attributes[attrName] === val &&
-                      Object.entries(selectedAttributes).every(([k, sel]) => k === attrName || v.attributes[k] === sel)
+                    const colorHex = isColor
+                      ? getColorPreview(value)
+                      : null
+
+                    const tooltipContent = getOptionTooltip(
+                      attributeName,
+                      value,
+                      available
                     )
-                    const attrPrice = variantWithAttr?.prix_specifique
 
-                    return (
-                      <Tooltip
-                        key={val}
-                        content={
-                          !available
-                            ? 'Indisponible'
-                            : attrPrice && showPrice
-                              ? `${attrPrice.toLocaleString()} FC`
-                              : ''
+                    const button = (
+                      <motion.button
+                        type="button"
+                        whileTap={{ scale: 0.95 }}
+                        whileHover={{ scale: available ? 1.05 : 1 }}
+                        disabled={!available}
+                        onClick={() =>
+                          handleOptionClick(attributeName, value)
                         }
-                        position="top"
-                        delay={300}
+                        className={cn(
+                          'relative inline-flex items-center gap-2 rounded-full border-2 font-medium transition-all duration-200',
+                          sizeClasses[size],
+                          selected
+                            ? 'border-gold-400 bg-gold-400/10 text-gold-700 shadow-gold dark:text-gold-300'
+                            : available
+                              ? 'border-border text-foreground hover:border-gold-400 hover:bg-gold-400/5'
+                              : 'cursor-not-allowed border-transparent bg-neutral-100 text-muted-foreground opacity-50 dark:bg-midnight-700'
+                        )}
+                        aria-pressed={selected}
+                        aria-label={`${attributeName}: ${value}${
+                          !available ? ' (indisponible)' : ''
+                        }`}
                       >
-                        <motion.button
-                          whileTap={{ scale: 0.95 }}
-                          whileHover={{ scale: available ? 1.05 : 1 }}
-                          disabled={!available}
-                          onClick={() => handleOptionClick(attrName, val)}
-                          className={cn(
-                            'relative inline-flex items-center gap-2 rounded-full border-2 font-medium transition-all duration-200',
-                            sizeClasses[size],
-                            selected
-                              ? 'border-gold-400 bg-gold-400/10 text-gold-700 dark:text-gold-300 shadow-gold'
-                              : available
-                                ? 'border-border text-foreground hover:border-gold-400 hover:bg-gold-400/5'
-                                : 'border-transparent bg-neutral-100 dark:bg-midnight-700 text-muted-foreground opacity-50 cursor-not-allowed',
-                          )}
-                          aria-pressed={selected}
-                          aria-label={`${attrName}: ${val}${!available ? ' (indisponible)' : ''}`}
-                        >
-                          {isColor && colorHex && (
-                            <span
-                              className="w-4 h-4 rounded-full border border-white/20 shadow-sm"
-                              style={{ backgroundColor: colorHex }}
-                            />
-                          )}
-                          <span>{val}</span>
-                          {selected && (
-                            <motion.span
-                              initial={{ scale: 0 }}
-                              animate={{ scale: 1 }}
-                              className="absolute -top-1 -right-1 w-4 h-4 bg-gold-500 rounded-full flex items-center justify-center"
+                        {isColor && colorHex && (
+                          <span
+                            className="h-4 w-4 rounded-full border border-white/20 shadow-sm"
+                            style={{ backgroundColor: colorHex }}
+                          />
+                        )}
+
+                        <span>{value}</span>
+
+                        {selected && (
+                          <motion.span
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-gold-500"
+                          >
+                            <svg
+                              width="10"
+                              height="10"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="white"
+                              strokeWidth="3"
+                              aria-hidden="true"
                             >
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                                <path d="M20 6L9 17l-5-5" />
-                              </svg>
-                            </motion.span>
-                          )}
-                        </motion.button>
-                      </Tooltip>
+                              <path d="M20 6L9 17l-5-5" />
+                            </svg>
+                          </motion.span>
+                        )}
+                      </motion.button>
                     )
+
+                    if (tooltipContent) {
+                      return (
+                        <Tooltip
+                          key={value}
+                          content={tooltipContent}
+                          position="top"
+                          delay={300}
+                        >
+                          {button}
+                        </Tooltip>
+                      )
+                    }
+
+                    return <React.Fragment key={value}>{button}</React.Fragment>
                   })}
                 </div>
               )}
@@ -264,46 +832,64 @@ export const ProductVariants = forwardRef<HTMLDivElement, ProductVariantsProps>(
           )
         })}
 
-        {/* Affichage du prix et du stock de la variante sélectionnée */}
         <AnimatePresence>
-          {currentVariant && showPrice && finalPrice !== undefined && (
+          {showPriceBlock && (
             <motion.div
+              key={`${displayPair.primaryCurrency}-${displayPair.primaryAmount}`}
               initial={{ opacity: 0, y: -5 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -5 }}
-              className="flex flex-wrap items-center gap-3 pt-2 border-t border-border"
+              className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3"
             >
-              <div>
-                <span className="text-2xl font-bold text-foreground">
-                  {finalPrice.toLocaleString()} FC
-                </span>
-                {rate && (
-                  <span className="text-sm text-muted-foreground ml-1">
-                    ≈ ${(finalPrice / rate).toFixed(2)} USD
-                  </span>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">
+                  {displayLabel}
+                </p>
+
+                <p className="text-2xl font-bold text-foreground">
+                  {displayPair.displayPrimary}
+                </p>
+
+                {displayPair.displaySecondary && (
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {displayPair.displaySecondary}
+                  </p>
                 )}
               </div>
-              {priceDifference !== 0 && (
-                <Badge variant={priceDifference < 0 ? 'success' : 'danger'} size="sm">
-                  {priceDifference < 0 ? '-' : '+'}{Math.abs(priceDifference).toLocaleString()} FC
+
+              {showDifferenceBadge && priceDifference && (
+                <Badge
+                  variant={priceDifference.tone}
+                  size="sm"
+                  className="shrink-0"
+                >
+                  {priceDifference.display}
                 </Badge>
               )}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {showStock && currentVariant && (
-          <p className="text-sm text-muted-foreground">
-            {currentVariant.stock > 0 ? (
-              currentVariant.stock <= 5 ? (
-                <span className="text-amber-500">Plus que {currentVariant.stock} en stock</span>
+        {showStock && (
+          <div className="text-sm">
+            {currentVariant ? (
+              currentVariant.stock > 0 ? (
+                currentVariant.stock <= 5 ? (
+                  <span className="text-amber-500">
+                    Plus que {currentVariant.stock} en stock
+                  </span>
+                ) : (
+                  <span className="text-green-500">En stock</span>
+                )
               ) : (
-                <span className="text-green-500">En stock</span>
+                <span className="text-red-500">Rupture de stock</span>
               )
             ) : (
-              <span className="text-red-500">Rupture de stock</span>
+              <span className="text-muted-foreground">
+                Sélectionnez une variante pour voir la disponibilité.
+              </span>
             )}
-          </p>
+          </div>
         )}
       </div>
     )
@@ -311,3 +897,5 @@ export const ProductVariants = forwardRef<HTMLDivElement, ProductVariantsProps>(
 )
 
 ProductVariants.displayName = 'ProductVariants'
+
+export default ProductVariants

@@ -2,5 +2,6 @@
     "i18n-ally.localesPaths": [
         "i18n",
         "messages"
-    ]
+    ],
+    "nvidia-nim.defaultModel": "moonshotai/kimi-k2.5"
 }

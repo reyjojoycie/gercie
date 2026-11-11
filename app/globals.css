@@ -1,23 +1,114 @@
 /*
-Fichier à modifier : app/globals.css
-Nouveaux fichiers : aucun
-Base de données : aucune requête SQL
+  Gercie Market Place app/globals.css
+  Visual Foundation — Premium Marketplace System
+  Objective:
+  - light mode: luminous, airy, professional
+  - dark mode: deep midnight, elegant, high-end
+  - one strong accent per mode
+  - semantic tokens for scalable design system
 */
 
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ==========================================================================
-   Thème Tailwind v4 – Palettes Illimitées, Harmonie Absolue
-   Version optimisée : premium + performance + stabilité
+   THEME TOKENS — TAILWIND V4
    ========================================================================== */
 @theme {
-  --font-sans: 'Outfit', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-serif: 'Playfair Display', Georgia, serif;
-  --font-heading: 'Plus Jakarta Sans', 'Outfit', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* ---------------------------------------------------------------------- */
+  /* TYPOGRAPHY                                                             */
+  /* ---------------------------------------------------------------------- */
+  --font-sans: "Outfit", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Inter", "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-heading: "Plus Jakarta Sans", "Outfit", sans-serif;
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
 
-  /* Brand – Bleu saphir */
+  /* ---------------------------------------------------------------------- */
+  /* SEMANTIC SURFACES — LIGHT DEFAULTS                                     */
+  /* ---------------------------------------------------------------------- */
+  --color-canvas: #f8f8f5;
+  --color-surface: #ffffff;
+  --color-raised: #fcfcfa;
+  --color-muted: #f1f1ec;
+
+  --color-overlay: rgba(21, 21, 24, 0.45);
+  --color-overlay-strong: rgba(21, 21, 24, 0.65);
+
+  /* ---------------------------------------------------------------------- */
+  /* SEMANTIC TEXT — LIGHT DEFAULTS                                         */
+  /* ---------------------------------------------------------------------- */
+  --color-fg: #151518;
+  --color-fg-muted: #5b5b63;
+  --color-fg-subtle: #83838c;
+  --color-fg-inverse: #ffffff;
+
+  /* ---------------------------------------------------------------------- */
+  /* SEMANTIC BORDERS — LIGHT DEFAULTS                                      */
+  /* ---------------------------------------------------------------------- */
+  --color-line: #e6e4de;
+  --color-line-strong: #d5d2c9;
+
+  /* ---------------------------------------------------------------------- */
+  /* MAIN ACCENT — LIGHT DEFAULT: SAPPHIRE                                  */
+  /* ---------------------------------------------------------------------- */
+  --color-accent: #1d3ab8;
+  --color-accent-hover: #172f91;
+  --color-accent-soft: #eef2ff;
+  --color-accent-contrast: #ffffff;
+
+  /* ---------------------------------------------------------------------- */
+  /* STATE COLORS — LIGHT DEFAULTS                                          */
+  /* ---------------------------------------------------------------------- */
+  --color-success: #16a34a;
+  --color-success-soft: #f0fdf5;
+
+  --color-warning: #d97706;
+  --color-warning-soft: #fffbeb;
+
+  --color-danger: #dc2626;
+  --color-danger-soft: #fef2f2;
+
+  --color-info: #0891b2;
+  --color-info-soft: #ecfeff;
+
+  --color-focus: #1d3ab8;
+
+  /* ---------------------------------------------------------------------- */
+  /* SHADOWS — PREMIUM SUBTLE DEPTH                                         */
+  /* ---------------------------------------------------------------------- */
+  --shadow-soft: 0 2px 15px -3px rgb(0 0 0 / 0.07), 0 10px 20px -2px rgb(0 0 0 / 0.04);
+  --shadow-medium: 0 4px 25px -5px rgb(0 0 0 / 0.10), 0 8px 10px -6px rgb(0 0 0 / 0.05);
+  --shadow-strong: 0 10px 40px -10px rgb(0 0 0 / 0.15), 0 20px 15px -15px rgb(0 0 0 / 0.08);
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px -4px rgb(0 0 0 / 0.06);
+  --shadow-card-hover: 0 10px 30px -10px rgb(0 0 0 / 0.10), 0 4px 6px -2px rgb(0 0 0 / 0.05);
+  --shadow-raised: 0 12px 32px -12px rgb(0 0 0 / 0.14), 0 2px 6px rgb(0 0 0 / 0.05);
+  --shadow-overlay: 0 24px 64px -16px rgb(0 0 0 / 0.24);
+
+  --shadow-gold: 0 0 24px rgba(215, 181, 106, 0.28);
+  --shadow-glow-gold: 0 0 30px rgba(215, 181, 106, 0.35);
+  --shadow-glow-brand: 0 0 30px rgba(29, 58, 184, 0.25);
+  --shadow-glow-accent: 0 0 30px rgba(24, 199, 138, 0.28);
+  --shadow-glow-luxury: 0 0 30px rgba(139, 92, 246, 0.28);
+
+  --shadow-dark-card: 0 4px 20px rgba(0, 0, 0, 0.30), 0 1px 3px rgba(255, 255, 255, 0.04);
+  --shadow-dark-xl: 0 15px 40px rgba(0, 0, 0, 0.50), 0 5px 15px rgba(0, 0, 0, 0.30);
+
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --shadow-glass-dark: 0 8px 32px rgba(0, 0, 0, 0.35);
+
+  /* ---------------------------------------------------------------------- */
+  /* RADII — CONTROLLED GEOMETRY                                            */
+  /* ---------------------------------------------------------------------- */
+  --radius-control: 0.75rem;
+  --radius-card: 1rem;
+  --radius-panel: 1.25rem;
+  --radius-pill: 9999px;
+
+  /* ---------------------------------------------------------------------- */
+  /* BRAND — DEEP SAPPHIRE                                                  */
+  /* ---------------------------------------------------------------------- */
   --color-brand-50: #eff3ff;
   --color-brand-100: #dbe3fe;
   --color-brand-200: #b9c8fd;
@@ -30,7 +121,9 @@ Base de données : aucune requête SQL
   --color-brand-900: #132378;
   --color-brand-950: #0f1b5c;
 
-  /* Accent – Jade royal */
+  /* ---------------------------------------------------------------------- */
+  /* ACCENT PALETTE — JADE ROYAL                                            */
+  /* ---------------------------------------------------------------------- */
   --color-accent-50: #eefdf6;
   --color-accent-100: #d4faeb;
   --color-accent-200: #adf5d9;
@@ -43,7 +136,9 @@ Base de données : aucune requête SQL
   --color-accent-900: #095440;
   --color-accent-950: #06382b;
 
-  /* Warm – Ambre royal */
+  /* ---------------------------------------------------------------------- */
+  /* WARM — AMBER ROYAL                                                     */
+  /* ---------------------------------------------------------------------- */
   --color-warm-50: #fffdf2;
   --color-warm-100: #fef9dc;
   --color-warm-200: #fdf2ba;
@@ -56,7 +151,9 @@ Base de données : aucune requête SQL
   --color-warm-900: #5e4c08;
   --color-warm-950: #3d3106;
 
-  /* Luxury – Violet aubergine */
+  /* ---------------------------------------------------------------------- */
+  /* LUXURY — ROYAL AUBERGINE                                               */
+  /* ---------------------------------------------------------------------- */
   --color-luxury-50: #faf5ff;
   --color-luxury-100: #efebff;
   --color-luxury-200: #ddd1fb;
@@ -69,20 +166,24 @@ Base de données : aucune requête SQL
   --color-luxury-900: #291558;
   --color-luxury-950: #1a0c3d;
 
-  /* Gold – Or pur */
+  /* ---------------------------------------------------------------------- */
+  /* GOLD — REFINED CHAMPAGNE IMPERIAL                                      */
+  /* ---------------------------------------------------------------------- */
   --color-gold-50: #fdf9ed;
   --color-gold-100: #faf0d7;
-  --color-gold-200: #f5e0af;
-  --color-gold-300: #efcf7e;
-  --color-gold-400: #e8be4c;
-  --color-gold-500: #dfad1f;
-  --color-gold-600: #c99a14;
-  --color-gold-700: #a87d0e;
-  --color-gold-800: #8b650a;
-  --color-gold-900: #6d4e08;
-  --color-gold-950: #4a3405;
+  --color-gold-200: #f2dfae;
+  --color-gold-300: #e9cd85;
+  --color-gold-400: #e4c57d;
+  --color-gold-500: #d7b56a;
+  --color-gold-600: #b8964f;
+  --color-gold-700: #96783d;
+  --color-gold-800: #6f5a2e;
+  --color-gold-900: #4d3e20;
+  --color-gold-950: #2b2312;
 
-  /* Burgundy – Rouge profond */
+  /* ---------------------------------------------------------------------- */
+  /* BURGUNDY — DEEP RED                                                    */
+  /* ---------------------------------------------------------------------- */
   --color-burgundy-50: #fdf2f4;
   --color-burgundy-100: #fce7ea;
   --color-burgundy-200: #f9d0d9;
@@ -95,20 +196,24 @@ Base de données : aucune requête SQL
   --color-burgundy-900: #721531;
   --color-burgundy-950: #4a0c1f;
 
-  /* Midnight – Bleu nuit (dark mode) */
-  --color-midnight-50: #e6ebf4;
-  --color-midnight-100: #cdd6e9;
-  --color-midnight-200: #9aa7d2;
-  --color-midnight-300: #6b7db8;
-  --color-midnight-400: #455a9e;
-  --color-midnight-500: #2c3e84;
-  --color-midnight-600: #1f2b6b;
-  --color-midnight-700: #151e52;
-  --color-midnight-800: #0d1338;
-  --color-midnight-900: #080c24;
-  --color-midnight-950: #040715;
+  /* ---------------------------------------------------------------------- */
+  /* MIDNIGHT — DEEP NIGHT BLUE SYSTEM                                      */
+  /* ---------------------------------------------------------------------- */
+  --color-midnight-50: #e8ebf2;
+  --color-midnight-100: #d5dae6;
+  --color-midnight-200: #b0bacd;
+  --color-midnight-300: #8a97b3;
+  --color-midnight-400: #67769a;
+  --color-midnight-500: #4d5c80;
+  --color-midnight-600: #34405e;
+  --color-midnight-700: #222b42;
+  --color-midnight-800: #151c2e;
+  --color-midnight-900: #0f1524;
+  --color-midnight-950: #070a14;
 
-  /* Champagne – Beige doré */
+  /* ---------------------------------------------------------------------- */
+  /* CHAMPAGNE — SOFT GOLD BEIGE                                            */
+  /* ---------------------------------------------------------------------- */
   --color-champagne-50: #fefdfb;
   --color-champagne-100: #fdf9f2;
   --color-champagne-200: #faf2e2;
@@ -121,72 +226,24 @@ Base de données : aucune requête SQL
   --color-champagne-900: #c48232;
   --color-champagne-950: #a5671e;
 
-  /* Rose Gold – Rose luxueux */
-  --color-rosegold-50: #fff5f7;
-  --color-rosegold-100: #ffe9ee;
-  --color-rosegold-200: #ffd3dd;
-  --color-rosegold-300: #ffb3c6;
-  --color-rosegold-400: #ff8aa5;
-  --color-rosegold-500: #ff5c7e;
-  --color-rosegold-600: #e03b5e;
-  --color-rosegold-700: #b32242;
-  --color-rosegold-800: #8a1a33;
-  --color-rosegold-900: #661226;
-  --color-rosegold-950: #3d0917;
+  /* ---------------------------------------------------------------------- */
+  /* NEUTRAL — WARM GREYS                                                   */
+  /* ---------------------------------------------------------------------- */
+  --color-neutral-50: #f8f8f5;
+  --color-neutral-100: #f1f1ec;
+  --color-neutral-200: #e6e4de;
+  --color-neutral-300: #d5d2c9;
+  --color-neutral-400: #9a9aa2;
+  --color-neutral-500: #6f6f78;
+  --color-neutral-600: #56565f;
+  --color-neutral-700: #3f3f47;
+  --color-neutral-800: #2a2a31;
+  --color-neutral-900: #17171b;
+  --color-neutral-950: #0d0d10;
 
-  /* Teal – Bleu canard profond */
-  --color-teal-50: #f0fdfb;
-  --color-teal-100: #d2f9f2;
-  --color-teal-200: #a7f0e4;
-  --color-teal-300: #6fe7d2;
-  --color-teal-400: #3cd6bc;
-  --color-teal-500: #1bbfa1;
-  --color-teal-600: #0f9e86;
-  --color-teal-700: #0b7d6c;
-  --color-teal-800: #096356;
-  --color-teal-900: #074f45;
-  --color-teal-950: #04352e;
-
-  /* Copper – Cuivre métallique */
-  --color-copper-50: #fdf6f2;
-  --color-copper-100: #fbecdf;
-  --color-copper-200: #f6d5ba;
-  --color-copper-300: #f0b98e;
-  --color-copper-400: #ea9b5d;
-  --color-copper-500: #e37d32;
-  --color-copper-600: #c2671e;
-  --color-copper-700: #9b4f17;
-  --color-copper-800: #7a3d13;
-  --color-copper-900: #5c2d0f;
-  --color-copper-950: #3d1c09;
-
-  /* Silver – Argent moderne */
-  --color-silver-50: #f8f9fc;
-  --color-silver-100: #f1f3f9;
-  --color-silver-200: #e2e6f0;
-  --color-silver-300: #cbd2e3;
-  --color-silver-400: #a9b3cc;
-  --color-silver-500: #8794b0;
-  --color-silver-600: #6b7894;
-  --color-silver-700: #525e78;
-  --color-silver-800: #3e4860;
-  --color-silver-900: #2c3348;
-  --color-silver-950: #1a2030;
-
-  /* Neutral – Gris chauds */
-  --color-neutral-50: #fafaf9;
-  --color-neutral-100: #f4f3f0;
-  --color-neutral-200: #e7e5e0;
-  --color-neutral-300: #d1cec7;
-  --color-neutral-400: #a8a49b;
-  --color-neutral-500: #7d7970;
-  --color-neutral-600: #5c5850;
-  --color-neutral-700: #41403a;
-  --color-neutral-800: #2b2a25;
-  --color-neutral-900: #1b1a16;
-  --color-neutral-950: #11100e;
-
-  /* Danger – Rouge vif */
+  /* ---------------------------------------------------------------------- */
+  /* DANGER — RED                                                           */
+  /* ---------------------------------------------------------------------- */
   --color-danger-50: #fef2f2;
   --color-danger-100: #fee2e2;
   --color-danger-200: #fecaca;
@@ -199,7 +256,9 @@ Base de données : aucune requête SQL
   --color-danger-900: #7f1d1d;
   --color-danger-950: #450a0a;
 
-  /* Success – Vert émeraude */
+  /* ---------------------------------------------------------------------- */
+  /* SUCCESS — EMERALD                                                      */
+  /* ---------------------------------------------------------------------- */
   --color-success-50: #f0fdf5;
   --color-success-100: #dcfce8;
   --color-success-200: #bbf7d1;
@@ -212,7 +271,9 @@ Base de données : aucune requête SQL
   --color-success-900: #14532b;
   --color-success-950: #052e14;
 
-  /* Warning – Ambre chaud */
+  /* ---------------------------------------------------------------------- */
+  /* WARNING — AMBER                                                        */
+  /* ---------------------------------------------------------------------- */
   --color-warning-50: #fffbeb;
   --color-warning-100: #fef3c7;
   --color-warning-200: #fde68a;
@@ -225,7 +286,9 @@ Base de données : aucune requête SQL
   --color-warning-900: #78350f;
   --color-warning-950: #451a03;
 
-  /* Info – Cyan */
+  /* ---------------------------------------------------------------------- */
+  /* INFO — CYAN                                                            */
+  /* ---------------------------------------------------------------------- */
   --color-info-50: #ecfeff;
   --color-info-100: #cffafe;
   --color-info-200: #a5f3fc;
@@ -238,7 +301,57 @@ Base de données : aucune requête SQL
   --color-info-900: #164e63;
   --color-info-950: #083344;
 
-  /* Blush – Rose poudré */
+  /* ---------------------------------------------------------------------- */
+  /* EXTRA PALETTES — COMPATIBILITY                                         */
+  /* ---------------------------------------------------------------------- */
+  --color-rosegold-50: #fff5f7;
+  --color-rosegold-100: #ffe9ee;
+  --color-rosegold-200: #ffd3dd;
+  --color-rosegold-300: #ffb3c6;
+  --color-rosegold-400: #ff8aa5;
+  --color-rosegold-500: #ff5c7e;
+  --color-rosegold-600: #e03b5e;
+  --color-rosegold-700: #b32242;
+  --color-rosegold-800: #8a1a33;
+  --color-rosegold-900: #661226;
+  --color-rosegold-950: #3d0917;
+
+  --color-teal-50: #f0fdfb;
+  --color-teal-100: #d2f9f2;
+  --color-teal-200: #a7f0e4;
+  --color-teal-300: #6fe7d2;
+  --color-teal-400: #3cd6bc;
+  --color-teal-500: #1bbfa1;
+  --color-teal-600: #0f9e86;
+  --color-teal-700: #0b7d6c;
+  --color-teal-800: #096356;
+  --color-teal-900: #074f45;
+  --color-teal-950: #04352e;
+
+  --color-copper-50: #fdf6f2;
+  --color-copper-100: #fbecdf;
+  --color-copper-200: #f6d5ba;
+  --color-copper-300: #f0b98e;
+  --color-copper-400: #ea9b5d;
+  --color-copper-500: #e37d32;
+  --color-copper-600: #c2671e;
+  --color-copper-700: #9b4f17;
+  --color-copper-800: #7a3d13;
+  --color-copper-900: #5c2d0f;
+  --color-copper-950: #3d1c09;
+
+  --color-silver-50: #f8f9fc;
+  --color-silver-100: #f1f3f9;
+  --color-silver-200: #e2e6f0;
+  --color-silver-300: #cbd2e3;
+  --color-silver-400: #a9b3cc;
+  --color-silver-500: #8794b0;
+  --color-silver-600: #6b7894;
+  --color-silver-700: #525e78;
+  --color-silver-800: #3e4860;
+  --color-silver-900: #2c3348;
+  --color-silver-950: #1a2030;
+
   --color-blush-50: #fff5f6;
   --color-blush-100: #ffe9eb;
   --color-blush-200: #ffd3d8;
@@ -251,7 +364,6 @@ Base de données : aucune requête SQL
   --color-blush-900: #661220;
   --color-blush-950: #3d0911;
 
-  /* Sage – Vert sauge doux */
   --color-sage-50: #f7f9f6;
   --color-sage-100: #eaf0e8;
   --color-sage-200: #d4e2d0;
@@ -264,7 +376,6 @@ Base de données : aucune requête SQL
   --color-sage-900: #223b1c;
   --color-sage-950: #152511;
 
-  /* Coral – Corail chaleureux */
   --color-coral-50: #fff5f2;
   --color-coral-100: #ffe8df;
   --color-coral-200: #ffcfba;
@@ -277,7 +388,6 @@ Base de données : aucune requête SQL
   --color-coral-900: #661d06;
   --color-coral-950: #3d1004;
 
-  /* Sky – Bleu ciel clair */
   --color-sky-50: #f0f9ff;
   --color-sky-100: #e0f2fe;
   --color-sky-200: #bae6fd;
@@ -290,7 +400,6 @@ Base de données : aucune requête SQL
   --color-sky-900: #0c4a6e;
   --color-sky-950: #082f49;
 
-  /* Plum – Prune mystérieuse */
   --color-plum-50: #fcf5ff;
   --color-plum-100: #f5e6ff;
   --color-plum-200: #e9ccff;
@@ -303,83 +412,106 @@ Base de données : aucune requête SQL
   --color-plum-900: #300e55;
   --color-plum-950: #1d0836;
 
-  /* Compatibilité additionnelle */
   --color-gray-750: #2d3748;
-
-  /* Ombres premium */
-  --shadow-soft: 0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04);
-  --shadow-medium: 0 4px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-  --shadow-strong: 0 10px 40px -10px rgba(0, 0, 0, 0.15), 0 20px 15px -15px rgba(0, 0, 0, 0.08);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-card-hover: 0 10px 30px -10px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  --shadow-gold: 0 0 30px rgba(223, 173, 31, 0.4);
-  --shadow-dark-card: 0 4px 20px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(255, 255, 255, 0.05);
-  --shadow-xl: 0 20px 50px -12px rgba(0, 0, 0, 0.25);
-  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
-  --shadow-glass-dark: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
 /* ==========================================================================
-   Variables CSS dynamiques pour le thème
+   LIGHT MODE — ROOT
    ========================================================================== */
 :root {
   color-scheme: light;
 
-  --color-bg-primary: #ffffff;
-  --color-bg-secondary: #f4f3f0;
-  --color-bg-card: #ffffff;
-  --color-bg-elevated: #ffffff;
-  --color-bg-inverse: #11100e;
-  --color-bg-overlay: rgba(17, 16, 14, 0.45);
-  --color-bg-overlay-strong: rgba(17, 16, 14, 0.65);
+  /* Layout */
+  --header-height: 4.5rem;
 
-  --color-text-primary: #1b1a16;
-  --color-text-secondary: #5c5850;
-  --color-text-tertiary: #7d7970;
-  --color-text-inverse: #ffffff;
+  /* Legacy aliases for backward compatibility */
+  --color-bg-primary: var(--color-canvas);
+  --color-bg-secondary: var(--color-muted);
+  --color-bg-card: var(--color-surface);
+  --color-bg-elevated: var(--color-raised);
+  --color-bg-inverse: var(--color-fg);
+  --color-bg-overlay: var(--color-overlay);
+  --color-bg-overlay-strong: var(--color-overlay-strong);
 
-  --color-border-light: #e7e5e0;
-  --color-border-strong: #d1cec7;
-  --color-border-accent: #4766f7;
+  --color-text-primary: var(--color-fg);
+  --color-text-secondary: var(--color-fg-muted);
+  --color-text-tertiary: var(--color-fg-subtle);
+  --color-text-inverse: var(--color-fg-inverse);
 
-  --color-link: #2a4ae3;
-  --color-link-hover: #1d3ab8;
-  --color-focus: #4766f7;
+  --color-border-light: var(--color-line);
+  --color-border-strong: var(--color-line-strong);
+  --color-border-accent: var(--color-accent);
 
-  scrollbar-color: #d1cec7 var(--color-bg-secondary);
-}
+  --color-link: var(--color-accent);
+  --color-link-hover: var(--color-accent-hover);
+  --color-focus: var(--color-accent);
 
-.dark {
-  color-scheme: dark;
-
-  --color-bg-primary: #040715;
-  --color-bg-secondary: #080c24;
-  --color-bg-card: #0d1338;
-  --color-bg-elevated: #151e52;
-  --color-bg-inverse: #ffffff;
-  --color-bg-overlay: rgba(4, 7, 21, 0.55);
-  --color-bg-overlay-strong: rgba(4, 7, 21, 0.75);
-
-  --color-text-primary: #cdd6e9;
-  --color-text-secondary: #6b7db8;
-  --color-text-tertiary: #455a9e;
-  --color-text-inverse: #040715;
-
-  --color-border-light: #1f2b6b;
-  --color-border-strong: #455a9e;
-  --color-border-accent: #8b5cf6;
-
-  --color-link: #8fa8fb;
-  --color-link-hover: #b9c8fd;
-  --color-focus: #8b5cf6;
-
-  scrollbar-color: #455a9e #080c24;
+  scrollbar-color: var(--color-line-strong) var(--color-muted);
 }
 
 /* ==========================================================================
-   Transitions optimisées
-   - On garde une sensation premium
-   - On évite les transitions trop coûteuses sur appareils modestes
+   DARK MODE — MIDNIGHT PREMIUM
+   ========================================================================== */
+.dark {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --color-canvas: #070a14;
+  --color-surface: #0f1524;
+  --color-raised: #151c2e;
+  --color-muted: #1b2438;
+
+  --color-overlay: rgba(7, 10, 20, 0.65);
+  --color-overlay-strong: rgba(7, 10, 20, 0.78);
+
+  /* Text */
+  --color-fg: #e8ebf2;
+  --color-fg-muted: #a3abc0;
+  --color-fg-subtle: #7a839a;
+  --color-fg-inverse: #0b0f1c;
+
+  /* Borders */
+  --color-line: #222b42;
+  --color-line-strong: #34405e;
+
+  /* Main accent in dark: refined champagne gold */
+  --color-accent: #d7b56a;
+  --color-accent-hover: #e4c57d;
+  --color-accent-soft: rgba(215, 181, 106, 0.12);
+  --color-accent-contrast: #0b0f1c;
+
+  /* States in dark */
+  --color-success: #4ade80;
+  --color-success-soft: rgba(74, 222, 128, 0.12);
+
+  --color-warning: #fbbf24;
+  --color-warning-soft: rgba(251, 191, 36, 0.12);
+
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(248, 113, 113, 0.12);
+
+  --color-info: #38bdf8;
+  --color-info-soft: rgba(56, 189, 248, 0.12);
+
+  --color-focus: var(--color-accent);
+
+  /* Dark shadows are deeper and less diffuse */
+  --shadow-soft: 0 8px 28px -10px rgba(0, 0, 0, 0.55);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 24px -14px rgba(0, 0, 0, 0.65);
+  --shadow-card-hover: 0 14px 36px -14px rgba(0, 0, 0, 0.72), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-raised: 0 18px 42px -16px rgba(0, 0, 0, 0.70), 0 2px 8px rgba(0, 0, 0, 0.35);
+
+  /* Make common dark neutral utilities follow the midnight system */
+  --color-neutral-700: #222b42;
+  --color-neutral-800: #151c2e;
+  --color-neutral-900: #0f1524;
+  --color-neutral-950: #070a14;
+
+  scrollbar-color: var(--color-line-strong) var(--color-muted);
+}
+
+/* ==========================================================================
+   THEME TRANSITIONS — PREMIUM BUT PERFORMANCE-AWARE
    ========================================================================== */
 @media (prefers-reduced-motion: no-preference) {
   *,
@@ -433,28 +565,7 @@ svg,
 }
 
 /* ==========================================================================
-   Scrollbar horizontale masquée
-   ========================================================================== */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* ==========================================================================
-   Base – Lissage & barres de défilement
+   BASE LAYER
    ========================================================================== */
 @layer base {
   html {
@@ -470,9 +581,9 @@ svg,
   }
 
   body {
-    background-color: var(--color-bg-primary);
-    color: var(--color-text-primary);
-    font-family: var(--font-sans);
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-body);
     line-height: 1.6;
     min-height: 100dvh;
   }
@@ -515,18 +626,23 @@ svg,
   }
 
   ::selection {
-    background-color: rgba(71, 102, 247, 0.25);
+    background-color: rgba(29, 58, 184, 0.18);
     color: #1d3ab8;
   }
 
   ::-moz-selection {
-    background-color: rgba(71, 102, 247, 0.25);
+    background-color: rgba(29, 58, 184, 0.18);
     color: #1d3ab8;
   }
 
   .dark ::selection {
-    background-color: rgba(139, 92, 246, 0.35);
-    color: #e6ebf4;
+    background-color: rgba(215, 181, 106, 0.22);
+    color: #e8ebf2;
+  }
+
+  .dark ::-moz-selection {
+    background-color: rgba(215, 181, 106, 0.22);
+    color: #e8ebf2;
   }
 
   ::-webkit-scrollbar {
@@ -535,29 +651,27 @@ svg,
   }
 
   ::-webkit-scrollbar-track {
-    background: var(--color-bg-secondary);
+    background: var(--color-muted);
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #d1cec7;
-    border-radius: 4px;
+    background: var(--color-line-strong);
+    border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #a8a49b;
+    background: var(--color-fg-subtle);
   }
 
-  .dark ::-webkit-scrollbar-thumb {
-    background: #455a9e;
-  }
-
-  .dark ::-webkit-scrollbar-thumb:hover {
-    background: #6b7db8;
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 }
 
 /* ==========================================================================
-   Motifs d’arrière-plan – textures subtiles
+   BACKGROUND PATTERNS — SUBTLE TEXTURES
    ========================================================================== */
 .pattern-dots {
   background-image: radial-gradient(circle, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
@@ -590,12 +704,12 @@ svg,
 
 .pattern-zigzag {
   background:
-    linear-gradient(135deg, var(--color-bg-primary) 25%, transparent 25%) -20px 0,
-    linear-gradient(225deg, var(--color-bg-primary) 25%, transparent 25%) -20px 0,
-    linear-gradient(315deg, var(--color-bg-primary) 25%, transparent 25%),
-    linear-gradient(45deg, var(--color-bg-primary) 25%, transparent 25%);
+    linear-gradient(135deg, var(--color-canvas) 25%, transparent 25%) -20px 0,
+    linear-gradient(225deg, var(--color-canvas) 25%, transparent 25%) -20px 0,
+    linear-gradient(315deg, var(--color-canvas) 25%, transparent 25%),
+    linear-gradient(45deg, var(--color-canvas) 25%, transparent 25%);
   background-size: 40px 40px;
-  background-color: var(--color-bg-secondary);
+  background-color: var(--color-muted);
 }
 
 .pattern-waves {
@@ -635,26 +749,26 @@ svg,
 }
 
 /* ==========================================================================
-   Composants premium – Glassmorphism, cartes, badges, boutons de base
+   PREMIUM COMPONENT PRIMITIVES
    ========================================================================== */
 .glass-card {
-  background: rgba(255, 255, 255, 0.7);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   box-shadow: var(--shadow-soft);
 }
 
 .dark .glass-card {
-  background: rgba(13, 19, 56, 0.7);
-  border-color: rgba(69, 90, 158, 0.3);
+  background: rgba(15, 21, 36, 0.72);
+  border-color: rgba(34, 43, 66, 0.55);
   box-shadow: var(--shadow-dark-card);
 }
 
 .card-premium {
-  background-color: var(--color-bg-card);
-  border: 1px solid var(--color-border-light);
-  border-radius: 1rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
 }
 
@@ -677,10 +791,10 @@ svg,
   padding: 0.25em 0.75em;
   font-size: 0.75rem;
   font-weight: 600;
-  border-radius: 9999px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-pill);
+  background: var(--color-raised);
+  color: var(--color-fg-muted);
+  border: 1px solid var(--color-line);
 }
 
 .badge-sale {
@@ -694,14 +808,23 @@ svg,
   color: white;
 }
 
+.badge-ia {
+  background: linear-gradient(135deg, #8b5cf6, #6d39d2);
+  color: white;
+  font-size: 0.7rem;
+  padding: 0.2em 0.6em;
+  border-radius: 9999px;
+  font-weight: 600;
+}
+
 /* ==========================================================================
-   Gradients de texte et utilitaires
+   GRADIENT UTILITIES
    ========================================================================== */
 .gradient-text {
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  background-image: linear-gradient(135deg, #4766f7, #8b5cf6, #e37d32);
+  background-image: linear-gradient(135deg, var(--color-accent), #8b5cf6, #e37d32);
   background-repeat: no-repeat;
 }
 
@@ -709,12 +832,12 @@ svg,
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  background-image: linear-gradient(135deg, #e37d32, #8b5cf6, #4766f7);
+  background-image: linear-gradient(135deg, #e37d32, #8b5cf6, var(--color-accent));
   background-repeat: no-repeat;
 }
 
 .gradient-gold {
-  background-image: linear-gradient(135deg, #dfad1f, #f6cf2a, #c99a14);
+  background-image: linear-gradient(135deg, #e4c57d 0%, #d7b56a 50%, #b8964f 100%);
 }
 
 .gradient-soft {
@@ -722,7 +845,31 @@ svg,
 }
 
 .gradient-midnight {
-  background-image: linear-gradient(to bottom, #0d1338 0%, #040715 100%);
+  background-image: linear-gradient(to bottom, #0f1524 0%, #070a14 100%);
+}
+
+.bg-gradient-brand {
+  background-image: linear-gradient(135deg, #4766f7 0%, #1d3ab8 100%);
+}
+
+.bg-gradient-gold {
+  background-image: linear-gradient(135deg, #e4c57d 0%, #d7b56a 50%, #b8964f 100%);
+}
+
+.bg-gradient-premium {
+  background-image: linear-gradient(135deg, #1d3ab8 0%, #6d39d2 100%);
+}
+
+.bg-gradient-accent {
+  background-image: linear-gradient(135deg, #18c78a 0%, #0c7f5e 100%);
+}
+
+.bg-gradient-warm {
+  background-image: linear-gradient(135deg, #f6cf2a 0%, #a8860a 100%);
+}
+
+.bg-gradient-luxury {
+  background-image: linear-gradient(135deg, #8b5cf6 0%, #5329a8 100%);
 }
 
 .gradient-text-animated {
@@ -730,6 +877,251 @@ svg,
   animation: gradient-shift 3s ease infinite;
 }
 
+/* ==========================================================================
+   LEGACY COLOR UTILITY ALIASES
+   ========================================================================== */
+.bg-primary {
+  background-color: var(--color-bg-primary);
+}
+
+.bg-secondary {
+  background-color: var(--color-bg-secondary);
+}
+
+.bg-card {
+  background-color: var(--color-bg-card);
+}
+
+.bg-elevated {
+  background-color: var(--color-bg-elevated);
+}
+
+.bg-inverse {
+  background-color: var(--color-bg-inverse);
+}
+
+.bg-overlay {
+  background-color: var(--color-bg-overlay);
+}
+
+.bg-overlay-strong {
+  background-color: var(--color-bg-overlay-strong);
+}
+
+.text-primary {
+  color: var(--color-text-primary);
+}
+
+.text-secondary {
+  color: var(--color-text-secondary);
+}
+
+.text-tertiary {
+  color: var(--color-text-tertiary);
+}
+
+.text-inverse {
+  color: var(--color-text-inverse);
+}
+
+.border-light {
+  border-color: var(--color-border-light);
+}
+
+.border-strong {
+  border-color: var(--color-border-strong);
+}
+
+.border-accent {
+  border-color: var(--color-border-accent);
+}
+
+.link {
+  color: var(--color-link);
+}
+
+.link:hover {
+  color: var(--color-link-hover);
+}
+
+.bg-gray-750 {
+  background-color: #2d3748;
+}
+
+.dark .bg-gray-750 {
+  background-color: #2d3748;
+}
+
+/* ==========================================================================
+   SKELETON LOADING
+   ========================================================================== */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-muted) 25%,
+    var(--color-surface) 50%,
+    var(--color-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.375rem;
+}
+
+/* ==========================================================================
+   HOVER EFFECTS
+   ========================================================================== */
+.hover-lift {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-medium);
+}
+
+.hover-glow {
+  box-shadow: var(--shadow-glow-brand);
+}
+
+.dark .hover-glow {
+  box-shadow: var(--shadow-glow-gold);
+}
+
+.hover-scale {
+  transition: transform 0.2s ease;
+}
+
+.hover-scale:hover {
+  transform: scale(1.02);
+}
+
+/* ==========================================================================
+   LAYOUT HELPERS
+   ========================================================================== */
+.separator {
+  height: 1px;
+  background: var(--color-line);
+  margin: 2rem 0;
+}
+
+.separator-vertical {
+  width: 1px;
+  background: var(--color-line);
+  align-self: stretch;
+}
+
+.page-container {
+  width: 100%;
+  max-width: 80rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .page-container {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.safe-top {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.tap-highlight-transparent {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.text-pretty {
+  text-wrap: pretty;
+}
+
+.line-clamp-1,
+.line-clamp-2,
+.line-clamp-3,
+.line-clamp-4 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.line-clamp-1 {
+  -webkit-line-clamp: 1;
+}
+
+.line-clamp-2 {
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  -webkit-line-clamp: 3;
+}
+
+.line-clamp-4 {
+  -webkit-line-clamp: 4;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.aspect-product {
+  aspect-ratio: 1 / 1;
+}
+
+.aspect-banner {
+  aspect-ratio: 16 / 7;
+}
+
+.placeholder-blur {
+  filter: blur(20px);
+  transform: scale(1.05);
+}
+
+/* ==========================================================================
+   SCROLLBAR HELPERS
+   ========================================================================== */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ==========================================================================
+   KEYFRAMES
+   ========================================================================== */
 @keyframes gradient-shift {
   0% {
     background-position: 0% 50%;
@@ -742,16 +1134,13 @@ svg,
   }
 }
 
-/* ==========================================================================
-   Animations
-   ========================================================================== */
 @keyframes glow-pulse {
   0%,
   100% {
-    box-shadow: 0 0 20px rgba(223, 173, 31, 0.3);
+    box-shadow: 0 0 20px rgba(215, 181, 106, 0.28);
   }
   50% {
-    box-shadow: 0 0 40px rgba(223, 173, 31, 0.6);
+    box-shadow: 0 0 38px rgba(215, 181, 106, 0.48);
   }
 }
 
@@ -876,6 +1265,21 @@ svg,
   }
 }
 
+@keyframes pulse-purple {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 10px rgba(139, 92, 246, 0);
+  }
+}
+
+/* ==========================================================================
+   ANIMATION UTILITIES
+   ========================================================================== */
 .animate-glow-pulse {
   animation: glow-pulse 2s ease-in-out infinite;
 }
@@ -886,6 +1290,10 @@ svg,
 
 .animate-shimmer {
   animation: shimmer 2s linear infinite;
+}
+
+.animate-fade-in {
+  animation: fadeInUp 0.5s ease-out forwards;
 }
 
 .animate-fade-in-up {
@@ -926,6 +1334,10 @@ svg,
 
 .animate-background-pan {
   animation: background-pan 3s linear infinite;
+}
+
+.animate-pulse-purple {
+  animation: pulse-purple 2s infinite;
 }
 
 .stagger-fade-in > * {
@@ -974,7 +1386,7 @@ svg,
 }
 
 /* ==========================================================================
-   Accessibilité & mouvement réduit
+   ACCESSIBILITY / MOTION / BANDWIDTH
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -991,6 +1403,8 @@ svg,
   }
 }
 
+.reduced-motion *,
+.reduce-motion *,
 .low-bandwidth *,
 .low-power *,
 [data-low-power] *,
@@ -1008,256 +1422,5 @@ svg,
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-}
-
-:focus-visible {
-  outline: 2px solid var(--color-focus, #4766f7);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.placeholder-blur {
-  filter: blur(20px);
-  transform: scale(1.05);
-}
-
-/* ==========================================================================
-   Utilitaires de couleurs de fond personnalisées
-   ========================================================================== */
-.bg-primary {
-  background-color: var(--color-bg-primary);
-}
-
-.bg-secondary {
-  background-color: var(--color-bg-secondary);
-}
-
-.bg-card {
-  background-color: var(--color-bg-card);
-}
-
-.bg-elevated {
-  background-color: var(--color-bg-elevated);
-}
-
-.bg-inverse {
-  background-color: var(--color-bg-inverse);
-}
-
-.bg-overlay {
-  background-color: var(--color-bg-overlay);
-}
-
-.bg-overlay-strong {
-  background-color: var(--color-bg-overlay-strong);
-}
-
-.text-primary {
-  color: var(--color-text-primary);
-}
-
-.text-secondary {
-  color: var(--color-text-secondary);
-}
-
-.text-tertiary {
-  color: var(--color-text-tertiary);
-}
-
-.text-inverse {
-  color: var(--color-text-inverse);
-}
-
-.border-light {
-  border-color: var(--color-border-light);
-}
-
-.border-strong {
-  border-color: var(--color-border-strong);
-}
-
-.border-accent {
-  border-color: var(--color-border-accent);
-}
-
-.link {
-  color: var(--color-link);
-}
-
-.link:hover {
-  color: var(--color-link-hover);
-}
-
-/* ==========================================================================
-   Skeleton loading
-   ========================================================================== */
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-bg-secondary) 25%,
-    var(--color-bg-elevated) 50%,
-    var(--color-bg-secondary) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 0.25rem;
-}
-
-/* ==========================================================================
-   Effets de survol globaux
-   ========================================================================== */
-.hover-lift {
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.hover-lift:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-medium);
-}
-
-.hover-glow:hover {
-  box-shadow: 0 0 15px rgba(71, 102, 247, 0.3);
-}
-
-.hover-scale {
-  transition: transform 0.2s ease;
-}
-
-.hover-scale:hover {
-  transform: scale(1.02);
-}
-
-.separator {
-  height: 1px;
-  background: var(--color-border-light);
-  margin: 2rem 0;
-}
-
-.separator-vertical {
-  width: 1px;
-  background: var(--color-border-light);
-  align-self: stretch;
-}
-
-.page-container {
-  width: 100%;
-  max-width: 80rem;
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 1rem;
-  padding-right: 1rem;
-}
-
-@media (min-width: 640px) {
-  .page-container {
-    padding-left: 2rem;
-    padding-right: 2rem;
-  }
-}
-
-/* ==========================================================================
-   Utilitaires supplémentaires – stabilité, accessibilité, mobile
-   ========================================================================== */
-.safe-bottom {
-  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
-}
-
-.safe-top {
-  padding-top: max(0.75rem, env(safe-area-inset-top));
-}
-
-.tap-highlight-transparent {
-  -webkit-tap-highlight-color: transparent;
-}
-
-.text-balance {
-  text-wrap: balance;
-}
-
-.text-pretty {
-  text-wrap: pretty;
-}
-
-.line-clamp-1,
-.line-clamp-2,
-.line-clamp-3,
-.line-clamp-4 {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-}
-
-.line-clamp-1 {
-  -webkit-line-clamp: 1;
-}
-
-.line-clamp-2 {
-  -webkit-line-clamp: 2;
-}
-
-.line-clamp-3 {
-  -webkit-line-clamp: 3;
-}
-
-.line-clamp-4 {
-  -webkit-line-clamp: 4;
-}
-
-.visually-hidden {
-  position: absolute !important;
-  width: 1px !important;
-  height: 1px !important;
-  padding: 0 !important;
-  margin: -1px !important;
-  overflow: hidden !important;
-  clip: rect(0, 0, 0, 0) !important;
-  white-space: nowrap !important;
-  border: 0 !important;
-}
-
-.aspect-product {
-  aspect-ratio: 1 / 1;
-}
-
-.aspect-banner {
-  aspect-ratio: 16 / 7;
-}
-
-/* ==========================================================================
-   IA Components – Styles additionnels
-   ========================================================================== */
-.bg-gray-750 {
-  background-color: #2d3748;
-}
-
-.dark .bg-gray-750 {
-  background-color: #2d3748;
-}
-
-.badge-ia {
-  background: linear-gradient(135deg, #8b5cf6, #6d39d2);
-  color: white;
-  font-size: 0.7rem;
-  padding: 0.2em 0.6em;
-  border-radius: 9999px;
-  font-weight: 600;
-}
-
-.animate-pulse-purple {
-  animation: pulse-purple 2s infinite;
-}
-
-@keyframes pulse-purple {
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
-  }
-  50% {
-    opacity: 0.8;
-    box-shadow: 0 0 0 10px rgba(139, 92, 246, 0);
   }
 }

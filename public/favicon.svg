@@ -1,23 +1,296 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 64 64"
+  width="64"
+  height="64"
+  role="img"
+  aria-labelledby="gercie-favicon-title gercie-favicon-desc"
+  shape-rendering="geometricPrecision"
+>
+  <title id="gercie-favicon-title">Gercie</title>
+  <desc id="gercie-favicon-desc">
+    Monogramme G doré métallique de la marketplace Gercie sur fond nuit profonde,
+    avec reflet premium, halo lumineux et ombre sculptée.
+  </desc>
+
   <defs>
-    <linearGradient id="goldMetal" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FFF7C2"/>
-      <stop offset="25%" stop-color="#FCD34D"/>
-      <stop offset="55%" stop-color="#F59E0B"/>
-      <stop offset="80%" stop-color="#D97706"/>
-      <stop offset="100%" stop-color="#92400E"/>
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  FOND : dégradé nuit profonde 3 stops                      -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <linearGradient
+      id="gercie-bg"
+      x1="0"
+      y1="0"
+      x2="64"
+      y2="64"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#1E293B" />
+      <stop offset="0.35" stop-color="#111827" />
+      <stop offset="0.68" stop-color="#0B1120" />
+      <stop offset="1" stop-color="#020617" />
     </linearGradient>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1E293B"/>
-      <stop offset="100%" stop-color="#0A0F1E"/>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  HALO INTERNE : lumière douce depuis le haut-gauche        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <radialGradient
+      id="gercie-halo"
+      cx="22"
+      cy="18"
+      r="38"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#FDE68A" stop-opacity="0.12" />
+      <stop offset="0.45" stop-color="#F59E0B" stop-opacity="0.04" />
+      <stop offset="1" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  OR MÉTALLIQUE : 6 stops pour un rendu réaliste            -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <linearGradient
+      id="gercie-gold"
+      x1="14"
+      y1="10"
+      x2="52"
+      y2="56"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#FFFDE7" />
+      <stop offset="0.12" stop-color="#FFF7C2" />
+      <stop offset="0.28" stop-color="#FDE68A" />
+      <stop offset="0.45" stop-color="#F5C453" />
+      <stop offset="0.62" stop-color="#D4A017" />
+      <stop offset="0.80" stop-color="#B8860B" />
+      <stop offset="1" stop-color="#8B5E14" />
     </linearGradient>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  REFLET SUPÉRIEUR : highlight blanc doré                   -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <linearGradient
+      id="gercie-sheen-top"
+      x1="20"
+      y1="12"
+      x2="44"
+      y2="30"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55" />
+      <stop offset="0.30" stop-color="#FFFDE7" stop-opacity="0.30" />
+      <stop offset="0.60" stop-color="#FDE68A" stop-opacity="0.08" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  REFLET INFÉRIEUR : profondeur ambre                        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <linearGradient
+      id="gercie-sheen-bottom"
+      x1="30"
+      y1="40"
+      x2="48"
+      y2="56"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0" />
+      <stop offset="0.40" stop-color="#D4A017" stop-opacity="0.10" />
+      <stop offset="0.75" stop-color="#B8860B" stop-opacity="0.18" />
+      <stop offset="1" stop-color="#8B5E14" stop-opacity="0.25" />
+    </linearGradient>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  BORDURE EXTÉRIEURE : lumière fine                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <linearGradient
+      id="gercie-border-light"
+      x1="0"
+      y1="0"
+      x2="64"
+      y2="64"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18" />
+      <stop offset="0.50" stop-color="#FDE68A" stop-opacity="0.06" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.02" />
+    </linearGradient>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  MASQUE : pour clipper le reflet dans le G uniquement       -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <clipPath id="gercie-g-clip">
+      <path d="M45 20 A19 19 0 1 0 45 44 V32 H32" />
+    </clipPath>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
-  <path d="M45 18 A19 19 0 1 0 51 33 L34 33 L34 45"
-        fill="none" stroke="#000000" stroke-opacity="0.45"
-        stroke-width="8" stroke-linecap="round" stroke-linejoin="round"
-        transform="translate(1.5,2)"/>
-  <path d="M45 18 A19 19 0 1 0 51 33 L34 33 L34 45"
-        fill="none" stroke="url(#goldMetal)"
-        stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 1 : fond arrondi                                       -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <rect
+    width="64"
+    height="64"
+    rx="14"
+    ry="14"
+    fill="url(#gercie-bg)"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 2 : halo lumineux interne                              -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <rect
+    width="64"
+    height="64"
+    rx="14"
+    ry="14"
+    fill="url(#gercie-halo)"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 3 : bordure extérieure lumineuse                       -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <rect
+    x="0.5"
+    y="0.5"
+    width="63"
+    height="63"
+    rx="13.5"
+    ry="13.5"
+    fill="none"
+    stroke="url(#gercie-border-light)"
+    stroke-width="1"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 4 : bordure interne très discrète                      -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <rect
+    x="1.5"
+    y="1.5"
+    width="61"
+    height="61"
+    rx="12.5"
+    ry="12.5"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-opacity="0.04"
+    stroke-width="0.5"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 5 : ombre portée du monogramme (profondeur sculptée)   -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <path
+    d="M45 20 A19 19 0 1 0 45 44 V32 H32"
+    fill="none"
+    stroke="#000000"
+    stroke-opacity="0.50"
+    stroke-width="9.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    transform="translate(1.8 2.4)"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 6 : ombre secondaire plus douce                        -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <path
+    d="M45 20 A19 19 0 1 0 45 44 V32 H32"
+    fill="none"
+    stroke="#000000"
+    stroke-opacity="0.25"
+    stroke-width="11"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    transform="translate(2.5 3.2)"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 7 : monogramme G doré principal                        -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <path
+    d="M45 20 A19 19 0 1 0 45 44 V32 H32"
+    fill="none"
+    stroke="url(#gercie-gold)"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 8 : reflet supérieur (highlight métallique)            -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <g clip-path="url(#gercie-g-clip)">
+    <path
+      d="M45 20 A19 19 0 1 0 45 44 V32 H32"
+      fill="none"
+      stroke="url(#gercie-sheen-top)"
+      stroke-width="3.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      opacity="0.85"
+    />
+  </g>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 9 : reflet inférieur (profondeur ambre)                -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <g clip-path="url(#gercie-g-clip)">
+    <path
+      d="M45 20 A19 19 0 1 0 45 44 V32 H32"
+      fill="none"
+      stroke="url(#gercie-sheen-bottom)"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      opacity="0.70"
+    />
+  </g>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 10 : micro-highlight sur le bord supérieur du G        -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <path
+    d="M30 16 A16 16 0 0 1 42 16"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-opacity="0.35"
+    stroke-width="1.2"
+    stroke-linecap="round"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 11 : micro-shadow sur le bord inférieur du G           -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <path
+    d="M30 48 A16 16 0 0 0 42 48"
+    fill="none"
+    stroke="#000000"
+    stroke-opacity="0.20"
+    stroke-width="1"
+    stroke-linecap="round"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 12 : point lumineux sur la jonction du G               -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <circle
+    cx="38"
+    cy="22"
+    r="1.2"
+    fill="#FFFFFF"
+    fill-opacity="0.50"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  COUCHE 13 : micro-reflet sur la barre horizontale             -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <path
+    d="M33 32 H43"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-opacity="0.15"
+    stroke-width="0.8"
+    stroke-linecap="round"
+  />
 </svg>

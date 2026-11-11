@@ -1,212 +1,306 @@
 // components/ui/Badge.tsx
-import React from 'react'
-import { cn } from '@/lib/utils'
+'use client'
+
+import React, { type ReactNode } from 'react'
+
 import { X } from 'lucide-react'
 
-/* ------------------------------------------------------------------ */
-/*  Types & Variantes premium                                          */
-/* ------------------------------------------------------------------ */
+import { cn } from '@/lib/utils'
 
-type BadgeVariant =
-  | 'brand'
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export type BadgeVariant =
   | 'accent'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
+  | 'neutral'
+  // ─────────────────────────────────────────────────────────────
+  // Variantes legacy conservées pour compatibilité.
+  // Elles sont automatiquement mappées vers les tokens sémantiques.
+  // ─────────────────────────────────────────────────────────────
+  | 'brand'
   | 'warm'
   | 'luxury'
   | 'gold'
-  | 'neutral'
-  | 'secondary'       // ← ajouté (utilisé par SortableSlideItem, SortableStatItem...)
-  | 'success'
-  | 'danger'
-  | 'warning'
-  | 'info'
-  | 'custom'          // ← variante pour les badges dynamiques (marché)
+  | 'secondary'
+  | 'custom'
 
-type BadgeStyle = 'soft' | 'solid' | 'outline' | 'gradient' | 'luxe-gradient'
+export type BadgeAppearance =
+  | 'soft'
+  | 'solid'
+  | 'outline'
+  | 'gradient'
+  | 'luxe-gradient'
 
-interface BadgeCustomColors {
+export interface BadgeCustomColors {
   bg: string
   text: string
-  border: string
-  bgDark: string
-  textDark: string
-  borderDark: string
+  border?: string
+  bgDark?: string
+  textDark?: string
+  borderDark?: string
 }
 
-// `style` est omis de HTMLAttributes : sinon il entre en conflit avec notre
-// prop `style` ('soft' | 'solid'...) → erreur TS2430 (string vs CSSProperties).
-interface BadgeProps extends Omit<React.HTMLAttributes<HTMLSpanElement>, 'style'> {
+export interface BadgeProps
+  extends Omit<React.HTMLAttributes<HTMLSpanElement>, 'style'> {
+  /** Variante sémantique ou legacy. */
   variant?: BadgeVariant
-  size?: 'sm' | 'md' | 'lg'
-  /** Apparence du badge (soft, solid, outline...). */
-  style?: BadgeStyle
-  /** Alias recommandé de `style` (nom non ambigu avec le style inline HTML). */
-  appearance?: BadgeStyle
-  leftIcon?: React.ReactNode
-  rightIcon?: React.ReactNode
+  /** Taille du badge. */
+  size?: 'xs' | 'sm' | 'md' | 'lg'
+  /**
+   * @deprecated Utiliser `appearance` à la place pour éviter
+   * le conflit avec le `style` HTML natif.
+   */
+  style?: BadgeAppearance
+  /** Apparence visuelle (recommandé). */
+  appearance?: BadgeAppearance
+  /** Icône à gauche du contenu. */
+  leftIcon?: ReactNode
+  /** Icône à droite du contenu. */
+  rightIcon?: ReactNode
+  /** Affiche un point coloré en haut à droite. */
   dot?: boolean
+  /** Couleur du point (classe Tailwind, ex: `bg-success`). */
   dotColor?: string
+  /** Affiche un bouton de fermeture. */
   onClose?: () => void
+  /** État désactivé. */
   disabled?: boolean
-  /** Couleurs personnalisées (ignorées sauf si variant='custom') */
+  /** Couleurs personnalisées (uniquement si `variant="custom"`). */
   customColors?: BadgeCustomColors
 }
 
-/* ------------------------------------------------------------------ */
-/*  Dictionnaires de styles                                            */
-/* ------------------------------------------------------------------ */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  VARIANT MAPPING (legacy → sémantique)                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+type ResolvedVariant =
+  | 'accent'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
+  | 'neutral'
+
+function resolveVariant(variant: BadgeVariant): ResolvedVariant | 'custom' {
+  switch (variant) {
+    case 'accent':
+    case 'brand':
+    case 'luxury':
+      return 'accent'
+    case 'success':
+      return 'success'
+    case 'warning':
+    case 'warm':
+    case 'gold':
+      return 'warning'
+    case 'danger':
+      return 'danger'
+    case 'info':
+      return 'info'
+    case 'neutral':
+    case 'secondary':
+      return 'neutral'
+    case 'custom':
+      return 'custom'
+    default:
+      return 'neutral'
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  STYLE MAPS                                                     */
+/* ═══════════════════════════════════════════════════════════════ */
 
 const baseClasses =
-  'inline-flex items-center gap-1.5 rounded-full font-medium transition-all duration-200'
+  'inline-flex items-center gap-1 rounded-full font-semibold leading-none transition-colors duration-200 motion-reduce:transition-none'
 
-const sizeStyles: Record<string, string> = {
-  sm: 'px-2 py-0.5 text-xs',
-  md: 'px-2.5 py-0.5 text-sm',
-  lg: 'px-3 py-1 text-base',
+const sizeClasses: Record<string, string> = {
+  xs: 'px-1.5 py-0.5 text-[9px]',
+  sm: 'px-2 py-0.5 text-[10px]',
+  md: 'px-2.5 py-1 text-xs',
+  lg: 'px-3 py-1.5 text-sm',
 }
 
-const softStyles: Record<BadgeVariant, string> = {
-  brand:     'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
-  accent:    'bg-accent-100 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300',
-  warm:      'bg-warm-100 text-warm-700 dark:bg-warm-900/30 dark:text-warm-300',
-  luxury:    'bg-luxury-100 text-luxury-700 dark:bg-luxury-900/30 dark:text-luxury-300',
-  gold:      'bg-gold-100 text-gold-800 dark:bg-gold-900/30 dark:text-gold-300',
-  neutral:   'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
-  secondary: 'bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-200',
-  success:   'bg-accent-100 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300',
-  danger:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  warning:   'bg-warm-100 text-warm-700 dark:bg-warm-900/30 dark:text-warm-300',
-  info:      'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
-  custom:    '', // laissé vide, sera remplacé par customColors
+const softStyles: Record<ResolvedVariant, string> = {
+  accent: 'border border-accent/20 bg-accent-soft text-accent',
+  success: 'border border-success/20 bg-success-soft text-success',
+  warning: 'border border-warning/20 bg-warning-soft text-warning',
+  danger: 'border border-danger/20 bg-danger-soft text-danger',
+  info: 'border border-info/20 bg-info-soft text-info',
+  neutral: 'border border-line bg-muted text-fg-muted',
 }
 
-const solidStyles: Record<BadgeVariant, string> = {
-  brand:     'bg-brand-600 text-white shadow-sm hover:shadow-md',
-  accent:    'bg-accent-600 text-white shadow-sm hover:shadow-md',
-  warm:      'bg-warm-500 text-white dark:text-white dark:shadow-lg dark:hover:shadow-xl shadow-sm hover:shadow-md',
-  luxury:    'bg-luxury-600 text-white shadow-sm hover:shadow-md',
-  gold:      'bg-gold-500 text-white dark:text-white dark:shadow-lg dark:hover:shadow-xl shadow-sm hover:shadow-md',
-  neutral:   'bg-neutral-600 text-white dark:bg-neutral-700 dark:text-neutral-100 dark:shadow-sm',
-  secondary: 'bg-neutral-500 text-white dark:bg-neutral-600 dark:text-neutral-100 dark:shadow-sm',
-  success:   'bg-accent-600 text-white shadow-sm hover:shadow-md',
-  danger:    'bg-red-600 text-white shadow-sm hover:shadow-md',
-  warning:   'bg-warm-500 text-white dark:text-white dark:shadow-lg dark:hover:shadow-xl shadow-sm hover:shadow-md',
-  info:      'bg-brand-600 text-white shadow-sm hover:shadow-md',
-  custom:    '',
+const solidStyles: Record<ResolvedVariant, string> = {
+  accent: 'bg-accent text-accent-contrast shadow-sm',
+  success: 'bg-success text-success-contrast shadow-sm',
+  warning: 'bg-warning text-warning-contrast shadow-sm',
+  danger: 'bg-danger text-danger-contrast shadow-sm',
+  info: 'bg-info text-info-contrast shadow-sm',
+  neutral: 'bg-fg-subtle text-fg shadow-sm',
 }
 
-const outlineStyles: Record<BadgeVariant, string> = {
-  brand:     'border border-brand-300 text-brand-700 dark:border-brand-600 dark:text-brand-300',
-  accent:    'border border-accent-300 text-accent-700 dark:border-accent-600 dark:text-accent-300',
-  warm:      'border border-warm-300 text-warm-700 dark:border-warm-600 dark:text-warm-300',
-  luxury:    'border border-luxury-300 text-luxury-700 dark:border-luxury-600 dark:text-luxury-300',
-  gold:      'border border-gold-400 text-gold-700 dark:border-gold-600 dark:text-gold-300',
-  neutral:   'border border-neutral-300 text-neutral-700 dark:border-neutral-600 dark:text-neutral-300',
-  secondary: 'border border-neutral-400 text-neutral-800 dark:border-neutral-500 dark:text-neutral-200',
-  success:   'border border-accent-300 text-accent-700 dark:border-accent-600 dark:text-accent-300',
-  danger:    'border border-red-300 text-red-700 dark:border-red-600 dark:text-red-300',
-  warning:   'border border-warm-300 text-warm-700 dark:border-warm-600 dark:text-warm-300',
-  info:      'border border-brand-300 text-brand-700 dark:border-brand-600 dark:text-brand-300',
-  custom:    '',
+const outlineStyles: Record<ResolvedVariant, string> = {
+  accent: 'border border-accent/40 text-accent',
+  success: 'border border-success/40 text-success',
+  warning: 'border border-warning/40 text-warning',
+  danger: 'border border-danger/40 text-danger',
+  info: 'border border-info/40 text-info',
+  neutral: 'border border-line text-fg-muted',
 }
 
-const gradientStyles: Record<BadgeVariant, string> = {
-  brand:     'bg-gradient-brand text-white shadow-sm',
-  accent:    'bg-gradient-accent text-white shadow-sm',
-  warm:      'bg-gradient-warm text-neutral-900 shadow-sm',
-  luxury:    'bg-gradient-luxury text-white shadow-sm',
-  gold:      'bg-gradient-to-r from-gold-400 to-burgundy-700 text-white shadow-sm',
-  neutral:   'bg-gradient-to-r from-neutral-400 to-neutral-600 text-white shadow-sm',
-  secondary: 'bg-gradient-to-r from-neutral-300 to-neutral-500 text-white shadow-sm',
-  success:   'bg-gradient-accent text-white shadow-sm',
-  danger:    'bg-gradient-to-r from-red-500 to-red-700 text-white shadow-sm',
-  warning:   'bg-gradient-warm text-neutral-900 shadow-sm',
-  info:      'bg-gradient-brand text-white shadow-sm',
-  custom:    '',
+const gradientStyles: Record<ResolvedVariant, string> = {
+  accent:
+    'bg-gradient-to-r from-accent to-accent/80 text-accent-contrast shadow-sm',
+  success:
+    'bg-gradient-to-r from-success to-success/80 text-success-contrast shadow-sm',
+  warning:
+    'bg-gradient-to-r from-warning to-warning/80 text-warning-contrast shadow-sm',
+  danger:
+    'bg-gradient-to-r from-danger to-danger/80 text-danger-contrast shadow-sm',
+  info:
+    'bg-gradient-to-r from-info to-info/80 text-info-contrast shadow-sm',
+  neutral:
+    'bg-gradient-to-r from-fg-subtle to-fg-muted text-fg shadow-sm',
 }
 
-/* ------------------------------------------------------------------ */
-/*  Composant Badge                                                     */
-/* ------------------------------------------------------------------ */
+const styleMaps: Record<BadgeAppearance, Record<ResolvedVariant, string>> = {
+  soft: softStyles,
+  solid: solidStyles,
+  outline: outlineStyles,
+  gradient: gradientStyles,
+  'luxe-gradient': gradientStyles,
+}
 
-const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
+/* ═══════════════════════════════════════════════════════════════ */
+/*  COMPONENT                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
   (
     {
       className,
       variant = 'neutral',
       size = 'sm',
-      style = 'soft',
+      style,
       appearance,
       leftIcon,
       rightIcon,
       dot = false,
-      dotColor,
+      dotColor = 'bg-current',
       onClose,
       disabled = false,
       customColors,
       children,
-      ...props
+      ...rest
     },
     ref
   ) => {
-    const styleMap: Record<string, Record<BadgeVariant, string>> = {
-      soft: softStyles,
-      solid: solidStyles,
-      outline: outlineStyles,
-      gradient: gradientStyles,
-      'luxe-gradient': gradientStyles,
-    }
+    // `appearance` prime sur `style` (legacy)
+    const resolvedAppearance: BadgeAppearance = appearance ?? style ?? 'soft'
 
-    // `appearance` (nom non ambigu) prime sur `style` s'il est fourni
-    const visualStyle: BadgeStyle = appearance ?? style
+    // Résolution de la variante
+    const resolved = resolveVariant(variant)
 
-    let currentVariantStyle: string
+    // Construction des classes
+    let variantClasses: string
 
-    // Si variant === 'custom' et customColors fourni, on construit les classes
-    if (variant === 'custom' && customColors) {
-      currentVariantStyle = cn(
+    if (resolved === 'custom' && customColors) {
+      variantClasses = cn(
         customColors.bg,
         customColors.text,
-        customColors.border,
+        customColors.border ?? 'border border-line',
         customColors.bgDark,
         customColors.textDark,
-        customColors.borderDark,
-        'border' // ajoute une bordure par défaut pour les badges custom
+        customColors.borderDark
       )
+    } else if (resolved !== 'custom') {
+      variantClasses =
+        styleMaps[resolvedAppearance]?.[resolved] ??
+        softStyles.neutral
     } else {
-      currentVariantStyle = styleMap[visualStyle]?.[variant] ?? gradientStyles.gold
+      variantClasses = softStyles.neutral
     }
 
-    const dotStyle = dot
-      ? `relative before:absolute before:top-0 before:right-0 before:block before:w-1.5 before:h-1.5 before:rounded-full before:bg-${dotColor ?? 'current'} before:translate-x-1/2 before:-translate-y-1/2`
+    // Point coloré
+    const dotClasses = dot
+      ? cn(
+          'relative',
+          'before:absolute before:-right-0.5 before:-top-0.5',
+          'before:h-1.5 before:w-1.5 before:rounded-full',
+          'before:ring-2 before:ring-surface',
+          dotColor
+        )
       : ''
+
+    const isCloseable = typeof onClose === 'function'
 
     return (
       <span
         ref={ref}
         className={cn(
           baseClasses,
-          sizeStyles[size],
-          currentVariantStyle,
-          dot && 'pl-3',
-          dotStyle,
-          disabled && 'opacity-50 cursor-not-allowed',
+          sizeClasses[size] ?? sizeClasses.sm,
+          variantClasses,
+          dot && 'pr-2',
+          dotClasses,
+          disabled && 'pointer-events-none opacity-50',
+          isCloseable && 'pr-1',
           className
         )}
-        {...props}
+        aria-disabled={disabled || undefined}
+        {...rest}
       >
-        {leftIcon}
-        {children}
-        {rightIcon}
-        {onClose && (
+        {leftIcon ? (
+          <span
+            className="inline-flex shrink-0 items-center"
+            aria-hidden="true"
+          >
+            {leftIcon}
+          </span>
+        ) : null}
+
+        {children ? (
+          <span className="truncate whitespace-nowrap">{children}</span>
+        ) : null}
+
+        {rightIcon ? (
+          <span
+            className="inline-flex shrink-0 items-center"
+            aria-hidden="true"
+          >
+            {rightIcon}
+          </span>
+        ) : null}
+
+        {isCloseable ? (
           <button
             type="button"
-            onClick={onClose}
+            onClick={(event) => {
+              event.stopPropagation()
+              if (!disabled) onClose()
+            }}
             disabled={disabled}
-            className="ml-1 -mr-1 p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition"
+            aria-label="Retirer"
+            className={cn(
+              '-mr-0.5 ml-0.5 inline-flex shrink-0 items-center justify-center',
+              'rounded-full p-0.5',
+              'transition-colors duration-200 motion-reduce:transition-none',
+              'hover:bg-black/10 dark:hover:bg-white/15',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+              disabled && 'pointer-events-none'
+            )}
           >
-            <X size={size === 'sm' ? 12 : 14} />
+            <X
+              size={size === 'xs' || size === 'sm' ? 10 : 12}
+              aria-hidden="true"
+            />
           </button>
-        )}
+        ) : null}
       </span>
     )
   }
@@ -214,5 +308,4 @@ const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
 
 Badge.displayName = 'Badge'
 
-export { Badge }
-export type { BadgeProps, BadgeVariant, BadgeStyle, BadgeCustomColors }
+export default Badge

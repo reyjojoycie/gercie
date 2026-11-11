@@ -7,31 +7,40 @@ import React, {
   useCallback,
   useLayoutEffect,
   useEffect,
-  ReactNode,
+  cloneElement,
+  isValidElement,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
   createContext,
   useContext,
   forwardRef,
   useImperativeHandle,
 } from 'react'
+
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { cn } from '@/lib/utils'
 
-/* ========================================================================
-   Contexte global des tooltips (empilement, délai, désactivation)
-   ======================================================================== */
+import { cn } from '@/lib/utils'
+import { useAccessibilityPreferences } from '@/contexts/ThemeContext'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONTEXT : TOOLTIP GROUP                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
 interface TooltipGroupContextValue {
   openDelay: number
   closeDelay: number
   disabled: boolean
 }
+
 const TooltipGroupContext = createContext<TooltipGroupContextValue>({
   openDelay: 0,
   closeDelay: 0,
   disabled: false,
 })
 
-export const TooltipGroupProvider = ({
+export function TooltipGroupProvider({
   children,
   openDelay = 0,
   closeDelay = 0,
@@ -41,158 +50,281 @@ export const TooltipGroupProvider = ({
   openDelay?: number
   closeDelay?: number
   disabled?: boolean
-}) => (
-  <TooltipGroupContext.Provider value={{ openDelay, closeDelay, disabled }}>
-    {children}
-  </TooltipGroupContext.Provider>
-)
+}) {
+  return (
+    <TooltipGroupContext.Provider
+      value={{ openDelay, closeDelay, disabled }}
+    >
+      {children}
+    </TooltipGroupContext.Provider>
+  )
+}
 
-/* ========================================================================
-   Types
-   ======================================================================== */
-type TooltipPosition = 'top' | 'bottom' | 'left' | 'right'
-type TooltipVariant =
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export type TooltipPosition = 'top' | 'bottom' | 'left' | 'right'
+
+export type TooltipVariant =
   | 'dark'
   | 'light'
-  | 'brand'
   | 'accent'
-  | 'warm'
-  | 'luxury'
-  | 'gold'
-  | 'burgundy'
-  | 'champagne'
-  | 'rosegold'
-  | 'teal'
-  | 'copper'
-  | 'plum'
   | 'info'
   | 'success'
   | 'warning'
   | 'danger'
-type TriggerMode = 'hover' | 'click' | 'focus' | 'manual'
+
+export type TriggerMode = 'hover' | 'click' | 'focus' | 'manual'
 
 export interface TooltipProps {
-  /** Contenu principal du tooltip (texte, ReactNode riche) */
+  /** Contenu principal du tooltip */
   content: ReactNode
-  /** Titre optionnel (en-tête du tooltip) */
+  /** Titre optionnel */
   title?: string
-  /** Position préférée */
+  /** Position préférée (peut être ajustée automatiquement) */
   position?: TooltipPosition
-  /** Variante de couleur / style */
+  /** Variante visuelle sémantique */
   variant?: TooltipVariant
   /** Élément déclencheur */
   children: ReactNode
-  /** Délai avant apparition (ms) – surchargé par le groupe si fourni */
+  /** Délai avant apparition (ms) */
   delay?: number
-  /** Délai avant disparition (ms) – surchargé par le groupe si fourni */
+  /** Délai avant disparition (ms) */
   hideDelay?: number
   /** Mode de déclenchement */
   trigger?: TriggerMode
   /** Désactive le tooltip */
   disabled?: boolean
-  /** Désactive sur mobile (<768px) */
+  /** Désactive sur mobile (< 768px) */
   disableOnMobile?: boolean
-  /** Largeur maximale du contenu (px) */
+  /** Largeur maximale (px) */
   maxWidth?: number
-  /** Hauteur maximale du contenu (px) */
+  /** Hauteur maximale (px) */
   maxHeight?: number
   /** Afficher la flèche */
   showArrow?: boolean
-  /** Couleur personnalisée de la flèche (classe Tailwind) */
-  arrowClassName?: string
   /** Décalage supplémentaire (px) */
   offset?: number
   /** Ferme automatiquement après un délai (ms) une fois ouvert */
   autoClose?: number
-  /** Permet de garder le tooltip ouvert quand la souris passe dessus (mode hover) */
+  /** Garde le tooltip ouvert quand la souris passe dessus (mode hover) */
   interactive?: boolean
-  /** Rendu en portail dans document.body (pour éviter les problèmes de z-index) */
+  /** Rendu en portail dans document.body (recommandé) */
   portal?: boolean
-  /** Classe additionnelle */
+  /** Classe additionnelle sur le wrapper du tooltip */
   className?: string
-  /** Classe pour l'enveloppe intérieure */
+  /** Classe sur le contenu interne */
   contentClassName?: string
-  /** Identifiant pour aria-describedby */
+  /** Identifiant ARIA */
   id?: string
   /** Callback à l'ouverture */
   onOpen?: () => void
   /** Callback à la fermeture */
   onClose?: () => void
-  /** Passe le composant déclencheur en tant que children (pattern asChild) – non implémenté complètement ici mais props pour forward */
-  // (le reste est géré par l'enveloppe)
 }
 
-/* ------------------------------------------------------------------ */
-/*  Dictionnaires                                                      */
-/* ------------------------------------------------------------------ */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  VARIANT STYLES                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
 
-const positionMap: Record<TooltipPosition, string> = {
-  top: 'bottom-full left-1/2 -translate-x-1/2 mb-2',
-  bottom: 'top-full left-1/2 -translate-x-1/2 mt-2',
-  left: 'right-full top-1/2 -translate-y-1/2 mr-2',
-  right: 'left-full top-1/2 -translate-y-1/2 ml-2',
-}
-
-const arrowBorderColorMap: Record<TooltipVariant, string> = {
-  dark: 'border-t-neutral-900 dark:border-t-neutral-100',
-  light: 'border-t-white dark:border-t-neutral-700',
-  brand: 'border-t-brand-500',
-  accent: 'border-t-accent-500',
-  warm: 'border-t-warm-500',
-  luxury: 'border-t-luxury-500',
-  gold: 'border-t-gold-500',
-  burgundy: 'border-t-burgundy-500',
-  champagne: 'border-t-champagne-500',
-  rosegold: 'border-t-rosegold-500',
-  teal: 'border-t-teal-500',
-  copper: 'border-t-copper-500',
-  plum: 'border-t-plum-500',
-  info: 'border-t-info-500',
-  success: 'border-t-success-500',
-  warning: 'border-t-warning-500',
-  danger: 'border-t-danger-500',
-}
-
-const variantStyleMap: Record<TooltipVariant, string> = {
-  dark: 'bg-neutral-900 text-white dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700',
+const variantStyles: Record<TooltipVariant, string> = {
+  dark:
+    'bg-raised text-fg border border-line shadow-card dark:bg-surface',
   light:
-    'bg-white text-neutral-800 border border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700',
-  brand: 'bg-brand-500 text-white',
-  accent: 'bg-accent-500 text-white',
-  warm: 'bg-warm-500 text-white',
-  luxury: 'bg-luxury-500 text-white',
-  gold: 'bg-gold-500 text-white',
-  burgundy: 'bg-burgundy-500 text-white',
-  champagne: 'bg-champagne-500 text-white',
-  rosegold: 'bg-rosegold-500 text-white',
-  teal: 'bg-teal-500 text-white',
-  copper: 'bg-copper-500 text-white',
-  plum: 'bg-plum-500 text-white',
-  info: 'bg-info-500 text-white',
-  success: 'bg-success-500 text-white',
-  warning: 'bg-warning-500 text-white',
-  danger: 'bg-danger-500 text-white',
+    'bg-surface text-fg border border-line shadow-card',
+  accent:
+    'bg-accent text-accent-contrast border border-accent shadow-card',
+  info:
+    'bg-info text-info-contrast border border-info shadow-card',
+  success:
+    'bg-success text-success-contrast border border-success shadow-card',
+  warning:
+    'bg-warning text-warning-contrast border border-warning shadow-card',
+  danger:
+    'bg-danger text-danger-contrast border border-danger shadow-card',
 }
 
-/* ------------------------------------------------------------------ */
-/*  Hook media query                                                   */
-/* ------------------------------------------------------------------ */
-function useMediaQuery(query: string) {
+const arrowStyles: Record<TooltipVariant, string> = {
+  dark: 'bg-raised border-line dark:bg-surface',
+  light: 'bg-surface border-line',
+  accent: 'bg-accent border-accent',
+  info: 'bg-info border-info',
+  success: 'bg-success border-success',
+  warning: 'bg-warning border-warning',
+  danger: 'bg-danger border-danger',
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  HOOKS                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(false)
+
   useEffect(() => {
+    if (typeof window === 'undefined') return
+
     const mql = window.matchMedia(query)
     setMatches(mql.matches)
-    const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
+
+    const handler = (event: MediaQueryListEvent) => {
+      setMatches(event.matches)
+    }
+
     mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
+
+    return () => {
+      mql.removeEventListener('change', handler)
+    }
   }, [query])
+
   return matches
 }
 
-/* ================================================================== */
-/*  Composant Tooltip                                                  */
-/* ================================================================== */
-const Tooltip = forwardRef<HTMLDivElement, TooltipProps>(
+/* ═══════════════════════════════════════════════════════════════ */
+/*  POSITION CALCULATOR                                            */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface Coords {
+  top: number
+  left: number
+}
+
+function computePosition(
+  triggerRect: DOMRect,
+  tooltipRect: DOMRect,
+  preferred: TooltipPosition,
+  offset: number
+): { position: TooltipPosition; coords: Coords } {
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const margin = 8
+
+  const fitsTop = triggerRect.top - tooltipRect.height - offset >= margin
+  const fitsBottom =
+    triggerRect.bottom + tooltipRect.height + offset <=
+    viewportHeight - margin
+  const fitsLeft = triggerRect.left - tooltipRect.width - offset >= margin
+  const fitsRight =
+    triggerRect.right + tooltipRect.width + offset <=
+    viewportWidth - margin
+
+  let position = preferred
+
+  if (preferred === 'top' && !fitsTop && fitsBottom) position = 'bottom'
+  else if (preferred === 'bottom' && !fitsBottom && fitsTop)
+    position = 'top'
+  else if (preferred === 'left' && !fitsLeft && fitsRight)
+    position = 'right'
+  else if (preferred === 'right' && !fitsRight && fitsLeft)
+    position = 'left'
+
+  let top = 0
+  let left = 0
+
+  switch (position) {
+    case 'top':
+      top = triggerRect.top - tooltipRect.height - offset
+      left =
+        triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2
+      break
+    case 'bottom':
+      top = triggerRect.bottom + offset
+      left =
+        triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2
+      break
+    case 'left':
+      top =
+        triggerRect.top + triggerRect.height / 2 - tooltipRect.height / 2
+      left = triggerRect.left - tooltipRect.width - offset
+      break
+    case 'right':
+      top =
+        triggerRect.top + triggerRect.height / 2 - tooltipRect.height / 2
+      left = triggerRect.right + offset
+      break
+  }
+
+  // Clamp horizontal
+  left = Math.max(
+    margin,
+    Math.min(left, viewportWidth - tooltipRect.width - margin)
+  )
+
+  // Clamp vertical
+  top = Math.max(
+    margin,
+    Math.min(top, viewportHeight - tooltipRect.height - margin)
+  )
+
+  return { position, coords: { top, left } }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  ARROW                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function TooltipArrow({
+  position,
+  variant,
+  coords,
+  triggerRect,
+}: {
+  position: TooltipPosition
+  variant: TooltipVariant
+  coords: Coords
+  triggerRect: DOMRect | null
+}) {
+  if (!triggerRect) return null
+
+  const size = 8
+
+  const baseClasses = cn(
+    'pointer-events-none absolute border',
+    arrowStyles[variant]
+  )
+
+  const style: CSSProperties = {
+    width: size,
+    height: size,
+    transform: 'rotate(45deg)',
+  }
+
+  if (position === 'top') {
+    style.bottom = -(size / 2)
+    style.left =
+      triggerRect.left + triggerRect.width / 2 - coords.left - size / 2
+    style.borderTop = 'none'
+    style.borderLeft = 'none'
+  } else if (position === 'bottom') {
+    style.top = -(size / 2)
+    style.left =
+      triggerRect.left + triggerRect.width / 2 - coords.left - size / 2
+    style.borderBottom = 'none'
+    style.borderRight = 'none'
+  } else if (position === 'left') {
+    style.right = -(size / 2)
+    style.top =
+      triggerRect.top + triggerRect.height / 2 - coords.top - size / 2
+    style.borderLeft = 'none'
+    style.borderBottom = 'none'
+  } else {
+    style.left = -(size / 2)
+    style.top =
+      triggerRect.top + triggerRect.height / 2 - coords.top - size / 2
+    style.borderRight = 'none'
+    style.borderTop = 'none'
+  }
+
+  return <span className={baseClasses} style={style} aria-hidden="true" />
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TOOLTIP                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export const Tooltip = forwardRef<HTMLDivElement, TooltipProps>(
   (
     {
       content,
@@ -205,11 +337,10 @@ const Tooltip = forwardRef<HTMLDivElement, TooltipProps>(
       trigger = 'hover',
       disabled: disabledProp,
       disableOnMobile = false,
-      maxWidth = 320,
+      maxWidth = 280,
       maxHeight,
       showArrow = true,
-      arrowClassName,
-      offset = 8,
+      offset = 10,
       autoClose,
       interactive = false,
       portal = true,
@@ -222,17 +353,28 @@ const Tooltip = forwardRef<HTMLDivElement, TooltipProps>(
     ref
   ) => {
     const group = useContext(TooltipGroupContext)
+    const { prefersReducedMotion } = useAccessibilityPreferences()
+
     const effectiveOpenDelay = delayProp ?? group.openDelay
     const effectiveCloseDelay = hideDelayProp ?? group.closeDelay
-    const effectiveDisabled = disabledProp || group.disabled || (!content && !title)
+
+    const isEmpty = content === undefined && content === null && !title
+    const effectiveDisabled =
+      disabledProp || group.disabled || isEmpty
 
     const isMobile = useMediaQuery('(max-width: 767px)')
-    const disabled = effectiveDisabled || (disableOnMobile && isMobile)
+    const disabled =
+      effectiveDisabled || (disableOnMobile && isMobile)
 
     const [isVisible, setIsVisible] = useState(false)
-    const [adjustedPosition, setAdjustedPosition] = useState(position)
+    const [coords, setCoords] = useState<Coords>({ top: 0, left: 0 })
+    const [resolvedPosition, setResolvedPosition] =
+      useState<TooltipPosition>(position)
+
     const containerRef = useRef<HTMLDivElement>(null)
     const tooltipRef = useRef<HTMLDivElement>(null)
+    const triggerRectRef = useRef<DOMRect | null>(null)
+
     const openTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -252,29 +394,16 @@ const Tooltip = forwardRef<HTMLDivElement, TooltipProps>(
       }
     }, [])
 
-    const openTooltip = useCallback(() => {
-      if (disabled) return
-      clearTimeouts()
-      openTimeoutRef.current = setTimeout(() => {
-        setIsVisible(true)
-        onOpen?.()
-        if (autoClose) {
-          autoCloseRef.current = setTimeout(() => {
-            setIsVisible(false)
-            onClose?.()
-          }, autoClose)
-        }
-      }, effectiveOpenDelay)
-    }, [disabled, effectiveOpenDelay, autoClose, onOpen, onClose, clearTimeouts])
-
     const closeTooltip = useCallback(
       (immediate = false) => {
         clearTimeouts()
+
         if (immediate) {
           setIsVisible(false)
           onClose?.()
           return
         }
+
         closeTimeoutRef.current = setTimeout(() => {
           setIsVisible(false)
           onClose?.()
@@ -283,117 +412,260 @@ const Tooltip = forwardRef<HTMLDivElement, TooltipProps>(
       [effectiveCloseDelay, onClose, clearTimeouts]
     )
 
-    // Nettoyage
+    const openTooltip = useCallback(() => {
+      if (disabled) return
+
+      clearTimeouts()
+
+      openTimeoutRef.current = setTimeout(() => {
+        if (containerRef.current) {
+          triggerRectRef.current =
+            containerRef.current.getBoundingClientRect()
+        }
+
+        setIsVisible(true)
+        onOpen?.()
+
+        if (autoClose && autoClose > 0) {
+          autoCloseRef.current = setTimeout(() => {
+            setIsVisible(false)
+            onClose?.()
+          }, autoClose)
+        }
+      }, effectiveOpenDelay)
+    }, [
+      disabled,
+      effectiveOpenDelay,
+      autoClose,
+      onOpen,
+      onClose,
+      clearTimeouts,
+    ])
+
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Cleanup                                                      */
+    /* ───────────────────────────────────────────────────────────── */
+
     useEffect(() => {
       return () => clearTimeouts()
     }, [clearTimeouts])
 
-    // Ajustement de position en fonction de l'espace disponible
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Position update                                              */
+    /* ───────────────────────────────────────────────────────────── */
+
     useLayoutEffect(() => {
-      if (!isVisible || !containerRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const preferred = position
-      let next = preferred
+      if (!isVisible) return
+      if (!triggerRectRef.current) return
+      if (!tooltipRef.current) return
 
-      // Vérification sommaire du dépassement
-      if (preferred === 'top' && rect.top < 80) next = 'bottom'
-      else if (preferred === 'bottom' && rect.bottom > window.innerHeight - 80) next = 'top'
-      else if (preferred === 'left' && rect.left < 120) next = 'right'
-      else if (preferred === 'right' && rect.right > window.innerWidth - 120) next = 'left'
+      const tooltipRect = tooltipRef.current.getBoundingClientRect()
+      const { position: nextPosition, coords: nextCoords } =
+        computePosition(
+          triggerRectRef.current,
+          tooltipRect,
+          position,
+          offset
+        )
 
-      setAdjustedPosition(next)
-    }, [isVisible, position])
+      setResolvedPosition(nextPosition)
+      setCoords(nextCoords)
+    }, [isVisible, position, offset, content])
 
-    // Gestion du clic extérieur pour fermer (mode click)
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Close on outside click (click trigger)                       */
+    /* ───────────────────────────────────────────────────────────── */
+
     useEffect(() => {
       if (!isVisible || trigger !== 'click') return
-      const handler = (e: MouseEvent) => {
+
+      const handler = (event: MouseEvent) => {
+        const target = event.target as Node
+
         if (
           containerRef.current &&
-          !containerRef.current.contains(e.target as Node) &&
+          !containerRef.current.contains(target) &&
           tooltipRef.current &&
-          !tooltipRef.current.contains(e.target as Node)
+          !tooltipRef.current.contains(target)
         ) {
           closeTooltip(true)
         }
       }
+
       document.addEventListener('mousedown', handler)
-      return () => document.removeEventListener('mousedown', handler)
+
+      return () => {
+        document.removeEventListener('mousedown', handler)
+      }
     }, [isVisible, trigger, closeTooltip])
 
-    // Gestion des événements selon le trigger
-    const eventHandlers =
-      trigger === 'hover'
-        ? {
-            onMouseEnter: openTooltip,
-            onMouseLeave: () => closeTooltip(),
-            onFocus: openTooltip,
-            onBlur: () => closeTooltip(),
-          }
-        : trigger === 'focus'
-          ? {
-              onFocus: openTooltip,
-              onBlur: () => closeTooltip(),
-            }
-          : trigger === 'click'
-            ? {
-                onClick: () => (isVisible ? closeTooltip(true) : openTooltip()),
-              }
-            : {} // manual – géré par l'utilisateur via ref ou état
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Close on Escape                                              */
+    /* ───────────────────────────────────────────────────────────── */
 
-    // Pour le mode manuel, on expose les méthodes via ref
-    useImperativeHandle(ref, () => containerRef.current as HTMLDivElement, [])
-    // Note : on pourrait exposer open/close via un autre mécanisme
+    useEffect(() => {
+      if (!isVisible) return
 
-    // Rendu du contenu du tooltip
-    const tooltipContent = (
+      const handler = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          closeTooltip(true)
+        }
+      }
+
+      document.addEventListener('keydown', handler)
+
+      return () => {
+        document.removeEventListener('keydown', handler)
+      }
+    }, [isVisible, closeTooltip])
+
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Close on scroll / resize (to avoid stale position)           */
+    /* ───────────────────────────────────────────────────────────── */
+
+    useEffect(() => {
+      if (!isVisible) return
+
+      const handler = () => {
+        closeTooltip(true)
+      }
+
+      window.addEventListener('scroll', handler, true)
+      window.addEventListener('resize', handler)
+
+      return () => {
+        window.removeEventListener('scroll', handler, true)
+        window.removeEventListener('resize', handler)
+      }
+    }, [isVisible, closeTooltip])
+
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Imperative handle for manual trigger                         */
+    /* ───────────────────────────────────────────────────────────── */
+
+    useImperativeHandle(ref, () => containerRef.current!, [])
+
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Event handlers based on trigger                              */
+    /* ───────────────────────────────────────────────────────────── */
+
+    const eventHandlers: React.HTMLAttributes<HTMLDivElement> = {}
+
+    if (trigger === 'hover') {
+      eventHandlers.onMouseEnter = openTooltip
+      eventHandlers.onMouseLeave = () => closeTooltip()
+      eventHandlers.onFocus = openTooltip
+      eventHandlers.onBlur = () => closeTooltip()
+    } else if (trigger === 'focus') {
+      eventHandlers.onFocus = openTooltip
+      eventHandlers.onBlur = () => closeTooltip()
+    } else if (trigger === 'click') {
+      eventHandlers.onClick = () => {
+        if (isVisible) {
+          closeTooltip(true)
+        } else {
+          openTooltip()
+        }
+      }
+    }
+
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Animation config                                             */
+    /* ───────────────────────────────────────────────────────────── */
+
+    const motionProps = prefersReducedMotion
+      ? {
+          initial: { opacity: 0 },
+          animate: { opacity: 1 },
+          exit: { opacity: 0 },
+          transition: { duration: 0 },
+        }
+      : {
+          initial: { opacity: 0, scale: 0.96, y: 4 },
+          animate: { opacity: 1, scale: 1, y: 0 },
+          exit: { opacity: 0, scale: 0.96, y: 4 },
+          transition: { duration: 0.15, ease: 'easeOut' as const },
+        }
+
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Children handling                                            */
+    /* ───────────────────────────────────────────────────────────── */
+
+    const triggerId = id ? `${id}-trigger` : undefined
+    const tooltipId = id ?? undefined
+
+    const triggerElement = (() => {
+      if (
+        isValidElement(children) &&
+        typeof children !== 'string' &&
+        typeof children !== 'number'
+      ) {
+        return cloneElement(children as ReactElement<any>, {
+          'aria-describedby': isVisible ? tooltipId : undefined,
+          id: triggerId,
+        })
+      }
+
+      return children
+    })()
+
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Tooltip content                                              */
+    /* ───────────────────────────────────────────────────────────── */
+
+    const tooltipContent = isVisible ? (
       <motion.div
         ref={tooltipRef}
-        id={id}
+        id={tooltipId}
         role="tooltip"
-        initial={{ opacity: 0, scale: 0.92 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.92 }}
-        transition={{ duration: 0.15 }}
+        {...motionProps}
         className={cn(
-          'absolute z-50 rounded-xl shadow-strong pointer-events-none',
-          positionMap[adjustedPosition],
-          variantStyleMap[variant],
+          'pointer-events-none fixed z-[9999] max-w-full rounded-lg px-3 py-2 text-xs font-medium',
+          variantStyles[variant],
           className
         )}
-        style={{ maxWidth, maxHeight, margin: offset }}
+        style={{
+          top: coords.top,
+          left: coords.left,
+          maxWidth,
+          maxHeight,
+          pointerEvents: interactive && trigger === 'hover' ? 'auto' : 'none',
+        }}
         onMouseEnter={
-          interactive && trigger === 'hover' ? () => clearTimeouts() : undefined
+          interactive && trigger === 'hover'
+            ? () => clearTimeouts()
+            : undefined
         }
         onMouseLeave={
-          interactive && trigger === 'hover' ? () => closeTooltip() : undefined
+          interactive && trigger === 'hover'
+            ? () => closeTooltip()
+            : undefined
         }
       >
-        {/* Conteneur interne avec padding */}
-        <div className={cn('px-3 py-2 text-sm', contentClassName)}>
-          {title && <p className="font-semibold text-xs opacity-90 mb-0.5">{title}</p>}
+        {title ? (
+          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">
+            {title}
+          </p>
+        ) : null}
+
+        <div className={cn('leading-snug', contentClassName)}>
           {content}
         </div>
-        {/* Flèche */}
-        {showArrow && (
-          <span
-            className={cn(
-              'absolute w-0 h-0 border-4 border-transparent',
-              adjustedPosition === 'top' &&
-                'bottom-[-8px] left-1/2 -translate-x-1/2 border-t-4',
-              adjustedPosition === 'bottom' &&
-                'top-[-8px] left-1/2 -translate-x-1/2 border-b-4',
-              adjustedPosition === 'left' &&
-                'right-[-8px] top-1/2 -translate-y-1/2 border-l-4',
-              adjustedPosition === 'right' &&
-                'left-[-8px] top-1/2 -translate-y-1/2 border-r-4',
-              arrowBorderColorMap[variant],
-              arrowClassName
-            )}
+
+        {showArrow ? (
+          <TooltipArrow
+            position={resolvedPosition}
+            variant={variant}
+            coords={coords}
+            triggerRect={triggerRectRef.current}
           />
-        )}
+        ) : null}
       </motion.div>
-    )
+    ) : null
+
+    /* ───────────────────────────────────────────────────────────── */
+    /*  Render                                                       */
+    /* ───────────────────────────────────────────────────────────── */
 
     return (
       <div
@@ -401,8 +673,9 @@ const Tooltip = forwardRef<HTMLDivElement, TooltipProps>(
         className="relative inline-flex"
         {...eventHandlers}
       >
-        {children}
-        {isVisible &&
+        {triggerElement}
+
+        {tooltipContent &&
           (portal
             ? createPortal(
                 <AnimatePresence>{tooltipContent}</AnimatePresence>,
@@ -415,4 +688,5 @@ const Tooltip = forwardRef<HTMLDivElement, TooltipProps>(
 )
 
 Tooltip.displayName = 'Tooltip'
-export { Tooltip }
+
+export default Tooltip

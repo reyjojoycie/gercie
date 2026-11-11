@@ -1,75 +1,246 @@
 // components/ui/Card.tsx
-import React from 'react'
+'use client'
+
+import React, { useContext, useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import { Skeleton } from '@/components/ui/Skeleton'
 
-/* ------------------------------------------------------------------ */
-/*  Types & Variantes                                                  */
-/* ------------------------------------------------------------------ */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
 
-type CardVariant = 'elevated' | 'outlined' | 'filled' | 'glass' | 'premium'
-type CardAccent = 'brand' | 'accent' | 'warm' | 'luxury' | 'neutral' | 'gold' | 'burgundy'
+type NormalizedCardVariant =
+  | 'default'
+  | 'subtle'
+  | 'outline'
+  | 'raised'
+  | 'overlay'
+  | 'glass'
 
-interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  as?: 'div' | 'section' | 'article'
+type NormalizedCardAccent =
+  | 'none'
+  | 'neutral'
+  | 'primary'
+  | 'success'
+  | 'warning'
+  | 'danger'
+
+export type CardVariant =
+  | NormalizedCardVariant
+  | 'elevated'
+  | 'outlined'
+  | 'filled'
+  | 'premium'
+
+export type CardAccent =
+  | NormalizedCardAccent
+  | 'brand'
+  | 'accent'
+  | 'warm'
+  | 'luxury'
+  | 'gold'
+  | 'burgundy'
+
+export type CardPadding = 'none' | 'sm' | 'md' | 'lg'
+
+interface CardContextValue {
+  accent: NormalizedCardAccent
+  padding: CardPadding
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONTEXT                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const CardContext = React.createContext<CardContextValue>({
+  accent: 'neutral',
+  padding: 'md',
+})
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  NORMALIZATION                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const variantMap: Record<CardVariant, NormalizedCardVariant> = {
+  default: 'default',
+  elevated: 'default',
+  subtle: 'subtle',
+  filled: 'subtle',
+  outline: 'outline',
+  outlined: 'outline',
+  raised: 'raised',
+  premium: 'raised',
+  overlay: 'overlay',
+  glass: 'glass',
+}
+
+const accentMap: Record<CardAccent, NormalizedCardAccent> = {
+  none: 'none',
+  neutral: 'neutral',
+  primary: 'primary',
+  brand: 'primary',
+  accent: 'primary',
+  gold: 'primary',
+  luxury: 'primary',
+  success: 'success',
+  warning: 'warning',
+  warm: 'warning',
+  danger: 'danger',
+  burgundy: 'danger',
+}
+
+function normalizeVariant(variant: CardVariant = 'default'): NormalizedCardVariant {
+  return variantMap[variant] ?? 'default'
+}
+
+function normalizeAccent(accent: CardAccent = 'neutral'): NormalizedCardAccent {
+  return accentMap[accent] ?? 'neutral'
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  STYLES                                                         */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const variantStyles: Record<NormalizedCardVariant, string> = {
+  default:
+    'bg-surface border border-line shadow-card',
+
+  subtle:
+    'bg-muted border border-transparent',
+
+  outline:
+    'bg-transparent border border-line-strong',
+
+  raised:
+    'bg-raised border border-line shadow-raised',
+
+  overlay:
+    'bg-raised border border-line-strong shadow-overlay',
+
+  glass:
+    'glass-card',
+}
+
+function getHoverClasses(variant: NormalizedCardVariant): string {
+  return cn(
+    'hover:-translate-y-0.5 hover:shadow-card-hover',
+    'focus-within:-translate-y-0.5 focus-within:shadow-card-hover',
+
+    variant === 'default' &&
+      'hover:border-line-strong focus-within:border-line-strong',
+
+    variant === 'raised' &&
+      'hover:border-line-strong focus-within:border-line-strong',
+
+    variant === 'outline' &&
+      'hover:bg-muted hover:border-line-strong focus-within:bg-muted focus-within:border-line-strong',
+
+    variant === 'subtle' &&
+      'hover:bg-raised focus-within:bg-raised',
+
+    variant === 'glass' &&
+      'hover:shadow-raised focus-within:shadow-raised',
+
+    variant === 'overlay' &&
+      'hover:shadow-overlay focus-within:shadow-overlay'
+  )
+}
+
+const accentBorderClasses: Record<NormalizedCardAccent, string> = {
+  none: '',
+  neutral: 'border-t-line-strong',
+  primary: 'border-t-accent',
+  success: 'border-t-success',
+  warning: 'border-t-warning',
+  danger: 'border-t-danger',
+}
+
+const accentHeaderClasses: Record<NormalizedCardAccent, string> = {
+  none: '',
+  neutral: '',
+  primary: 'bg-accent-soft',
+  success: 'bg-success-soft',
+  warning: 'bg-warning-soft',
+  danger: 'bg-danger-soft',
+}
+
+const accentTitleClasses: Record<NormalizedCardAccent, string> = {
+  none: '',
+  neutral: '',
+  primary: 'text-accent',
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+}
+
+const contentPaddingClasses: Record<CardPadding, string> = {
+  none: 'p-0',
+  sm: 'p-4',
+  md: 'p-5 sm:p-6',
+  lg: 'p-6 sm:p-8',
+}
+
+const titleSizeByTag: Record<string, string> = {
+  h1: 'text-2xl leading-tight sm:text-3xl',
+  h2: 'text-xl leading-tight sm:text-2xl',
+  h3: 'text-lg leading-tight sm:text-xl',
+  h4: 'text-base leading-tight sm:text-lg',
+  h5: 'text-sm leading-tight sm:text-base',
+  h6: 'text-xs leading-tight sm:text-sm',
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  LOADING SKELETON                                               */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function CardLoadingSkeleton({ padding }: { padding: CardPadding }) {
+  return (
+    <div className={cn('space-y-4', contentPaddingClasses[padding])}>
+      <div
+        className="skeleton aspect-square w-full rounded-control"
+        aria-hidden="true"
+      />
+
+      <div className="space-y-2.5">
+        <div
+          className="skeleton h-4 w-3/4 rounded-full"
+          aria-hidden="true"
+        />
+        <div
+          className="skeleton h-3 w-1/2 rounded-full"
+          aria-hidden="true"
+        />
+        <div
+          className="skeleton h-3 w-2/5 rounded-full"
+          aria-hidden="true"
+        />
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CARD ROOT                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  as?: 'div' | 'section' | 'article' | 'aside'
   variant?: CardVariant
   accent?: CardAccent
   hover?: boolean
   accentBorder?: boolean
-  padding?: 'sm' | 'md' | 'lg'
+  padding?: CardPadding
   /** Active un état de chargement : les enfants sont remplacés par des squelettes */
   loading?: boolean
-  /** Motif de fond (optionnel) : ex. "pattern-dots", "pattern-lines", ou vos propres classes */
+  /** Motif de fond optionnel : ex. "pattern-dots", "pattern-lines" */
   pattern?: string
 }
-
-/* ------------------------------------------------------------------ */
-/*  Configuration des styles par variante                               */
-/* ------------------------------------------------------------------ */
-
-const variantStyles: Record<CardVariant, string> = {
-  elevated:
-    'bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-card',
-  outlined:
-    'bg-transparent border-2 border-neutral-200 dark:border-neutral-700 shadow-none',
-  filled:
-    'bg-neutral-50 dark:bg-neutral-800/50 border border-transparent shadow-none',
-  glass:
-    'bg-white/70 dark:bg-neutral-900/50 backdrop-blur-xl border border-white/20 dark:border-neutral-700/30 shadow-soft',
-  premium:
-    'backdrop-blur-xl bg-white/10 dark:bg-midnight-800/50 border border-white/20 dark:border-midnight-500/30 shadow-soft hover:shadow-card-hover',
-}
-
-const accentBorderColors: Record<CardAccent, string> = {
-  brand: 'border-t-brand-500',
-  accent: 'border-t-accent-500',
-  warm: 'border-t-warm-500',
-  luxury: 'border-t-luxury-500',
-  neutral: 'border-t-neutral-300 dark:border-t-neutral-600',
-  gold: 'border-t-gold-400',
-  burgundy: 'border-t-burgundy-600',
-}
-
-const accentGlow: Record<CardAccent, string> = {
-  brand: 'hover:shadow-brand-500/10 dark:hover:shadow-brand-400/5',
-  accent: 'hover:shadow-accent-500/10 dark:hover:shadow-accent-400/5',
-  warm: 'hover:shadow-warm-500/10 dark:hover:shadow-warm-400/5',
-  luxury: 'hover:shadow-luxury-500/10 dark:hover:shadow-luxury-400/5',
-  neutral: 'hover:shadow-neutral-900/5 dark:hover:shadow-neutral-400/5',
-  gold: 'hover:shadow-gold-500/10 dark:hover:shadow-gold-400/5',
-  burgundy: 'hover:shadow-burgundy-500/10 dark:hover:shadow-burgundy-400/5',
-}
-
-/* ------------------------------------------------------------------ */
-/*  Card racine                                                        */
-/* ------------------------------------------------------------------ */
 
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
   (
     {
       className,
-      as: Component = 'div',
-      variant = 'elevated',
+      as,
+      variant = 'default',
       accent = 'neutral',
       hover = false,
       accentBorder = false,
@@ -81,126 +252,151 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     },
     ref
   ) => {
+    const normalizedVariant = normalizeVariant(variant)
+    const normalizedAccent = normalizeAccent(accent)
+
+    const contextValue = useMemo(
+      () => ({
+        accent: normalizedAccent,
+        padding,
+      }),
+      [normalizedAccent, padding]
+    )
+
+    const Component = (as ?? 'div') as React.ElementType
+
     return (
-      <Component
-        ref={ref}
-        className={cn(
-          'relative rounded-2xl overflow-hidden transition-all duration-300',
-          variantStyles[variant],
-          accentBorder && 'border-t-4',
-          accentBorder && accentBorderColors[accent],
-          hover && 'hover:-translate-y-1 hover:shadow-card-hover',
-          hover && accentGlow[accent],
-          pattern && pattern, // motif de fond personnalisé
-          className
-        )}
-        {...props}
-      >
-        {loading ? (
-          <div className="p-6">
-            <Skeleton variant="rectangular" className="w-full aspect-square mb-4" shimmer />
-            <Skeleton variant="text" className="w-3/4 mb-2" shimmer />
-            <Skeleton variant="text" className="w-1/2" shimmer />
-          </div>
-        ) : (
-          children
-        )}
-      </Component>
+      <CardContext.Provider value={contextValue}>
+        <Component
+          ref={ref as any}
+          className={cn(
+            'relative overflow-hidden rounded-card transition-all duration-200 ease-out',
+            variantStyles[normalizedVariant],
+            accentBorder && normalizedAccent !== 'none' && 'border-t-2',
+            accentBorder && accentBorderClasses[normalizedAccent],
+            hover && getHoverClasses(normalizedVariant),
+            pattern,
+            className
+          )}
+          {...props}
+        >
+          {loading ? <CardLoadingSkeleton padding={padding} /> : children}
+        </Component>
+      </CardContext.Provider>
     )
   }
 )
+
 Card.displayName = 'Card'
 
-/* ------------------------------------------------------------------ */
-/*  Sous-composants                                                    */
-/* ------------------------------------------------------------------ */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CARD HEADER                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
 
-interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   accent?: CardAccent
   badge?: React.ReactNode
 }
 
 const CardHeader = React.forwardRef<HTMLDivElement, CardHeaderProps>(
-  ({ className, accent, badge, children, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={cn(
-        'relative px-6 py-5 border-b border-neutral-100 dark:border-neutral-800',
-        accent === 'brand' && 'bg-brand-50/50 dark:bg-brand-900/10',
-        accent === 'accent' && 'bg-accent-50/50 dark:bg-accent-900/10',
-        accent === 'warm' && 'bg-warm-50/50 dark:bg-warm-900/10',
-        accent === 'luxury' && 'bg-luxury-50/50 dark:bg-luxury-900/10',
-        accent === 'gold' && 'bg-gold-50/50 dark:bg-gold-900/10',
-        accent === 'burgundy' && 'bg-burgundy-50/50 dark:bg-burgundy-900/10',
-        className
-      )}
-      {...props}
-    >
-      {children}
-      {badge && (
-        <div className="absolute top-3 right-3">{badge}</div>
-      )}
-    </div>
-  )
+  ({ className, accent, badge, children, ...props }, ref) => {
+    const { accent: contextAccent } = useContext(CardContext)
+    const resolvedAccent = accent ? normalizeAccent(accent) : contextAccent
+
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          'relative border-b border-line px-5 py-4 sm:px-6 sm:py-5',
+          accentHeaderClasses[resolvedAccent],
+          className
+        )}
+        {...props}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">{children}</div>
+
+          {badge && <div className="shrink-0">{badge}</div>}
+        </div>
+      </div>
+    )
+  }
 )
+
 CardHeader.displayName = 'CardHeader'
 
-interface CardContentProps extends React.HTMLAttributes<HTMLDivElement> {
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CARD CONTENT                                                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export interface CardContentProps extends React.HTMLAttributes<HTMLDivElement> {
+  padding?: CardPadding
+  /** @deprecated Préfère `padding="none"` */
   noPadding?: boolean
 }
 
 const CardContent = React.forwardRef<HTMLDivElement, CardContentProps>(
-  ({ className, noPadding = false, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={cn(!noPadding && 'px-6 py-5', className)}
-      {...props}
-    />
-  )
+  ({ className, padding, noPadding = false, ...props }, ref) => {
+    const { padding: contextPadding } = useContext(CardContext)
+
+    const resolvedPadding: CardPadding = noPadding
+      ? 'none'
+      : padding ?? contextPadding
+
+    return (
+      <div
+        ref={ref}
+        className={cn(contentPaddingClasses[resolvedPadding], className)}
+        {...props}
+      />
+    )
+  }
 )
+
 CardContent.displayName = 'CardContent'
 
-const CardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CARD FOOTER                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export interface CardFooterProps extends React.HTMLAttributes<HTMLDivElement> {}
+
+const CardFooter = React.forwardRef<HTMLDivElement, CardFooterProps>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        'px-6 py-4 border-t border-neutral-100 dark:border-neutral-800',
+        'flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-4 sm:px-6',
         className
       )}
       {...props}
     />
   )
 )
+
 CardFooter.displayName = 'CardFooter'
 
-/* ------------------------------------------------------------------ */
-/*  Éléments de présentation                                           */
-/* ------------------------------------------------------------------ */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CARD TITLE                                                     */
+/* ═══════════════════════════════════════════════════════════════ */
 
-interface CardTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {
+export interface CardTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {
   as?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
   accent?: CardAccent
 }
 
 const CardTitle = React.forwardRef<HTMLHeadingElement, CardTitleProps>(
   ({ className, as: Tag = 'h3', accent, ...props }, ref) => {
-    const accentColor = {
-      brand: 'text-brand-700 dark:text-brand-300',
-      accent: 'text-accent-700 dark:text-accent-300',
-      warm: 'text-warm-700 dark:text-warm-300',
-      luxury: 'text-luxury-700 dark:text-luxury-300',
-      neutral: '',
-      gold: 'text-gold-700 dark:text-gold-300',
-      burgundy: 'text-burgundy-700 dark:text-burgundy-300',
-    }
+    const { accent: contextAccent } = useContext(CardContext)
+    const resolvedAccent = accent ? normalizeAccent(accent) : contextAccent
 
     return (
       <Tag
-        ref={ref}
+        ref={ref as any}
         className={cn(
-          'text-lg font-semibold text-neutral-900 dark:text-neutral-100',
-          accent && accentColor[accent],
+          'font-semibold tracking-tight text-fg',
+          titleSizeByTag[Tag] ?? titleSizeByTag.h3,
+          accentTitleClasses[resolvedAccent],
           className
         )}
         {...props}
@@ -208,19 +404,35 @@ const CardTitle = React.forwardRef<HTMLHeadingElement, CardTitleProps>(
     )
   }
 )
+
 CardTitle.displayName = 'CardTitle'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CARD DESCRIPTION                                               */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export interface CardDescriptionProps
+  extends React.HTMLAttributes<HTMLParagraphElement> {}
 
 const CardDescription = React.forwardRef<
   HTMLParagraphElement,
-  React.HTMLAttributes<HTMLParagraphElement>
+  CardDescriptionProps
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn('text-sm text-neutral-500 dark:text-neutral-400', className)}
+    className={cn(
+      'mt-1.5 text-sm leading-relaxed text-fg-muted',
+      className
+    )}
     {...props}
   />
 ))
+
 CardDescription.displayName = 'CardDescription'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  EXPORTS                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export {
   Card,

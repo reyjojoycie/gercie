@@ -1,272 +1,121 @@
 // components/admin/testimonials/TestimonialsTable.tsx
 'use client'
 
-import { useState, useCallback, useMemo, memo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Star,
-  MessageCircle,
-  Edit,
-  Trash2,
-  Pin,
-  PinOff,
-  ArrowUpDown,
-  ArrowUp,
   ArrowDown,
-  MoreHorizontal,
+  ArrowUp,
   CheckCircle2,
-  AlertTriangle,
-  X,
-  Loader2
+  Clock,
+  Eye,
+  MessageSquareReply,
+  Pencil,
+  Pin,
+  ShieldCheck,
+  Trash2,
+  XCircle,
 } from 'lucide-react'
-import { Button } from '@/components/ui/Button'
+
 import { Badge } from '@/components/ui/Badge'
-import { Skeleton } from '@/components/ui/Skeleton'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 
-// -----------------------------------------------------------------------------
-// Types
-// -----------------------------------------------------------------------------
-export interface TestimonialAdmin {
-  id: string
-  name: string
-  role?: string
-  avatar?: string
-  text: string
-  rating: number
-  date: string
-  produit?: string
-  verified: boolean
-  likes: number
-  status: 'pending' | 'published' | 'rejected'
-  admin_response?: string
-  is_featured: boolean
-  user_id?: string
-  created_at: string
-  updated_at: string
-}
-
-export type SortField = 'name' | 'rating' | 'date' | 'status' | 'likes'
-export type SortOrder = 'asc' | 'desc'
-
-export interface ColumnVisibility {
-  name: boolean
-  text: boolean
-  rating: boolean
-  produit: boolean
-  status: boolean
-  featured: boolean
-  actions: boolean
-}
+import type { Testimonial, TestimonialStatus } from '@/lib/testimonials'
 
 interface TestimonialsTableProps {
-  testimonials: TestimonialAdmin[]
-  isLoading: boolean
-  sortField: SortField
-  sortOrder: SortOrder
-  onSort: (field: SortField) => void
+  testimonials: Testimonial[]
+  isLoading?: boolean
+  sortField: string
+  sortOrder: 'asc' | 'desc'
+  onSort: (field: string) => void
   selected: Set<string>
   onToggleSelect: (id: string) => void
   onToggleSelectAll: () => void
-  onEdit: (testimonial: TestimonialAdmin) => void
+  onEdit: (item: Testimonial) => void
   onDelete: (id: string) => void
-  onStatusChange: (id: string, status: 'published' | 'rejected' | 'pending') => void
-  onToggleFeatured: (id: string, current: boolean) => void
-  onReply: (testimonial: TestimonialAdmin) => void
-  // Proactive additions
-  disabledActions?: Set<string> // ids for which actions should be disabled
-  compact?: boolean
-  emptyMessage?: string
+  onStatusChange: (id: string, status: TestimonialStatus) => void
+  onToggleFeatured: (id: string, isFeatured: boolean) => void
+  onReply: (item: Testimonial) => void
+  disabledActions?: Set<string>
 }
 
-// -----------------------------------------------------------------------------
-// Internal components
-// -----------------------------------------------------------------------------
-
-const StatusBadge = memo(function StatusBadge({ status }: { status: string }) {
-  const statusConfig: Record<string, { label: string; color: string }> = {
-    published: { label: 'Publié', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-    pending: { label: 'En attente', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-    rejected: { label: 'Rejeté', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' }
-  }
-  const { label, color } = statusConfig[status] || { label: status, color: '' }
-  return <Badge className={cn('text-xs whitespace-nowrap', color)}>{label}</Badge>
-})
-
-const SortIcon = memo(function SortIcon({ field, currentField, order }: { field: SortField; currentField: SortField; order: SortOrder }) {
-  if (field !== currentField) return <ArrowUpDown size={12} className="inline ml-1 opacity-40" />
-  return order === 'asc' ? <ArrowUp size={12} className="inline ml-1 text-gold-500" /> : <ArrowDown size={12} className="inline ml-1 text-gold-500" />
-})
-
-function TableRow({
-  testimonial,
-  selected,
-  onToggleSelect,
-  onEdit,
-  onDelete,
-  onStatusChange,
-  onToggleFeatured,
-  onReply,
-  disabledActions,
-  compact
-}: {
-  testimonial: TestimonialAdmin
-  selected: boolean
-  onToggleSelect: (id: string) => void
-  onEdit: (t: TestimonialAdmin) => void
-  onDelete: (id: string) => void
-  onStatusChange: (id: string, status: 'published' | 'rejected' | 'pending') => void
-  onToggleFeatured: (id: string, current: boolean) => void
-  onReply: (t: TestimonialAdmin) => void
-  disabledActions?: Set<string>
-  compact?: boolean
-}) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const isDisabled = disabledActions?.has(testimonial.id) ?? false
-
-  const handleAction = (callback: () => void) => {
-    if (!isDisabled) callback()
-    setMenuOpen(false)
+function StatusBadge({ status }: { status: TestimonialStatus }) {
+  const config: Record<
+    TestimonialStatus,
+    { label: string; className: string; icon: React.ReactNode }
+  > = {
+    published: {
+      label: 'Publié',
+      className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+      icon: <CheckCircle2 size={12} />,
+    },
+    pending: {
+      label: 'En attente',
+      className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
+      icon: <Clock size={12} />,
+    },
+    rejected: {
+      label: 'Rejeté',
+      className: 'bg-red-500/10 text-red-700 dark:text-red-300',
+      icon: <XCircle size={12} />,
+    },
+    archived: {
+      label: 'Archivé',
+      className: 'bg-neutral-500/10 text-neutral-700 dark:text-neutral-300',
+      icon: <Eye size={12} />,
+    },
   }
 
-  const actions = (
-    <div className="flex items-center gap-1">
-      <Tooltip content="Modifier">
-        <button
-          onClick={() => handleAction(() => onEdit(testimonial))}
-          disabled={isDisabled}
-          className="p-1.5 rounded-lg hover:bg-gold-400/10 text-muted-foreground hover:text-gold-500 disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <Edit size={15} />
-        </button>
-      </Tooltip>
-      <Tooltip content="Répondre">
-        <button
-          onClick={() => handleAction(() => onReply(testimonial))}
-          disabled={isDisabled}
-          className="p-1.5 rounded-lg hover:bg-gold-400/10 text-muted-foreground hover:text-gold-500 disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <MessageCircle size={15} />
-        </button>
-      </Tooltip>
-      <Tooltip content={testimonial.is_featured ? 'Ne plus mettre en avant' : 'Mettre en avant'}>
-        <button
-          onClick={() => handleAction(() => onToggleFeatured(testimonial.id, testimonial.is_featured))}
-          disabled={isDisabled}
-          className="p-1.5 rounded-lg hover:bg-gold-400/10 text-muted-foreground hover:text-gold-500 disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {testimonial.is_featured ? <PinOff size={15} /> : <Pin size={15} />}
-        </button>
-      </Tooltip>
-      <select
-        value={testimonial.status}
-        onChange={e => onStatusChange(testimonial.id, e.target.value as any)}
-        disabled={isDisabled}
-        className="bg-card border border-border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold-400 disabled:opacity-30"
-      >
-        <option value="published">Publié</option>
-        <option value="pending">En attente</option>
-        <option value="rejected">Rejeté</option>
-      </select>
-      <Tooltip content="Supprimer">
-        <button
-          onClick={() => handleAction(() => onDelete(testimonial.id))}
-          disabled={isDisabled}
-          className="p-1.5 rounded-lg hover:bg-red-400/10 text-muted-foreground hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <Trash2 size={15} />
-        </button>
-      </Tooltip>
-    </div>
-  )
-
-  const compactActions = (
-    <div className="relative">
-      <button
-        onClick={() => setMenuOpen(!menuOpen)}
-        className="p-1.5 rounded-lg hover:bg-gold-400/10 text-muted-foreground"
-      >
-        <MoreHorizontal size={16} />
-      </button>
-      {menuOpen && (
-        <div className="absolute right-0 top-full mt-1 bg-card rounded-xl shadow-strong border border-border z-10 py-1 w-44">
-          <button onClick={() => handleAction(() => onEdit(testimonial))} className="w-full text-left px-3 py-2 text-sm hover:bg-gold-400/5 flex items-center gap-2">
-            <Edit size={14} /> Modifier
-          </button>
-          <button onClick={() => handleAction(() => onReply(testimonial))} className="w-full text-left px-3 py-2 text-sm hover:bg-gold-400/5 flex items-center gap-2">
-            <MessageCircle size={14} /> Répondre
-          </button>
-          <button onClick={() => handleAction(() => onToggleFeatured(testimonial.id, testimonial.is_featured))} className="w-full text-left px-3 py-2 text-sm hover:bg-gold-400/5 flex items-center gap-2">
-            {testimonial.is_featured ? <PinOff size={14} /> : <Pin size={14} />} {testimonial.is_featured ? 'Retirer' : 'Mettre en avant'}
-          </button>
-          <hr className="my-1 border-border" />
-          <button onClick={() => onStatusChange(testimonial.id, 'published')} className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 dark:hover:bg-green-900/20 flex items-center gap-2">
-            <CheckCircle2 size={14} className="text-green-500" /> Publier
-          </button>
-          <button onClick={() => onStatusChange(testimonial.id, 'pending')} className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 dark:hover:bg-amber-900/20 flex items-center gap-2">
-            <AlertTriangle size={14} className="text-amber-500" /> En attente
-          </button>
-          <button onClick={() => onStatusChange(testimonial.id, 'rejected')} className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2">
-            <X size={14} className="text-red-500" /> Rejeter
-          </button>
-          <hr className="my-1 border-border" />
-          <button onClick={() => handleAction(() => onDelete(testimonial.id))} className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 flex items-center gap-2">
-            <Trash2 size={14} /> Supprimer
-          </button>
-        </div>
-      )}
-    </div>
-  )
+  const item = config[status] || config.pending
 
   return (
-    <motion.tr
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="border-b border-border hover:bg-gold-400/5 transition-colors"
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold',
+        item.className
+      )}
     >
-      <td className="px-4 py-3 w-10">
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={() => onToggleSelect(testimonial.id)}
-          className="rounded border-gray-300 text-gold-500 focus:ring-gold-400"
-          aria-label={`Sélectionner ${testimonial.name}`}
-        />
-      </td>
-      <td className="px-4 py-3 font-medium text-sm whitespace-nowrap">
-        {testimonial.name}
-      </td>
-      <td className="px-4 py-3 text-sm text-muted-foreground max-w-[240px] truncate" title={testimonial.text}>
-        « {testimonial.text} »
-      </td>
-      <td className="px-4 py-3 text-center">
-        <div className="flex items-center justify-center gap-1">
-          <Star size={14} className="text-amber-500 fill-amber-500" />
-          <span className="text-sm font-medium">{testimonial.rating}</span>
-        </div>
-      </td>
-      <td className="px-4 py-3 text-sm text-muted-foreground text-center whitespace-nowrap">
-        {testimonial.produit || '—'}
-      </td>
-      <td className="px-4 py-3">
-        <StatusBadge status={testimonial.status} />
-      </td>
-      <td className="px-4 py-3 text-center">
-        {testimonial.is_featured ? <Pin size={14} className="text-gold-500 inline" /> : null}
-      </td>
-      <td className="px-4 py-3">
-        {compact ? compactActions : actions}
-      </td>
-    </motion.tr>
+      {item.icon}
+      {item.label}
+    </span>
   )
 }
 
-// -----------------------------------------------------------------------------
-// Main component
-// -----------------------------------------------------------------------------
-export const TestimonialsTable = memo(function TestimonialsTable({
+function SortHeader({
+  label,
+  field,
+  sortField,
+  sortOrder,
+  onSort,
+  className,
+}: {
+  label: string
+  field: string
+  sortField: string
+  sortOrder: 'asc' | 'desc'
+  onSort: (field: string) => void
+  className?: string
+}) {
+  const isActive = sortField === field
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(field)}
+      className={cn(
+        'inline-flex items-center gap-1 text-xs font-semibold uppercase transition hover:text-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500',
+        isActive ? 'text-gold-600' : 'text-muted-foreground',
+        className
+      )}
+    >
+      {label}
+      {isActive &&
+        (sortOrder === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+    </button>
+  )
+}
+
+export function TestimonialsTable({
   testimonials,
   isLoading,
   sortField,
@@ -281,111 +130,264 @@ export const TestimonialsTable = memo(function TestimonialsTable({
   onToggleFeatured,
   onReply,
   disabledActions,
-  compact = false,
-  emptyMessage = 'Aucun témoignage trouvé'
 }: TestimonialsTableProps) {
-  const headers: { field: SortField; label: string; className?: string }[] = useMemo(
-    () => [
-      { field: 'name', label: 'Nom' },
-      { field: 'name', label: 'Texte' }, // not sortable by text, using placeholder
-      { field: 'rating', label: 'Note', className: 'text-center' },
-      { field: 'name', label: 'Produit', className: 'text-center' },
-      { field: 'status', label: 'Statut', className: 'text-center' },
-      { field: 'name', label: 'En avant', className: 'text-center' },
-      { field: 'name', label: 'Actions' }
-    ],
-    []
-  )
+  const allSelected =
+    testimonials.length > 0 &&
+    testimonials.every((item) => selected.has(item.id))
 
-  const allSelected = testimonials.length > 0 && selected.size === testimonials.length
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div
+            key={index}
+            className="rounded-2xl border border-border bg-card p-4"
+          >
+            <Skeleton variant="text" className="mb-2 h-5 w-1/3" />
+            <Skeleton variant="text" className="mb-2 h-4 w-2/3" />
+            <Skeleton variant="text" className="h-4 w-1/4" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (testimonials.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border bg-background/30 p-10 text-center">
+        <MessageSquareReply size={32} className="mx-auto mb-3 text-muted-foreground" />
+        <p className="text-sm font-medium text-foreground">Aucun témoignage trouvé</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Modifie les filtres ou ajoute un nouveau témoignage.
+        </p>
+      </div>
+    )
+  }
 
   return (
-    <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left" role="table">
-          <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
-            <tr>
-              <th className="px-4 py-3 w-10">
+    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="hidden grid-cols-12 gap-3 border-b border-border bg-muted/30 px-4 py-3 lg:grid">
+        <div className="col-span-1 flex items-center">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={onToggleSelectAll}
+            className="h-4 w-4 rounded border-border"
+          />
+        </div>
+
+        <div className="col-span-3">
+          <SortHeader
+            label="Client"
+            field="name"
+            sortField={sortField}
+            sortOrder={sortOrder}
+            onSort={onSort}
+          />
+        </div>
+
+        <div className="col-span-4">
+          <SortHeader
+            label="Avis"
+            field="content"
+            sortField={sortField}
+            sortOrder={sortOrder}
+            onSort={onSort}
+          />
+        </div>
+
+        <div className="col-span-1">
+          <SortHeader
+            label="Note"
+            field="rating"
+            sortField={sortField}
+            sortOrder={sortOrder}
+            onSort={onSort}
+          />
+        </div>
+
+        <div className="col-span-1">
+          <SortHeader
+            label="Statut"
+            field="status"
+            sortField={sortField}
+            sortOrder={sortOrder}
+            onSort={onSort}
+          />
+        </div>
+
+        <div className="col-span-2 text-right">Actions</div>
+      </div>
+
+      <div className="divide-y divide-border">
+        {testimonials.map((item) => {
+          const isSelected = selected.has(item.id)
+          const isDisabled = disabledActions?.has(item.id)
+
+          return (
+            <div
+              key={item.id}
+              className={cn(
+                'grid grid-cols-1 gap-3 px-4 py-4 transition lg:grid-cols-12 lg:items-start',
+                isSelected && 'bg-gold-500/5'
+              )}
+            >
+              <div className="flex items-start gap-3 lg:col-span-1">
                 <input
                   type="checkbox"
-                  checked={allSelected}
-                  onChange={onToggleSelectAll}
-                  className="rounded border-gray-300"
-                  aria-label="Tout sélectionner"
+                  checked={isSelected}
+                  onChange={() => onToggleSelect(item.id)}
+                  className="mt-1 h-4 w-4 rounded border-border"
                 />
-              </th>
-              <th
-                className="px-4 py-3 cursor-pointer hover:text-gold-500 select-none"
-                onClick={() => onSort('name')}
-                role="columnheader"
-                aria-sort={sortField === 'name' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-              >
-                Nom <SortIcon field="name" currentField={sortField} order={sortOrder} />
-              </th>
-              <th className="px-4 py-3">Texte</th>
-              <th
-                className="px-4 py-3 cursor-pointer hover:text-gold-500 text-center select-none"
-                onClick={() => onSort('rating')}
-                role="columnheader"
-                aria-sort={sortField === 'rating' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-              >
-                Note <SortIcon field="rating" currentField={sortField} order={sortOrder} />
-              </th>
-              <th className="px-4 py-3 text-center">Produit</th>
-              <th
-                className="px-4 py-3 cursor-pointer hover:text-gold-500 text-center select-none"
-                onClick={() => onSort('status')}
-                role="columnheader"
-                aria-sort={sortField === 'status' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-              >
-                Statut <SortIcon field="status" currentField={sortField} order={sortOrder} />
-              </th>
-              <th className="px-4 py-3 text-center">En avant</th>
-              <th className="px-4 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-border">
-                  {Array.from({ length: 8 }).map((_, j) => (
-                    <td key={j} className="px-4 py-3">
-                      <Skeleton variant="text" className="h-4 w-full" />
-                    </td>
-                  ))}
-                </tr>
-              ))
-            ) : testimonials.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="text-center py-12">
-                  <MessageCircle size={40} className="mx-auto mb-3 text-neutral-300 dark:text-neutral-600" />
-                  <p className="text-muted-foreground text-sm">{emptyMessage}</p>
-                </td>
-              </tr>
-            ) : (
-              <AnimatePresence>
-                {testimonials.map((t) => (
-                  <TableRow
-                    key={t.id}
-                    testimonial={t}
-                    selected={selected.has(t.id)}
-                    onToggleSelect={onToggleSelect}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                    onStatusChange={onStatusChange}
-                    onToggleFeatured={onToggleFeatured}
-                    onReply={onReply}
-                    disabledActions={disabledActions}
-                    compact={compact}
-                  />
-                ))}
-              </AnimatePresence>
-            )}
-          </tbody>
-        </table>
+              </div>
+
+              <div className="min-w-0 lg:col-span-3">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {item.name}
+                  </p>
+
+                  {item.verified && (
+                    <Tooltip content="Achat vérifié">
+                      <ShieldCheck size={14} className="shrink-0 text-blue-500" />
+                    </Tooltip>
+                  )}
+
+                  {item.is_featured && (
+                    <Tooltip content="Mis en avant">
+                      <Pin size={14} className="shrink-0 text-gold-500" />
+                    </Tooltip>
+                  )}
+                </div>
+
+                {(item.role || item.produit) && (
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {[item.role, item.produit].filter(Boolean).join(' • ')}
+                  </p>
+                )}
+
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  {item.date
+                    ? new Date(item.date).toLocaleDateString('fr-FR', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                      })
+                    : '—'}
+                </p>
+              </div>
+
+              <div className="min-w-0 lg:col-span-4">
+                <p className="line-clamp-3 text-sm text-muted-foreground">
+                  « {item.text} »
+                </p>
+
+                {item.admin_response && (
+                  <div className="mt-2 rounded-xl border border-border bg-muted/30 p-2">
+                    <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                      Réponse admin
+                    </p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-foreground">
+                      {item.admin_response}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="text-sm text-muted-foreground lg:col-span-1">
+                {item.rating.toFixed(1)}
+              </div>
+
+              <div className="lg:col-span-1">
+                <StatusBadge status={item.status} />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-1 lg:col-span-2">
+                <Tooltip content="Modifier">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(item)}
+                    disabled={isDisabled}
+                    className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-gold-500 disabled:opacity-40"
+                    aria-label="Modifier"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </Tooltip>
+
+                <Tooltip content="Répondre">
+                  <button
+                    type="button"
+                    onClick={() => onReply(item)}
+                    disabled={isDisabled}
+                    className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-blue-500 disabled:opacity-40"
+                    aria-label="Répondre"
+                  >
+                    <MessageSquareReply size={14} />
+                  </button>
+                </Tooltip>
+
+                <Tooltip content={item.is_featured ? 'Retirer de la mise en avant' : 'Mettre en avant'}>
+                  <button
+                    type="button"
+                    onClick={() => onToggleFeatured(item.id, !item.is_featured)}
+                    disabled={isDisabled}
+                    className={cn(
+                      'rounded-lg p-2 transition disabled:opacity-40',
+                      item.is_featured
+                        ? 'text-gold-500 hover:bg-gold-500/10'
+                        : 'text-muted-foreground hover:bg-muted hover:text-gold-500'
+                    )}
+                    aria-label="Mis en avant"
+                  >
+                    <Pin size={14} />
+                  </button>
+                </Tooltip>
+
+                {item.status !== 'published' && (
+                  <Tooltip content="Publier">
+                    <button
+                      type="button"
+                      onClick={() => onStatusChange(item.id, 'published')}
+                      disabled={isDisabled}
+                      className="rounded-lg p-2 text-muted-foreground transition hover:bg-emerald-50 hover:text-emerald-500 disabled:opacity-40 dark:hover:bg-emerald-950/20"
+                      aria-label="Publier"
+                    >
+                      <CheckCircle2 size={14} />
+                    </button>
+                  </Tooltip>
+                )}
+
+                {item.status !== 'rejected' && (
+                  <Tooltip content="Rejeter">
+                    <button
+                      type="button"
+                      onClick={() => onStatusChange(item.id, 'rejected')}
+                      disabled={isDisabled}
+                      className="rounded-lg p-2 text-muted-foreground transition hover:bg-red-50 hover:text-red-500 disabled:opacity-40 dark:hover:bg-red-950/20"
+                      aria-label="Rejeter"
+                    >
+                      <XCircle size={14} />
+                    </button>
+                  </Tooltip>
+                )}
+
+                <Tooltip content="Supprimer">
+                  <button
+                    type="button"
+                    onClick={() => onDelete(item.id)}
+                    disabled={isDisabled}
+                    className="rounded-lg p-2 text-muted-foreground transition hover:bg-red-50 hover:text-red-500 disabled:opacity-40 dark:hover:bg-red-950/20"
+                    aria-label="Supprimer"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </Tooltip>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
-})
-
-export default TestimonialsTable
+}

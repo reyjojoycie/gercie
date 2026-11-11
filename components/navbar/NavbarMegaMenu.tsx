@@ -1,127 +1,409 @@
+// components/navbar/NavbarMegaMenu.tsx
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import Link from 'next/link'
-import { motion, AnimatePresence } from 'framer-motion'
-import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/Badge'
-import { getCategoryIconComponent } from '@/lib/categories'
-import {
-  Menu,
-  ChevronDown,
-  Percent,
-  TrendingUp,
-  Gift,
-  Sparkles,
-} from 'lucide-react'
-import React from 'react'
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
-/* ------------------------------------------------------------------ */
-/*  Types récursifs                                                    */
-/* ------------------------------------------------------------------ */
+import Link from 'next/link'
+
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+} from 'framer-motion'
+
+import { cn } from '@/lib/utils'
+
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Menu,
+  X,
+} from 'lucide-react'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export type MegaMenuBadgeVariant =
+  | 'accent'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'neutral'
+  // Legacy compatibility
+  | 'gold'
+  | 'warm'
+  | 'burgundy'
+
 export interface MegaMenuCategory {
   id: string
   name: string
-  icon: React.ReactNode
+  icon?: React.ReactNode
   href: string
   description?: string
-  badge?: string
-  badgeVariant?: 'gold' | 'accent' | 'warm' | 'danger' | 'neutral'
+  badge?: string | number
+  badgeVariant?: MegaMenuBadgeVariant
   children?: MegaMenuCategory[]
   featured?: boolean
 }
 
 export interface NavbarMegaMenuProps {
-  categories: MegaMenuCategory[]
+  /** Catégories affichées dans le méga-menu */
+  categories?: MegaMenuCategory[]
+
+  /** État contrôlé depuis Navbar.tsx */
   open?: boolean
+
+  /** Callback pour ouvrir/fermer le méga-menu */
   onOpenChange?: (open: boolean) => void
+
+  /** Callback appelé quand un lien interne au méga-menu est cliqué */
   onLinkClick?: () => void
+
+  /** Nombre de colonnes du grid principal */
   columns?: 3 | 4 | 5
+
+  /** Classes additionnelles */
   className?: string
+
+  /** Libellé du bouton déclencheur */
   label?: string
+
+  /** Mode compact : affiche uniquement l’icône */
   compact?: boolean
+
+  /** Délai avant fermeture au survol, en ms */
   hoverDelay?: number
+
+  /** État de chargement */
+  isLoading?: boolean
 }
 
-/* ------------------------------------------------------------------ */
-/*  Sous‑composant récursif pour les sous‑catégories                    */
-/* ------------------------------------------------------------------ */
-function SubCategoryList({
-  items,
-  depth,
-  onLinkClick,
-}: {
-  items: MegaMenuCategory[]
-  depth: number
-  onLinkClick: () => void
-}) {
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
+/* ═══════════════════════════════════════════════════════════════ */
+/*  BADGE TOKENS                                                   */
+/* ═══════════════════════════════════════════════════════════════ */
 
-  if (!items || items.length === 0) return null
+const badgeStyles: Record<
+  Exclude<MegaMenuBadgeVariant, 'gold' | 'warm' | 'burgundy'>,
+  string
+> = {
+  accent: 'bg-accent-soft text-accent border-transparent',
+  success: 'bg-success-soft text-success border-transparent',
+  warning: 'bg-warning-soft text-warning border-transparent',
+  danger: 'bg-danger-soft text-danger border-transparent',
+  neutral: 'bg-muted text-fg-muted border-line',
+}
+
+function normalizeBadgeVariant(
+  variant?: MegaMenuBadgeVariant
+): keyof typeof badgeStyles {
+  switch (variant) {
+    case 'gold':
+    case 'accent':
+      return 'accent'
+
+    case 'warm':
+    case 'warning':
+      return 'warning'
+
+    case 'burgundy':
+    case 'danger':
+      return 'danger'
+
+    case 'success':
+      return 'success'
+
+    case 'neutral':
+    default:
+      return 'neutral'
+  }
+}
+
+function MegaMenuBadge({
+  children,
+  variant = 'neutral',
+}: {
+  children?: React.ReactNode
+  variant?: MegaMenuBadgeVariant
+}) {
+  if (children === undefined || children === null || children === '') return null
+
+  const normalized = normalizeBadgeVariant(variant)
 
   return (
-    <>
-      {items.map((item) => {
-        const hasChildren = item.children && item.children.length > 0
-        const Icon = getCategoryIconComponent(item.icon?.toString())
-
-        return (
-          <div
-            key={item.id}
-            className={cn('relative', depth > 0 ? '' : '')}
-            onMouseEnter={() => setHoveredId(item.id)}
-            onMouseLeave={() => setHoveredId(null)}
-          >
-            <Link
-              href={item.href}
-              onClick={onLinkClick}
-              className={cn(
-                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors',
-                'text-neutral-600 dark:text-neutral-400',
-                'hover:bg-gold-400/10 hover:text-gold-600 dark:hover:text-gold-400',
-                hoveredId === item.id && 'bg-gold-400/10 text-gold-600 dark:text-gold-400'
-              )}
-            >
-              <Icon size={12} className="text-gold-500/60 flex-shrink-0" />
-              <span className="flex-1 truncate">{item.name}</span>
-              {item.badge && (
-                <Badge variant={item.badgeVariant || 'gold'} size="sm" className="text-[10px] px-1.5 py-0">
-                  {item.badge}
-                </Badge>
-              )}
-              {hasChildren && (
-                <ChevronDown size={12} className="rotate-[-90deg] text-neutral-400" />
-              )}
-            </Link>
-
-            {/* Sous‑niveau (type / détail) */}
-            {hasChildren && hoveredId === item.id && (
-              <AnimatePresence>
-                <motion.div
-                  initial={{ opacity: 0, x: -5 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -5 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute left-full top-0 w-48 bg-white/95 dark:bg-midnight-800/95 backdrop-blur-xl rounded-xl shadow-strong border border-gold-400/20 p-2 z-10"
-                >
-                  <SubCategoryList
-                    items={item.children!}
-                    depth={depth + 1}
-                    onLinkClick={onLinkClick}
-                  />
-                </motion.div>
-              </AnimatePresence>
-            )}
-          </div>
-        )
-      })}
-    </>
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center justify-center rounded-full border px-2 py-0.5',
+        'text-[10px] font-bold leading-none',
+        badgeStyles[normalized]
+      )}
+    >
+      {children}
+    </span>
   )
 }
 
-/* ================================================================== */
-/*  Composant principal NavbarMegaMenu                                   */
-/* ================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  LAYOUT MAPS                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const panelWidthMap: Record<3 | 4 | 5, string> = {
+  3: 'w-[min(820px,calc(100vw-2rem))]',
+  4: 'w-[min(1040px,calc(100vw-2rem))]',
+  5: 'w-[min(1240px,calc(100vw-2rem))]',
+}
+
+const subGridMap: Record<3 | 4 | 5, string> = {
+  3: 'sm:grid-cols-2 lg:grid-cols-3',
+  4: 'sm:grid-cols-2 lg:grid-cols-4',
+  5: 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5',
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SKELETON                                                       */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function MegaMenuSkeleton({ columns }: { columns: 3 | 4 | 5 }) {
+  return (
+    <div className="flex min-h-[20rem]">
+      <div className="hidden w-64 shrink-0 border-r border-line p-3 md:block lg:w-72">
+        <ul className="space-y-2">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <li key={`mega-skeleton-main-${index}`}>
+              <div className="skeleton h-10 w-full rounded-control" />
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="min-w-0 flex-1 p-5">
+        <div
+          className={cn(
+            'grid gap-3',
+            subGridMap[columns]
+          )}
+        >
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div
+              key={`mega-skeleton-card-${index}`}
+              className="rounded-control border border-line bg-muted p-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="skeleton h-9 w-9 shrink-0 rounded-lg" />
+
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="skeleton h-4 w-3/4 rounded-full" />
+                  <div className="skeleton h-3 w-1/2 rounded-full" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  MAIN CATEGORY BUTTON                                           */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface MainCategoryButtonProps {
+  category: MegaMenuCategory
+  isActive: boolean
+  onSelect: (id: string) => void
+}
+
+function MainCategoryButton({
+  category,
+  isActive,
+  onSelect,
+}: MainCategoryButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(category.id)}
+      aria-current={isActive ? 'true' : undefined}
+      className={cn(
+        'group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left text-sm',
+        'transition-colors duration-200 ease-out',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        'focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+        isActive
+          ? 'bg-accent-soft text-accent'
+          : 'text-fg hover:bg-muted hover:text-fg'
+      )}
+    >
+      {category.icon && (
+        <span
+          className="w-5 shrink-0 text-current"
+          aria-hidden="true"
+        >
+          {category.icon}
+        </span>
+      )}
+
+      <span className="min-w-0 flex-1 truncate font-medium">
+        {category.name}
+      </span>
+
+      {category.badge && (
+        <MegaMenuBadge variant={category.badgeVariant}>
+          {category.badge}
+        </MegaMenuBadge>
+      )}
+
+      {Boolean(category.children?.length) && (
+        <ChevronRight
+          size={14}
+          className={cn(
+            'shrink-0 transition-transform duration-200',
+            isActive && 'translate-x-0.5'
+          )}
+          aria-hidden="true"
+        />
+      )}
+    </button>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SUBCATEGORY CARD                                               */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface SubCategoryCardProps {
+  category: MegaMenuCategory
+  onLinkClick?: () => void
+}
+
+function SubCategoryCard({
+  category,
+  onLinkClick,
+}: SubCategoryCardProps) {
+  return (
+    <Link
+      href={category.href}
+      onClick={onLinkClick}
+      className={cn(
+        'group flex items-start gap-3 rounded-control border border-transparent p-3',
+        'transition-all duration-200 ease-out',
+        'hover:border-line hover:bg-muted',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        'focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+      )}
+    >
+      {category.icon && (
+        <span
+          className="mt-0.5 w-5 shrink-0 text-fg-muted transition-colors duration-200 group-hover:text-accent"
+          aria-hidden="true"
+        >
+          {category.icon}
+        </span>
+      )}
+
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            'block truncate text-sm font-semibold text-fg',
+            'transition-colors duration-200 group-hover:text-accent'
+          )}
+        >
+          {category.name}
+        </span>
+
+        {category.description && (
+          <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-fg-muted">
+            {category.description}
+          </span>
+        )}
+      </span>
+
+      {category.badge && (
+        <MegaMenuBadge variant={category.badgeVariant}>
+          {category.badge}
+        </MegaMenuBadge>
+      )}
+    </Link>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  EMPTY ACTIVE STATE                                             */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function EmptyActiveState({
+  category,
+  onLinkClick,
+}: {
+  category: MegaMenuCategory | null
+  onLinkClick?: () => void
+}) {
+  if (!category) {
+    return (
+      <div className="flex h-full min-h-[16rem] items-center justify-center p-8 text-center">
+        <p className="text-sm text-fg-muted">
+          Aucune catégorie disponible pour le moment.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-[16rem] flex-col items-start justify-center gap-5 rounded-control border border-line bg-muted p-6">
+      <div className="flex items-start gap-4">
+        {category.icon && (
+          <span
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface text-accent shadow-card"
+            aria-hidden="true"
+          >
+            {category.icon}
+          </span>
+        )}
+
+        <div className="min-w-0">
+          <p className="text-lg font-semibold tracking-tight text-fg">
+            {category.name}
+          </p>
+
+          {category.description && (
+            <p className="mt-1.5 max-w-prose text-sm leading-relaxed text-fg-muted">
+              {category.description}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <Link
+        href={category.href}
+        onClick={onLinkClick}
+        className={cn(
+          'inline-flex h-10 items-center justify-center gap-2 rounded-control',
+          'bg-accent px-4 text-sm font-semibold text-accent-contrast shadow-card',
+          'transition-colors duration-200 ease-out hover:bg-accent-hover',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+          'focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+        )}
+      >
+        Explorer {category.name}
+        <ArrowRight size={16} aria-hidden="true" />
+      </Link>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  COMPONENT                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export function NavbarMegaMenu({
   categories = [],
   open: controlledOpen,
@@ -131,192 +413,370 @@ export function NavbarMegaMenu({
   className,
   label = 'Catalogue',
   compact = false,
-  hoverDelay = 200,
+  hoverDelay = 180,
+  isLoading = false,
 }: NavbarMegaMenuProps) {
-  const [internalOpen, setInternalOpen] = useState(false)
-  const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen
-
-  const [activeMainIndex, setActiveMainIndex] = useState<number | null>(null)
+  const prefersReducedMotion = useReducedMotion()
+  const panelId = useId()
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const leaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const openMenu = useCallback(() => {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current)
-    hoverTimerRef.current = setTimeout(() => {
-      if (controlledOpen !== undefined) onOpenChange?.(true)
-      else setInternalOpen(true)
-    }, 80)
-  }, [controlledOpen, onOpenChange])
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isOpen = controlledOpen ?? internalOpen
 
-  const closeMenu = useCallback(() => {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current)
-    leaveTimerRef.current = setTimeout(() => {
-      if (controlledOpen !== undefined) onOpenChange?.(false)
-      else setInternalOpen(false)
-      setActiveMainIndex(null)
-    }, hoverDelay)
-  }, [controlledOpen, onOpenChange, hoverDelay])
+  const [activeId, setActiveId] = useState<string | null>(null)
 
-  const toggleMenu = useCallback(() => {
-    if (isOpen) closeMenu()
-    else openMenu()
-  }, [isOpen, openMenu, closeMenu])
+  const safeCategories = useMemo(
+    () => (Array.isArray(categories) ? categories : []),
+    [categories]
+  )
 
-  useEffect(() => {
-    if (!isOpen) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) closeMenu()
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen, closeMenu])
+  const activeCategory = useMemo(() => {
+    if (safeCategories.length === 0) return null
 
-  useEffect(() => {
-    return () => {
-      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-      if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current)
+    return (
+      safeCategories.find((category) => category.id === activeId) ??
+      safeCategories[0] ??
+      null
+    )
+  }, [activeId, safeCategories])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  OPEN / CLOSE CONTROL                                         */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (typeof onOpenChange === 'function') {
+        onOpenChange(next)
+      } else {
+        setInternalOpen(next)
+      }
+    },
+    [onOpenChange]
+  )
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
     }
   }, [])
 
-  const handleLinkClick = () => {
-    if (controlledOpen !== undefined) onOpenChange?.(false)
-    else setInternalOpen(false)
-    setActiveMainIndex(null)
+  const scheduleClose = useCallback(() => {
+    clearCloseTimer()
+
+    closeTimerRef.current = setTimeout(() => {
+      setOpen(false)
+    }, Math.max(0, hoverDelay))
+  }, [clearCloseTimer, hoverDelay, setOpen])
+
+  const toggleMenu = useCallback(() => {
+    clearCloseTimer()
+    setOpen(!isOpen)
+  }, [clearCloseTimer, isOpen, setOpen])
+
+  const handleMouseEnter = useCallback(() => {
+    // En mode contrôlé, on évite le hover automatique pour ne pas entrer
+    // en conflit avec la logique de Navbar.tsx.
+    if (controlledOpen !== undefined) return
+
+    clearCloseTimer()
+    setOpen(true)
+  }, [clearCloseTimer, controlledOpen, setOpen])
+
+  const handleMouseLeave = useCallback(() => {
+    if (controlledOpen !== undefined) return
+
+    scheduleClose()
+  }, [controlledOpen, scheduleClose])
+
+  const handleLinkClick = useCallback(() => {
+    clearCloseTimer()
+    setOpen(false)
     onLinkClick?.()
-  }
+  }, [clearCloseTimer, onLinkClick, setOpen])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  ACTIVE CATEGORY SYNC                                         */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const hasActive =
+      activeId !== null &&
+      safeCategories.some((category) => category.id === activeId)
+
+    if (!hasActive) {
+      setActiveId(safeCategories[0]?.id ?? null)
+    }
+  }, [activeId, isOpen, safeCategories])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  OUTSIDE CLICK + ESCAPE                                       */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+
+      if (!target) return
+      if (containerRef.current?.contains(target)) return
+
+      setOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen, setOpen])
+
+  useEffect(() => {
+    return () => {
+      clearCloseTimer()
+    }
+  }, [clearCloseTimer])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  MOTION                                                       */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const panelMotion = prefersReducedMotion
+    ? {
+        initial: { opacity: 1 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        transition: { duration: 0 },
+      }
+    : {
+        initial: { opacity: 0, y: 8, scale: 0.98 },
+        animate: { opacity: 1, y: 0, scale: 1 },
+        exit: { opacity: 0, y: 8, scale: 0.98 },
+        transition: { duration: 0.18, ease: 'easeOut' as const },
+      }
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  RENDER                                                       */
+  /* ───────────────────────────────────────────────────────────── */
 
   return (
     <div
       ref={containerRef}
-      className={cn('hidden lg:flex items-center relative', className)}
-      onMouseEnter={openMenu}
-      onMouseLeave={closeMenu}
+      className={cn('relative', className)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
-      {/* Bouton déclencheur */}
       <button
+        type="button"
         onClick={toggleMenu}
-        className={cn(
-          'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300',
-          isOpen
-            ? 'bg-gold-400/10 text-gold-600 dark:text-gold-400'
-            : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-midnight-700/40',
-          compact && 'px-2'
-        )}
         aria-expanded={isOpen}
         aria-haspopup="true"
-      >
-        <Menu size={18} className={cn(isOpen && 'text-gold-500')} />
-        {!compact && (
-          <>
-            <span className="hidden xl:inline">{label}</span>
-            <ChevronDown
-              size={14}
-              className={cn(
-                'transition-transform duration-300',
-                isOpen && 'rotate-180'
-              )}
-            />
-          </>
+        aria-controls={panelId}
+        className={cn(
+          'inline-flex h-10 items-center gap-2 rounded-control border px-3 text-sm font-medium',
+          'transition-all duration-200 ease-out',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+          'focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+          isOpen
+            ? 'border-accent bg-accent-soft text-accent'
+            : 'border-line bg-surface text-fg hover:border-line-strong hover:bg-raised',
+          compact && 'px-2.5'
         )}
+      >
+        <Menu
+          size={18}
+          strokeWidth={1.9}
+          aria-hidden="true"
+        />
+
+        {!compact && (
+          <span className="hidden xl:inline">{label}</span>
+        )}
+
+        <ChevronDown
+          size={14}
+          className={cn(
+            'hidden text-fg-subtle transition-transform duration-200 xl:block',
+            isOpen && 'rotate-180'
+          )}
+          aria-hidden="true"
+        />
       </button>
 
-      {/* Panneau principal */}
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.98 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
+            id={panelId}
+            role="dialog"
+            aria-label={label}
+            {...panelMotion}
             className={cn(
-              'absolute top-full left-0 mt-2 rounded-2xl shadow-strong border border-gold-400/20 p-6 z-30',
-              'bg-white/95 dark:bg-midnight-800/95 backdrop-blur-xl',
-              'w-[960px]'
+              'absolute left-0 top-full z-50 mt-2 overflow-hidden rounded-card border border-line bg-surface text-fg',
+              'shadow-overlay',
+              panelWidthMap[columns]
             )}
           >
-            <div className="grid grid-cols-4 gap-4">
-              {/* Colonne des catégories principales */}
-              <div className="space-y-1">
-                {categories.map((mainCat, idx) => {
-                  const MainIcon = getCategoryIconComponent(mainCat.icon?.toString())
-                  return (
-                    <div
-                      key={mainCat.id}
-                      className={cn(
-                        'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer',
-                        'text-neutral-700 dark:text-neutral-300',
-                        activeMainIndex === idx
-                          ? 'bg-gold-400/10 text-gold-600 dark:text-gold-400'
-                          : 'hover:bg-gold-400/5'
-                      )}
-                      onMouseEnter={() => setActiveMainIndex(idx)}
-                    >
-                      <MainIcon size={16} className="text-gold-500 flex-shrink-0" />
-                      <span className="flex-1 font-medium truncate">{mainCat.name}</span>
-                      {mainCat.children && mainCat.children.length > 0 && (
-                        <ChevronDown size={14} className="rotate-[-90deg] text-neutral-400" />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+            {/* ====================================================
+                PANEL HEADER
+               ==================================================== */}
+            <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+                {label}
+              </p>
 
-              {/* Zone des sous‑catégories / types / détails */}
-              <div className="col-span-3">
-                {activeMainIndex !== null && categories[activeMainIndex]?.children && (
-                  <SubCategoryList
-                    items={categories[activeMainIndex].children!}
-                    depth={0}
-                    onLinkClick={handleLinkClick}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Pied */}
-            <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-midnight-500/30 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
                 <Link
                   href="/categories"
                   onClick={handleLinkClick}
-                  className="text-sm text-gold-600 hover:text-gold-700 dark:text-gold-400 font-medium flex items-center gap-1"
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1',
+                    'text-xs font-semibold text-accent',
+                    'transition-colors duration-200 hover:bg-accent-soft hover:text-accent-hover',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                    'focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+                  )}
                 >
-                  Toutes les catégories <ChevronDown size={14} className="rotate-[-90deg]" />
+                  Toutes les catégories
+                  <ArrowRight size={13} aria-hidden="true" />
                 </Link>
-                <Link
-                  href="/promotions"
-                  onClick={handleLinkClick}
-                  className="text-sm text-red-500 hover:text-red-600 font-medium flex items-center gap-1"
+
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    'inline-flex h-7 w-7 items-center justify-center rounded-lg',
+                    'text-fg-subtle transition-colors duration-200',
+                    'hover:bg-muted hover:text-fg',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                    'focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+                    'md:hidden'
+                  )}
+                  aria-label="Fermer le catalogue"
                 >
-                  <Percent size={14} /> Promotions
-                </Link>
-                <Link
-                  href="/meilleures-ventes"
-                  onClick={handleLinkClick}
-                  className="text-sm text-amber-500 hover:text-amber-600 font-medium flex items-center gap-1"
-                >
-                  <TrendingUp size={14} /> Meilleures ventes
-                </Link>
-                <Link
-                  href="/carte-cadeau"
-                  onClick={handleLinkClick}
-                  className="text-sm text-luxury-600 hover:text-luxury-700 font-medium flex items-center gap-1"
-                >
-                  <Gift size={14} /> Cartes cadeaux
-                </Link>
-              </div>
-              <div className="hidden xl:flex items-center gap-2 text-xs text-neutral-400">
-                <Sparkles size={14} className="text-gold-400" />
-                <span>{categories.reduce((acc, c) => acc + (c.children?.length || 0), 0)} sous‑catégories</span>
+                  <X size={16} aria-hidden="true" />
+                </button>
               </div>
             </div>
+
+            {/* ====================================================
+                PANEL BODY
+               ==================================================== */}
+            {isLoading ? (
+              <MegaMenuSkeleton columns={columns} />
+            ) : safeCategories.length === 0 ? (
+              <div className="flex min-h-[16rem] items-center justify-center p-8 text-center">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-fg">
+                    Aucune catégorie disponible
+                  </p>
+                  <p className="text-xs text-fg-muted">
+                    Revenez bientôt pour découvrir notre catalogue.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex min-h-[20rem]">
+                {/* ================================================
+                    LEFT SIDEBAR — DESKTOP
+                   ================================================ */}
+                <div className="hidden w-64 shrink-0 border-r border-line p-3 md:block lg:w-72">
+                  <ul className="max-h-[24rem] space-y-1 overflow-y-auto pr-1 scrollbar-hide">
+                    {safeCategories.map((category) => (
+                      <li key={category.id}>
+                        <MainCategoryButton
+                          category={category}
+                          isActive={activeCategory?.id === category.id}
+                          onSelect={setActiveId}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* ================================================
+                    RIGHT CONTENT
+                   ================================================ */}
+                <div className="min-w-0 flex-1 p-4 sm:p-5">
+                  {/* Mobile / tablette within panel : chips horizontales */}
+                  <div className="mb-4 flex gap-2 overflow-x-auto pb-1 scrollbar-hide md:hidden">
+                    {safeCategories.map((category) => {
+                      const isActive = activeCategory?.id === category.id
+
+                      return (
+                        <button
+                          key={category.id}
+                          type="button"
+                          onClick={() => setActiveId(category.id)}
+                          className={cn(
+                            'inline-flex h-9 shrink-0 items-center gap-2 rounded-pill border px-3 text-xs font-semibold',
+                            'transition-colors duration-200 ease-out',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                            'focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+                            isActive
+                              ? 'border-accent bg-accent-soft text-accent'
+                              : 'border-line bg-surface text-fg-muted hover:bg-muted hover:text-fg'
+                          )}
+                        >
+                          {category.icon && (
+                            <span
+                              className="w-4 shrink-0"
+                              aria-hidden="true"
+                            >
+                              {category.icon}
+                            </span>
+                          )}
+
+                          <span className="max-w-[10rem] truncate">
+                            {category.name}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {activeCategory?.children && activeCategory.children.length > 0 ? (
+                    <div
+                      className={cn(
+                        'grid gap-2',
+                        subGridMap[columns]
+                      )}
+                    >
+                      {activeCategory.children.map((child) => (
+                        <SubCategoryCard
+                          key={child.id}
+                          category={child}
+                          onLinkClick={handleLinkClick}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyActiveState
+                      category={activeCategory}
+                      onLinkClick={handleLinkClick}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
     </div>
   )
 }
+
+export default NavbarMegaMenu

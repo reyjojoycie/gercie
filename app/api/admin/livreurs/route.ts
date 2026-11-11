@@ -1,93 +1,659 @@
 // app/api/admin/livreurs/route.ts
 // ============================================================================
-// API Admin – Gestion des livreurs (version Ultra‑Premium)
-// Supporte GET (liste), POST (création), PUT (modification complète),
-// DELETE (suppression + rétrogradation).
+// API Admin – Gestion des livreurs
+// Version complète, sécurisée, enrichie et nettoyée.
+//
+// Supporte :
+// - GET    : liste paginée, recherche, filtres, tri, stats, export CSV
+// - POST   : création d'un livreur
+// - PUT    : mise à jour partielle ou complète
+// - DELETE : suppression d'un livreur
+//
+// Cette version ne contient aucune logique de portefeuille / solde / recharge.
 // ============================================================================
-import { createClient } from '@/lib/supabaseServer'
-import { requireAdmin } from '@/lib/auth/adminGuard'
+
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+
+import { createClient } from '@/lib/supabaseServer'
+import { requireAdmin } from '@/lib/auth/adminGuard'
 import logger from '@/lib/logger'
 import { rateLimit, applyRateLimitHeaders } from '@/lib/rateLimit'
 
-/* ========================================================================== */
-/*  Schémas de validation                                                     */
-/* ========================================================================== */
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-const getQuerySchema = z.object({
-  search: z.string().optional().default(''),
-  est_actif: z.enum(['all', 'true', 'false']).optional().default('all'),
-  est_disponible: z.enum(['all', 'true', 'false']).optional().default('all'),
-  zone: z.string().optional().default(''),
-  sort_by: z.enum(['total_livraisons', 'distance_parcourue_km', 'derniere_activite', 'created_at']).optional().default('total_livraisons'),
-  sort_order: z.enum(['asc', 'desc']).optional().default('desc'),
-  page: z.coerce.number().int().positive().optional().default(1),
-  limit: z.coerce.number().int().positive().max(100).optional().default(20),
-  format: z.enum(['json', 'csv']).optional().default('json'),
-})
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONSTANTES                                                     */
+/* ═══════════════════════════════════════════════════════════════ */
 
-// Schéma pour la création (tous les champs requis sont obligatoires)
-const createLivreurSchema = z.object({
-  nom: z.string().min(1, 'Nom requis').max(100),
-  prenom: z.string().min(1, 'Prénom requis').max(100),
-  email: z.string().email('Email invalide'),
-  telephone: z.string().max(20).optional(),
-  moto_modele: z.string().max(100).optional(),
-  moto_plaque: z.string().max(20).optional(),
-  zone_operation_principale: z.string().max(200).optional(),
-  photo_url: z.string().url().optional().nullable(),
-  est_actif: z.boolean().optional().default(true),
-  est_disponible: z.boolean().optional().default(true),
-  user_id: z.string().uuid().optional(), // pour lier un profil existant
-})
+const TABLE = 'livreurs'
+const PROFILES_TABLE = 'profiles'
 
-// Schéma pour la modification (tous les champs optionnels)
-const updateLivreurSchema = z.object({
-  nom: z.string().min(1).max(100).optional(),
-  prenom: z.string().min(1).max(100).optional(),
-  email: z.string().email().optional(),
-  telephone: z.string().max(20).optional(),
-  moto_modele: z.string().max(100).optional(),
-  moto_plaque: z.string().max(20).optional(),
-  zone_operation_principale: z.string().max(200).optional(),
-  photo_url: z.string().url().optional().nullable(),
-  est_actif: z.boolean().optional(),
-  est_disponible: z.boolean().optional(),
-})
+const DEFAULT_PAGE = 1
+const DEFAULT_LIMIT = 20
+const MAX_LIMIT = 100
+const CSV_MAX_ROWS = 10_000
 
-/* ========================================================================== */
-/*  Cache mémoire                                                              */
-/* ========================================================================== */
-const cache = new Map<string, { data: any; timestamp: number }>()
 const CACHE_TTL = 30_000
 
-function getCache(key: string) {
+const log = (logger as any) || console
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  HELPERS GÉNÉRAUX                                               */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function nowIso(): string {
+  return new Date().toISOString()
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function toNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function toBool(value: unknown, fallback = false): boolean {
+  if (typeof value === 'boolean') return value
+  if (value === 1 || value === '1') return true
+  if (value === 0 || value === '0') return false
+
+  const str = String(value ?? '').toLowerCase().trim()
+
+  if (['true', 'actif', 'active', 'oui', 'yes', 'on'].includes(str)) return true
+  if (['false', 'inactif', 'inactive', 'non', 'no', 'off'].includes(str)) return false
+
+  return fallback
+}
+
+function textOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+
+  const str = String(value).trim()
+  return str ? str : null
+}
+
+function sanitizeLike(value: unknown): string {
+  return String(value || '')
+    .replace(/[(),%\s]+/g, ' ')
+    .trim()
+    .slice(0, 120)
+}
+
+function normalizePhone(value: unknown): string | null {
+  const raw = String(value || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/[-.]/g, '')
+
+  if (!raw) return null
+
+  // +243XXXXXXXXX
+  if (/^\+243[1-9][0-9]{8}$/.test(raw)) return raw
+
+  // 243XXXXXXXXX
+  if (/^243[1-9][0-9]{8}$/.test(raw)) return `+${raw}`
+
+  // 0XXXXXXXXX
+  if (/^0[1-9][0-9]{8}$/.test(raw)) return `+243${raw.slice(1)}`
+
+  return raw
+}
+
+function isValidPhone(value: unknown): boolean {
+  const raw = String(value || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/[-.]/g, '')
+
+  if (!raw) return true
+
+  return (
+    /^\+243[1-9][0-9]{8}$/.test(raw) ||
+    /^243[1-9][0-9]{8}$/.test(raw) ||
+    /^0[1-9][0-9]{8}$/.test(raw)
+  )
+}
+
+function round(value: number, digits = 2): number {
+  const factor = 10 ** digits
+  return Math.round(value * factor) / factor
+}
+
+function isUuid(value: unknown): boolean {
+  return typeof value === 'string' && z.string().uuid().safeParse(value).success
+}
+
+function isTableMissingError(error: any): boolean {
+  const message = String(error?.message || '').toLowerCase()
+
+  return (
+    error?.code === '42P01' ||
+    message.includes('relation') ||
+    message.includes('does not exist') ||
+    message.includes('n’existe pas') ||
+    message.includes("n'existe pas")
+  )
+}
+
+function isColumnError(error: any): boolean {
+  const message = String(error?.message || '').toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    message.includes('column') ||
+    message.includes('does not exist') ||
+    message.includes('could not find')
+  )
+}
+
+function isDuplicateError(error: any): boolean {
+  return error?.code === '23505'
+}
+
+function isForeignKeyError(error: any): boolean {
+  return error?.code === '23503'
+}
+
+function errorMessage(error: any, fallback: string): string {
+  return String(error?.message || error?.details || error?.hint || fallback)
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SUPABASE CLIENT TOÉRANT                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+async function getSupabaseAdmin(): Promise<any> {
+  const client: any = await createClient(true)
+
+  // Certains projets exportent { supabase } ou un client direct.
+  return client?.supabase ?? client
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CACHE MÉMOIRE                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const cache = new Map<string, { data: any; timestamp: number }>()
+
+function cacheGet(key: string): any | null {
   const entry = cache.get(key)
+
   if (!entry) return null
+
   if (Date.now() - entry.timestamp > CACHE_TTL) {
     cache.delete(key)
     return null
   }
+
   return entry.data
 }
-function setCache(key: string, data: any) {
+
+function cacheSet(key: string, data: any): void {
   cache.set(key, { data, timestamp: Date.now() })
 }
 
-/* ========================================================================== */
-/*  GET – Liste paginée, filtrée et triée des livreurs                        */
-/* ========================================================================== */
+function cacheClear(): void {
+  cache.clear()
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SCHÉMAS ZOD                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const optionalText = z
+  .union([z.string(), z.null()])
+  .optional()
+  .transform((value) => textOrNull(value))
+
+const optionalUrl = z
+  .union([z.string().url('URL invalide'), z.literal(''), z.null()])
+  .optional()
+  .transform((value) => {
+    const str = textOrNull(value)
+    return str || null
+  })
+
+const optionalPhone = z
+  .union([z.string(), z.literal(''), z.null()])
+  .optional()
+  .refine((value) => isValidPhone(value), {
+    message: 'Numéro invalide. Format attendu : 08xxxxxxxx ou +2438xxxxxxxx.',
+  })
+  .transform((value) => normalizePhone(value))
+
+const getQuerySchema = z.object({
+  search: z.string().optional().default(''),
+
+  est_actif: z
+    .enum(['all', 'true', 'false'])
+    .optional()
+    .default('all'),
+
+  est_disponible: z
+    .enum(['all', 'true', 'false'])
+    .optional()
+    .default('all'),
+
+  zone: z.string().optional().default(''),
+
+  sort_by: z.string().optional().default('created_at'),
+
+  sort_order: z
+    .enum(['asc', 'desc'])
+    .optional()
+    .default('desc'),
+
+  page: z.coerce.number().int().positive().optional().default(DEFAULT_PAGE),
+
+  limit: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(MAX_LIMIT)
+    .optional()
+    .default(DEFAULT_LIMIT),
+
+  format: z
+    .enum(['json', 'csv'])
+    .optional()
+    .default('json'),
+})
+
+const createLivreurSchema = z.object({
+  id: z.string().uuid().optional(),
+  user_id: z.string().uuid().optional(),
+
+  nom: z
+    .string()
+    .trim()
+    .min(1, 'Nom requis')
+    .max(100, 'Nom trop long'),
+
+  prenom: z
+    .string()
+    .trim()
+    .min(1, 'Prénom requis')
+    .max(100, 'Prénom trop long'),
+
+  email: z
+    .string()
+    .trim()
+    .email('Email invalide')
+    .max(190, 'Email trop long')
+    .transform((value) => value.toLowerCase()),
+
+  telephone: optionalPhone,
+
+  moto_modele: optionalText,
+  moto_plaque: optionalText,
+  zone_operation_principale: optionalText,
+  photo_url: optionalUrl,
+
+  est_actif: z.boolean().optional().default(true),
+  est_disponible: z.boolean().optional().default(false),
+
+  total_livraisons: z
+    .coerce.number()
+    .int()
+    .min(0)
+    .optional()
+    .default(0),
+
+  distance_parcourue_km: z
+    .coerce.number()
+    .min(0)
+    .optional()
+    .default(0),
+
+  note_moyenne: z
+    .union([z.coerce.number().min(0).max(5), z.null()])
+    .optional()
+    .default(null),
+
+  derniere_activite: z
+    .union([z.string().datetime({ offset: true }), z.literal(''), z.null()])
+    .optional()
+    .transform((value) => textOrNull(value)),
+})
+
+const updateLivreurSchema = z.object({
+  nom: z
+    .string()
+    .trim()
+    .min(1, 'Nom requis')
+    .max(100, 'Nom trop long')
+    .optional(),
+
+  prenom: z
+    .string()
+    .trim()
+    .min(1, 'Prénom requis')
+    .max(100, 'Prénom trop long')
+    .optional(),
+
+  email: z
+    .string()
+    .trim()
+    .email('Email invalide')
+    .max(190, 'Email trop long')
+    .transform((value) => value.toLowerCase())
+    .optional(),
+
+  telephone: optionalPhone,
+
+  moto_modele: optionalText,
+  moto_plaque: optionalText,
+  zone_operation_principale: optionalText,
+  photo_url: optionalUrl,
+
+  est_actif: z.boolean().optional(),
+  est_disponible: z.boolean().optional(),
+
+  total_livraisons: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .optional(),
+
+  distance_parcourue_km: z.coerce
+    .number()
+    .min(0)
+    .optional(),
+
+  note_moyenne: z
+    .union([z.coerce.number().min(0).max(5), z.null()])
+    .optional(),
+
+  derniere_activite: z
+    .union([z.string().datetime({ offset: true }), z.literal(''), z.null()])
+    .optional()
+    .transform((value) => textOrNull(value)),
+})
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  MAPPING TRI                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const SORT_ALIAS_MAP: Record<string, string> = {
+  livreur: 'prenom',
+  contact: 'email',
+  performance: 'total_livraisons',
+  note: 'note_moyenne',
+  zone: 'zone_operation_principale',
+  availability: 'est_disponible',
+  status: 'est_actif',
+
+  created_at: 'created_at',
+  total_livraisons: 'total_livraisons',
+  distance_parcourue_km: 'distance_parcourue_km',
+  derniere_activite: 'derniere_activite',
+  note_moyenne: 'note_moyenne',
+
+  nom: 'nom',
+  prenom: 'prenom',
+  email: 'email',
+  telephone: 'telephone',
+
+  est_actif: 'est_actif',
+  est_disponible: 'est_disponible',
+}
+
+function resolveSortColumn(value: unknown): string {
+  const raw = String(value || 'created_at').trim()
+  return SORT_ALIAS_MAP[raw] || 'created_at'
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  NORMALISATION RÉPONSE                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface NormalizedLivreur {
+  id: string
+  nom: string
+  prenom: string
+  email: string
+  telephone: string | null
+  est_actif: boolean
+  est_disponible: boolean
+  total_livraisons: number
+  distance_parcourue_km: number
+  derniere_activite: string | null
+  zone_operation_principale: string | null
+  photo_url: string | null
+  moto_modele: string | null
+  moto_plaque: string | null
+  note_moyenne: number | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+function normalizeLivreurRow(row: any, profile?: any): NormalizedLivreur {
+  return {
+    id: String(row?.id || ''),
+    nom: String(row?.nom || profile?.nom || '').trim(),
+    prenom: String(row?.prenom || profile?.prenom || '').trim(),
+    email: String(row?.email || profile?.email || '').trim().toLowerCase(),
+    telephone: textOrNull(row?.telephone || profile?.telephone),
+
+    est_actif: toBool(row?.est_actif, true),
+    est_disponible: toBool(row?.est_disponible, false),
+
+    total_livraisons: toNumber(row?.total_livraisons, 0),
+    distance_parcourue_km: toNumber(row?.distance_parcourue_km, 0),
+
+    derniere_activite: textOrNull(row?.derniere_activite),
+    zone_operation_principale: textOrNull(row?.zone_operation_principale),
+
+    photo_url: textOrNull(row?.photo_url || profile?.avatar_url),
+    moto_modele: textOrNull(row?.moto_modele),
+    moto_plaque: textOrNull(row?.moto_plaque),
+
+    note_moyenne: toNullableNumber(row?.note_moyenne),
+
+    created_at: textOrNull(row?.created_at),
+    updated_at: textOrNull(row?.updated_at),
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  STATISTIQUES                                                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface LivreurStats {
+  total: number
+  active: number
+  available: number
+  avgRating: number | null
+  totalDeliveries: number
+  totalKm: number
+
+  // Alias compatibles avec d'anciens appels
+  actifs: number
+  disponibles: number
+  livraisons: number
+  km: number
+}
+
+function computeStats(rows: any[], fallbackTotal = 0): LivreurStats {
+  const safeRows = Array.isArray(rows) ? rows : []
+
+  const active = safeRows.filter((r) => toBool(r?.est_actif, false)).length
+  const available = safeRows.filter((r) => toBool(r?.est_disponible, false)).length
+
+  const ratedRows = safeRows
+    .map((r) => toNullableNumber(r?.note_moyenne))
+    .filter((n): n is number => n !== null && n > 0)
+
+  const avgRating =
+    ratedRows.length > 0
+      ? round(
+          ratedRows.reduce((acc, n) => acc + n, 0) / ratedRows.length,
+          2
+        )
+      : null
+
+  const totalDeliveries = safeRows.reduce(
+    (acc, r) => acc + toNumber(r?.total_livraisons, 0),
+    0
+  )
+
+  const totalKm = round(
+    safeRows.reduce(
+      (acc, r) => acc + toNumber(r?.distance_parcourue_km, 0),
+      0
+    ),
+    1
+  )
+
+  const total = fallbackTotal || safeRows.length
+
+  return {
+    total,
+    active,
+    available,
+    avgRating,
+    totalDeliveries,
+    totalKm,
+
+    actifs: active,
+    disponibles: available,
+    livraisons: totalDeliveries,
+    km: totalKm,
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CSV                                                            */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function buildCsv(rows: NormalizedLivreur[]): string {
+  const headers = [
+    'ID',
+    'Prénom',
+    'Nom',
+    'Email',
+    'Téléphone',
+    'Actif',
+    'Disponible',
+    'Livraisons',
+    'Distance km',
+    'Note moyenne',
+    'Zone',
+    'Moto',
+    'Plaque',
+    'Dernière activité',
+    'Créé le',
+  ]
+
+  const escape = (value: unknown) =>
+    `"${String(value ?? '').replace(/"/g, '""')}"`
+
+  const lines = rows.map((row) =>
+    [
+      row.id,
+      row.prenom,
+      row.nom,
+      row.email,
+      row.telephone || '',
+      row.est_actif ? 'Oui' : 'Non',
+      row.est_disponible ? 'Oui' : 'Non',
+      String(row.total_livraisons),
+      String(row.distance_parcourue_km),
+      row.note_moyenne === null ? '' : String(row.note_moyenne),
+      row.zone_operation_principale || '',
+      row.moto_modele || '',
+      row.moto_plaque || '',
+      row.derniere_activite || '',
+      row.created_at || '',
+    ]
+      .map(escape)
+      .join(',')
+  )
+
+  return [headers.map(escape).join(','), ...lines].join('\n')
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  FILTRES SUPABASE                                               */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface FilterOptions {
+  search: string
+  est_actif: 'all' | 'true' | 'false'
+  est_disponible: 'all' | 'true' | 'false'
+  zone: string
+}
+
+function applyLivreurFilters(query: any, options: FilterOptions): any {
+  let q = query
+
+  if (options.est_actif === 'true') {
+    q = q.eq('est_actif', true)
+  } else if (options.est_actif === 'false') {
+    q = q.eq('est_actif', false)
+  }
+
+  if (options.est_disponible === 'true') {
+    q = q.eq('est_disponible', true)
+  } else if (options.est_disponible === 'false') {
+    q = q.eq('est_disponible', false)
+  }
+
+  const zone = sanitizeLike(options.zone)
+  if (zone) {
+    q = q.ilike('zone_operation_principale', `%${zone}%`)
+  }
+
+  const search = sanitizeLike(options.search)
+  if (search) {
+    const term = `%${search}%`
+
+    q = q.or(
+      [
+        `nom.ilike.${term}`,
+        `prenom.ilike.${term}`,
+        `email.ilike.${term}`,
+        `telephone.ilike.${term}`,
+        `zone_operation_principale.ilike.${term}`,
+        `moto_plaque.ilike.${term}`,
+        `moto_modele.ilike.${term}`,
+      ].join(',')
+    )
+  }
+
+  return q
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  GET – Liste des livreurs                                       */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export async function GET(request: Request) {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    '127.0.0.1'
+
   const { allowed, headers: rateLimitHeaders } = rateLimit({
-    id: `admin-livreurs:${ip}`,
-    maxRequests: 30,
+    id: `admin-livreurs-get:${ip}`,
+    maxRequests: 60,
     windowSeconds: 60,
   })
+
   if (!allowed) {
     return applyRateLimitHeaders(
-      NextResponse.json({ error: 'Trop de requêtes. Patientez une minute.' }, { status: 429 }),
+      NextResponse.json(
+        {
+          error: 'Trop de requêtes. Patientez une minute.',
+          code: 'RATE_LIMITED',
+        },
+        { status: 429 }
+      ),
       rateLimitHeaders
     )
   }
@@ -95,184 +661,328 @@ export async function GET(request: Request) {
   try {
     await requireAdmin()
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Accès non autorisé' }, { status: err.status || 403 })
-  }
-
-  const { searchParams } = new URL(request.url)
-  const parsed = getQuerySchema.safeParse(Object.fromEntries(searchParams.entries()))
-  if (!parsed.success) {
-    return NextResponse.json({ error: 'Paramètres invalides', details: parsed.error.flatten().fieldErrors }, { status: 400 })
-  }
-
-  const { search, est_actif, est_disponible, zone, sort_by, sort_order, page, limit, format } = parsed.data
-  const offset = (page - 1) * limit
-
-  const cacheKey = `admin-livreurs:${JSON.stringify(parsed.data)}`
-  if (format === 'json') {
-    const cached = getCache(cacheKey)
-    if (cached) return NextResponse.json(cached)
+    return NextResponse.json(
+      {
+        error: err?.message || 'Accès non autorisé',
+        code: 'FORBIDDEN',
+      },
+      { status: err?.status || 403 }
+    )
   }
 
   try {
-    const supabase = await createClient(true)
+    const { searchParams } = new URL(request.url)
 
-    // 1. Statistiques globales
-    const [totalRes, actifsRes, disponiblesRes] = await Promise.all([
-      supabase.from('livreurs').select('*', { count: 'exact', head: true }),
-      supabase.from('livreurs').select('*', { count: 'exact', head: true }).eq('est_actif', true),
-      supabase.from('livreurs').select('*', { count: 'exact', head: true }).eq('est_disponible', true),
-    ])
+    const parsed = getQuerySchema.safeParse(
+      Object.fromEntries(searchParams.entries())
+    )
 
-    // 2. Récupération des IDs des livreurs selon les critères (sans recherche textuelle)
-    let baseQuery = supabase.from('livreurs').select('id')
-
-    if (est_actif === 'true') baseQuery = baseQuery.eq('est_actif', true)
-    else if (est_actif === 'false') baseQuery = baseQuery.eq('est_actif', false)
-
-    if (est_disponible === 'true') baseQuery = baseQuery.eq('est_disponible', true)
-    else if (est_disponible === 'false') baseQuery = baseQuery.eq('est_disponible', false)
-
-    if (zone) baseQuery = baseQuery.ilike('zone_operation_principale', `%${zone}%`)
-
-    const { data: idsData, error: idsErr } = await baseQuery
-    if (idsErr) throw idsErr
-
-    let filteredIds = (idsData || []).map((l: any) => l.id)
-
-    // 3. Recherche textuelle dans les profils (si search fourni)
-    if (search && filteredIds.length > 0) {
-      const term = `%${search}%`
-      const { data: matchingProfiles, error: profilesErr } = await supabase
-        .from('profiles')
-        .select('id')
-        .or(`nom.ilike.${term},prenom.ilike.${term},email.ilike.${term},telephone.ilike.${term}`)
-        .in('id', filteredIds)
-
-      if (!profilesErr && matchingProfiles) {
-        const matchingIds = new Set(matchingProfiles.map((p: any) => p.id))
-        filteredIds = filteredIds.filter(id => matchingIds.has(id))
-      } else {
-        // Si erreur ou pas de correspondance, on renvoie vide
-        filteredIds = []
-      }
-    }
-
-    const total = filteredIds.length
-    const totalPages = Math.ceil(total / limit)
-
-    // 4. Pagination sur les IDs
-    const pagedIds = filteredIds.slice(offset, offset + limit)
-
-    if (pagedIds.length === 0) {
-      const emptyResponse = {
-        data: [],
-        pagination: { page, limit, total, totalPages },
-        stats: {
-          total: totalRes.count ?? 0,
-          actifs: actifsRes.count ?? 0,
-          disponibles: disponiblesRes.count ?? 0,
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: 'Paramètres invalides',
+          code: 'VALIDATION_ERROR',
+          details: parsed.error.flatten().fieldErrors,
         },
+        { status: 400 }
+      )
+    }
+
+    const input = parsed.data
+
+    const isCsv = input.format === 'csv'
+
+    const page = isCsv ? 1 : Math.max(1, input.page)
+    const limit = isCsv ? CSV_MAX_ROWS : Math.min(MAX_LIMIT, Math.max(1, input.limit))
+    const offset = (page - 1) * limit
+
+    const sortColumn = resolveSortColumn(input.sort_by)
+    const ascending = input.sort_order === 'asc'
+
+    const filters: FilterOptions = {
+      search: input.search,
+      est_actif: input.est_actif,
+      est_disponible: input.est_disponible,
+      zone: input.zone,
+    }
+
+    const cacheKey = isCsv
+      ? null
+      : `admin-livreurs:${JSON.stringify({
+          ...input,
+          sort_by: sortColumn,
+          page,
+          limit,
+        })}`
+
+    if (cacheKey) {
+      const cached = cacheGet(cacheKey)
+      if (cached) {
+        return NextResponse.json(cached)
       }
-      if (format === 'json') setCache(cacheKey, emptyResponse)
-      return NextResponse.json(emptyResponse)
     }
 
-    // 5. Récupération des données complètes (livreurs + profils)
-    const { data: livreursData, error: livreursErr } = await supabase
-      .from('livreurs')
-      .select('*')
-      .in('id', pagedIds)
+    const supabase = await getSupabaseAdmin()
 
-    if (livreursErr) throw livreursErr
+    if (!supabase || typeof supabase.from !== 'function') {
+      return NextResponse.json(
+        {
+          error: 'Configuration Supabase invalide côté serveur.',
+          code: 'SUPABASE_CLIENT_ERROR',
+        },
+        { status: 500 }
+      )
+    }
 
-    const { data: profilesData, error: profsErr } = await supabase
-      .from('profiles')
-      .select('id, nom, prenom, email, telephone')
-      .in('id', pagedIds)
+    /* ---------------------------------------------------------- */
+    /* 1. Count total filtré                                        */
+    /* ---------------------------------------------------------- */
 
-    const profilesMap = new Map()
-    if (profilesData) profilesData.forEach(p => profilesMap.set(p.id, p))
+    let countResult = await applyLivreurFilters(
+      supabase.from(TABLE).select('*', { count: 'exact', head: true }),
+      filters
+    )
 
-    const merged = (livreursData || []).map(l => {
-      const prof = profilesMap.get(l.id)
-      return {
-        id: l.id,
-        nom: prof?.nom || '',
-        prenom: prof?.prenom || '',
-        email: prof?.email || '',
-        telephone: prof?.telephone || '',
-        est_actif: l.est_actif,
-        est_disponible: l.est_disponible,
-        total_livraisons: l.total_livraisons,
-        distance_parcourue_km: l.distance_parcourue_km,
-        derniere_activite: l.derniere_activite,
-        zone_operation_principale: l.zone_operation_principale,
-        photo_url: l.photo_url,
-        moto_modele: l.moto_modele,
-        moto_plaque: l.moto_plaque,
-        note_moyenne: l.note_moyenne || null,
-        created_at: l.created_at,
+    if (countResult.error && isColumnError(countResult.error)) {
+      // Fallback : recherche désactivée si une colonne recherchée n'existe pas.
+      countResult = await supabase
+        .from(TABLE)
+        .select('*', { count: 'exact', head: true })
+        .eq(
+          'est_actif',
+          filters.est_actif === 'all'
+            ? countResult?.data?.est_actif ?? true
+            : filters.est_actif === 'true'
+        )
+    }
+
+    if (countResult.error) {
+      if (isTableMissingError(countResult.error)) {
+        return NextResponse.json(
+          {
+            error:
+              'La table public.livreurs est introuvable. Exécute la migration SQL nécessaire.',
+            code: 'TABLE_MISSING',
+            details: errorMessage(countResult.error, 'Table manquante'),
+          },
+          { status: 503 }
+        )
       }
-    })
 
-    // Tri final (côté serveur, sur les données fusionnées)
-    if (sort_by === 'nom') {
-      merged.sort((a: any, b: any) => (a.nom || '').localeCompare(b.nom || ''))
-      if (sort_order === 'desc') merged.reverse()
-    } else {
-      // déjà trié via la base, on peut ignorer
+      throw countResult.error
     }
 
-    const response = {
-      data: merged,
-      pagination: { page, limit, total, totalPages },
-      stats: {
-        total: totalRes.count ?? 0,
-        actifs: actifsRes.count ?? 0,
-        disponibles: disponiblesRes.count ?? 0,
-      },
+    const total = toNumber(countResult.count, 0)
+    const totalPages = Math.max(1, Math.ceil(total / limit))
+
+    /* ---------------------------------------------------------- */
+    /* 2. Statistiques filtrées                                     */
+    /* ---------------------------------------------------------- */
+
+    let statsRows: any[] = []
+
+    try {
+      const statsQuery = await applyLivreurFilters(
+        supabase
+          .from(TABLE)
+          .select(
+            'est_actif, est_disponible, total_livraisons, distance_parcourue_km, note_moyenne'
+          )
+          .limit(CSV_MAX_ROWS),
+        filters
+      )
+
+      if (!statsQuery.error) {
+        statsRows = Array.isArray(statsQuery.data) ? statsQuery.data : []
+      } else if (!isColumnError(statsQuery.error)) {
+        log.warn?.('admin-livreurs stats query warning', statsQuery.error)
+      }
+    } catch (statsErr) {
+      log.warn?.('admin-livreurs stats exception', statsErr)
     }
 
-    if (format === 'json') setCache(cacheKey, response)
+    const stats = computeStats(statsRows, total)
 
-    // Export CSV
-    if (format === 'csv') {
-      const headers = ['Nom', 'Prénom', 'Email', 'Téléphone', 'Zone', 'Livraisons', 'Km parcourus', 'Actif', 'Disponible']
-      const rows = merged.map(l => [
-        l.nom, l.prenom, l.email, l.telephone, l.zone_operation_principale || '',
-        l.total_livraisons, l.distance_parcourue_km,
-        l.est_actif ? 'Oui' : 'Non', l.est_disponible ? 'Oui' : 'Non'
-      ])
-      const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n')
+    /* ---------------------------------------------------------- */
+    /* 3. Données paginées                                          */
+    /* ---------------------------------------------------------- */
+
+    async function fetchRows(orderColumn: string | null): Promise<any> {
+      let query = applyLivreurFilters(
+        supabase.from(TABLE).select('*'),
+        filters
+      )
+
+      if (orderColumn) {
+        query = query.order(orderColumn, { ascending })
+      } else {
+        query = query.order('created_at', { ascending: false })
+      }
+
+      if (!isCsv) {
+        query = query.range(offset, offset + limit - 1)
+      }
+
+      return await query
+    }
+
+    let rowsResult = await fetchRows(sortColumn)
+
+    if (rowsResult.error && isColumnError(rowsResult.error)) {
+      rowsResult = await fetchRows(null)
+    }
+
+    if (rowsResult.error) {
+      if (isTableMissingError(rowsResult.error)) {
+        return NextResponse.json(
+          {
+            error:
+              'La table public.livreurs est introuvable. Exécute la migration SQL nécessaire.',
+            code: 'TABLE_MISSING',
+            details: errorMessage(rowsResult.error, 'Table manquante'),
+          },
+          { status: 503 }
+        )
+      }
+
+      throw rowsResult.error
+    }
+
+    const rawRows = Array.isArray(rowsResult.data) ? rowsResult.data : []
+
+    /* ---------------------------------------------------------- */
+    /* 4. Enrichissement optionnel depuis profiles                  */
+    /* ---------------------------------------------------------- */
+
+    const missingProfileIds = rawRows
+      .filter(
+        (row: any) =>
+          !row?.nom ||
+          !row?.prenom ||
+          !row?.email ||
+          !row?.telephone ||
+          !row?.photo_url
+      )
+      .map((row: any) => row?.id)
+      .filter(Boolean)
+
+    const profilesMap = new Map<string, any>()
+
+    if (missingProfileIds.length > 0) {
+      try {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from(PROFILES_TABLE)
+          .select('id, nom, prenom, email, telephone, avatar_url')
+          .in('id', missingProfileIds)
+
+        if (!profilesError && Array.isArray(profilesData)) {
+          for (const profile of profilesData) {
+            profilesMap.set(String(profile.id), profile)
+          }
+        } else if (profilesError && !isTableMissingError(profilesError)) {
+          log.warn?.('admin-livreurs profiles enrichment warning', profilesError)
+        }
+      } catch (profileErr) {
+        log.warn?.('admin-livreurs profiles enrichment exception', profileErr)
+      }
+    }
+
+    const data: NormalizedLivreur[] = rawRows.map((row: any) =>
+      normalizeLivreurRow(row, profilesMap.get(String(row?.id)))
+    )
+
+    /* ---------------------------------------------------------- */
+    /* 5. Export CSV                                                */
+    /* ---------------------------------------------------------- */
+
+    if (isCsv) {
+      const csv = buildCsv(data)
+
       return new NextResponse(csv, {
         status: 200,
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': `attachment; filename=livreurs_${new Date().toISOString().slice(0,10)}.csv`,
+          'Content-Disposition': `attachment; filename=livreurs-${new Date()
+            .toISOString()
+            .slice(0, 10)}.csv`,
+          'Cache-Control': 'no-store',
         },
       })
     }
 
-    return NextResponse.json(response)
+    /* ---------------------------------------------------------- */
+    /* 6. Réponse JSON                                              */
+    /* ---------------------------------------------------------- */
+
+    const response = {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+      stats,
+      filters: {
+        search: sanitizeLike(input.search) || null,
+        est_actif: input.est_actif,
+        est_disponible: input.est_disponible,
+        zone: sanitizeLike(input.zone) || null,
+        sort_by: sortColumn,
+        sort_order: input.sort_order,
+      },
+      generated_at: nowIso(),
+    }
+
+    if (cacheKey) {
+      cacheSet(cacheKey, response)
+    }
+
+    const jsonResponse = NextResponse.json(response)
+    jsonResponse.headers.set('Cache-Control', 'private, no-cache')
+
+    return jsonResponse
   } catch (error: any) {
-    logger.error('Crash GET admin/livreurs', error)
-    return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
+    log.error?.('Crash GET /api/admin/livreurs', error)
+
+    return NextResponse.json(
+      {
+        error: 'Erreur serveur interne lors du chargement des livreurs.',
+        code: 'INTERNAL_ERROR',
+        details:
+          process.env.NODE_ENV === 'development'
+            ? errorMessage(error, 'Erreur inconnue')
+            : undefined,
+      },
+      { status: 500 }
+    )
   }
 }
 
-/* ========================================================================== */
-/*  POST – Création d'un livreur (avec lien utilisateur optionnel)            */
-/* ========================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  POST – Création d'un livreur                                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export async function POST(request: Request) {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    '127.0.0.1'
+
   const { allowed, headers: rateLimitHeaders } = rateLimit({
     id: `admin-livreurs-post:${ip}`,
     maxRequests: 15,
     windowSeconds: 60,
   })
+
   if (!allowed) {
     return applyRateLimitHeaders(
-      NextResponse.json({ error: 'Trop de requêtes.' }, { status: 429 }),
+      NextResponse.json(
+        {
+          error: 'Trop de requêtes. Patientez une minute.',
+          code: 'RATE_LIMITED',
+        },
+        { status: 429 }
+      ),
       rateLimitHeaders
     )
   }
@@ -280,72 +990,206 @@ export async function POST(request: Request) {
   try {
     await requireAdmin()
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Accès non autorisé' }, { status: err.status || 403 })
+    return NextResponse.json(
+      {
+        error: err?.message || 'Accès non autorisé',
+        code: 'FORBIDDEN',
+      },
+      { status: err?.status || 403 }
+    )
   }
 
-  let body: any
+  let body: unknown
+
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'Corps de requête JSON invalide.',
+        code: 'INVALID_JSON',
+      },
+      { status: 400 }
+    )
   }
 
   const parsed = createLivreurSchema.safeParse(body)
+
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Données invalides', details: parsed.error.flatten().fieldErrors }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'Données invalides.',
+        code: 'VALIDATION_ERROR',
+        details: parsed.error.flatten().fieldErrors,
+      },
+      { status: 400 }
+    )
   }
 
-  const data = parsed.data
-  const supabase = await createClient(true)
+  const input = parsed.data
 
-  // Si un user_id est fourni, on promeut l'utilisateur existant
-  if (data.user_id) {
-    const { error: roleErr } = await supabase
-      .from('profiles')
-      .update({ type_user: 'livreur' })
-      .eq('id', data.user_id)
-    if (roleErr) return NextResponse.json({ error: roleErr.message }, { status: 500 })
-  }
+  try {
+    const supabase = await getSupabaseAdmin()
 
-  // Création du livreur
-  const { data: newLivreur, error: insertErr } = await supabase
-    .from('livreurs')
-    .insert({
-      // id sera le même que user_id si fourni, sinon généré automatiquement
-      ...(data.user_id ? { id: data.user_id } : {}),
-      nom: data.nom,
-      prenom: data.prenom,
-      email: data.email,
-      telephone: data.telephone || null,
-      moto_modele: data.moto_modele || null,
-      moto_plaque: data.moto_plaque || null,
-      zone_operation_principale: data.zone_operation_principale || null,
-      photo_url: data.photo_url || null,
-      est_actif: data.est_actif ?? true,
-      est_disponible: data.est_disponible ?? true,
+    const livreurId = input.user_id || input.id || undefined
+
+    const payload: Record<string, unknown> = {
+      ...(livreurId ? { id: livreurId } : {}),
+      nom: input.nom,
+      prenom: input.prenom,
+      email: input.email,
+      telephone: input.telephone ?? null,
+      moto_modele: input.moto_modele ?? null,
+      moto_plaque: input.moto_plaque ?? null,
+      zone_operation_principale: input.zone_operation_principale ?? null,
+      photo_url: input.photo_url ?? null,
+      est_actif: input.est_actif,
+      est_disponible: input.est_disponible,
+      total_livraisons: input.total_livraisons ?? 0,
+      distance_parcourue_km: input.distance_parcourue_km ?? 0,
+      note_moyenne: input.note_moyenne ?? null,
+      derniere_activite: input.derniere_activite ?? null,
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    }
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .insert(payload)
+      .select()
+      .single()
+
+    if (error) {
+      if (isTableMissingError(error)) {
+        return NextResponse.json(
+          {
+            error:
+              'La table public.livreurs est introuvable. Exécute la migration SQL nécessaire.',
+            code: 'TABLE_MISSING',
+            details: errorMessage(error, 'Table manquante'),
+          },
+          { status: 503 }
+        )
+      }
+
+      if (isDuplicateError(error)) {
+        return NextResponse.json(
+          {
+            error: 'Ce livreur existe déjà.',
+            code: 'DUPLICATE',
+            details: errorMessage(error, 'Doublon'),
+          },
+          { status: 409 }
+        )
+      }
+
+      if (isForeignKeyError(error)) {
+        return NextResponse.json(
+          {
+            error: 'Référence invalide.',
+            code: 'FOREIGN_KEY_ERROR',
+            details: errorMessage(error, 'Clé étrangère invalide'),
+          },
+          { status: 400 }
+        )
+      }
+
+      throw error
+    }
+
+    /* ---------------------------------------------------------- */
+    /* Synchronisation optionnelle avec profiles                    */
+    /* ---------------------------------------------------------- */
+
+    if (livreurId) {
+      try {
+        const profilePayload: Record<string, unknown> = {}
+
+        if (input.nom) profilePayload.nom = input.nom
+        if (input.prenom) profilePayload.prenom = input.prenom
+        if (input.email) profilePayload.email = input.email
+        if (input.telephone) profilePayload.telephone = input.telephone
+        if (input.photo_url) profilePayload.avatar_url = input.photo_url
+
+        if (Object.keys(profilePayload).length > 0) {
+          const { error: profileError } = await supabase
+            .from(PROFILES_TABLE)
+            .update(profilePayload)
+            .eq('id', livreurId)
+
+          if (profileError && !isTableMissingError(profileError)) {
+            log.warn?.(
+              'admin-livreurs POST profile sync warning',
+              profileError
+            )
+          }
+        }
+      } catch (profileSyncErr) {
+        log.warn?.(
+          'admin-livreurs POST profile sync exception',
+          profileSyncErr
+        )
+      }
+    }
+
+    cacheClear()
+
+    const normalized = normalizeLivreurRow(data)
+
+    log.info?.('Livreur créé', {
+      livreurId: normalized.id,
+      email: normalized.email,
     })
-    .select()
-    .single()
 
-  if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 })
+    return NextResponse.json(
+      {
+        success: true,
+        message: 'Livreur créé avec succès.',
+        data: normalized,
+      },
+      { status: 201 }
+    )
+  } catch (error: any) {
+    log.error?.('Crash POST /api/admin/livreurs', error)
 
-  cache.clear()
-  return NextResponse.json(newLivreur, { status: 201 })
+    return NextResponse.json(
+      {
+        error: 'Erreur serveur interne lors de la création du livreur.',
+        code: 'INTERNAL_ERROR',
+        details:
+          process.env.NODE_ENV === 'development'
+            ? errorMessage(error, 'Erreur inconnue')
+            : undefined,
+      },
+      { status: 500 }
+    )
+  }
 }
 
-/* ========================================================================== */
-/*  PUT – Mise à jour complète d'un livreur (livreurs + profiles)            */
-/* ========================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  PUT – Mise à jour d'un livreur                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export async function PUT(request: Request) {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    '127.0.0.1'
+
   const { allowed, headers: rateLimitHeaders } = rateLimit({
     id: `admin-livreurs-put:${ip}`,
-    maxRequests: 15,
+    maxRequests: 20,
     windowSeconds: 60,
   })
+
   if (!allowed) {
     return applyRateLimitHeaders(
-      NextResponse.json({ error: 'Trop de requêtes.' }, { status: 429 }),
+      NextResponse.json(
+        {
+          error: 'Trop de requêtes. Patientez une minute.',
+          code: 'RATE_LIMITED',
+        },
+        { status: 429 }
+      ),
       rateLimitHeaders
     )
   }
@@ -353,108 +1197,298 @@ export async function PUT(request: Request) {
   try {
     await requireAdmin()
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Accès non autorisé' }, { status: err.status || 403 })
+    return NextResponse.json(
+      {
+        error: err?.message || 'Accès non autorisé',
+        code: 'FORBIDDEN',
+      },
+      { status: err?.status || 403 }
+    )
   }
 
   let body: any
+
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json({ error: 'Corps JSON invalide' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'Corps de requête JSON invalide.',
+        code: 'INVALID_JSON',
+      },
+      { status: 400 }
+    )
   }
 
-  // Accepter soit { livreurId, ... } (ancien format), soit { id, updates } (nouveau format)
-  let id: string, updates: any
-  if (body.livreurId) {
-    id = body.livreurId
-    updates = { est_actif: body.est_actif, est_disponible: body.est_disponible, zone_operation_principale: body.zone_operation_principale }
-  } else if (body.id && body.updates) {
-    id = body.id
-    updates = body.updates
-  } else {
-    return NextResponse.json({ error: 'Format invalide' }, { status: 400 })
+  // Formats acceptés :
+  // { id, updates: {...} }
+  // { livreurId, ...updates }
+  // { id, ...updates }
+  const id = body?.id || body?.livreurId
+
+  if (!isUuid(id)) {
+    return NextResponse.json(
+      {
+        error: 'ID de livreur invalide.',
+        code: 'INVALID_ID',
+      },
+      { status: 400 }
+    )
   }
 
-  if (!z.string().uuid().safeParse(id).success) {
-    return NextResponse.json({ error: 'ID invalide' }, { status: 400 })
-  }
+  const updates =
+    body?.updates && typeof body.updates === 'object'
+      ? body.updates
+      : (() => {
+          const clone = { ...body }
+          delete clone.id
+          delete clone.livreurId
+          return clone
+        })()
 
   const parsedUpdates = updateLivreurSchema.safeParse(updates)
+
   if (!parsedUpdates.success) {
-    return NextResponse.json({ error: 'Données invalides', details: parsedUpdates.error.flatten().fieldErrors }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'Données de mise à jour invalides.',
+        code: 'VALIDATION_ERROR',
+        details: parsedUpdates.error.flatten().fieldErrors,
+      },
+      { status: 400 }
+    )
   }
 
   const updateData = parsedUpdates.data
 
   try {
-    const supabase = await createClient(true)
+    const supabase = await getSupabaseAdmin()
 
-    // Vérifier que le livreur existe
-    const { data: livreur, error: fetchErr } = await supabase
-      .from('livreurs')
+    /* ---------------------------------------------------------- */
+    /* Vérification existence                                       */
+    /* ---------------------------------------------------------- */
+
+    const { data: existing, error: fetchError } = await supabase
+      .from(TABLE)
       .select('id')
       .eq('id', id)
-      .single()
+      .maybeSingle()
 
-    if (fetchErr || !livreur) {
-      return NextResponse.json({ error: 'Livreur introuvable' }, { status: 404 })
+    if (fetchError) {
+      if (isTableMissingError(fetchError)) {
+        return NextResponse.json(
+          {
+            error:
+              'La table public.livreurs est introuvable. Exécute la migration SQL nécessaire.',
+            code: 'TABLE_MISSING',
+            details: errorMessage(fetchError, 'Table manquante'),
+          },
+          { status: 503 }
+        )
+      }
+
+      throw fetchError
     }
 
-    // Mise à jour dans la table livreurs
-    const livreurUpdates: any = {}
-    if (updateData.est_actif !== undefined) livreurUpdates.est_actif = updateData.est_actif
-    if (updateData.est_disponible !== undefined) livreurUpdates.est_disponible = updateData.est_disponible
-    if (updateData.zone_operation_principale !== undefined) livreurUpdates.zone_operation_principale = updateData.zone_operation_principale
-    if (updateData.moto_modele !== undefined) livreurUpdates.moto_modele = updateData.moto_modele
-    if (updateData.moto_plaque !== undefined) livreurUpdates.moto_plaque = updateData.moto_plaque
-    if (updateData.photo_url !== undefined) livreurUpdates.photo_url = updateData.photo_url
+    if (!existing) {
+      return NextResponse.json(
+        {
+          error: 'Livreur introuvable.',
+          code: 'NOT_FOUND',
+        },
+        { status: 404 }
+      )
+    }
 
-    if (Object.keys(livreurUpdates).length > 0) {
-      livreurUpdates.updated_at = new Date().toISOString()
-      const { error: lUpdateErr } = await supabase
-        .from('livreurs')
-        .update(livreurUpdates)
+    /* ---------------------------------------------------------- */
+    /* Mise à jour table livreurs                                   */
+    /* ---------------------------------------------------------- */
+
+    const livreurPayload: Record<string, unknown> = {}
+
+    const assignableLivreurFields: Array<keyof typeof updateData> = [
+      'nom',
+      'prenom',
+      'email',
+      'telephone',
+      'moto_modele',
+      'moto_plaque',
+      'zone_operation_principale',
+      'photo_url',
+      'est_actif',
+      'est_disponible',
+      'total_livraisons',
+      'distance_parcourue_km',
+      'note_moyenne',
+      'derniere_activite',
+    ]
+
+    for (const field of assignableLivreurFields) {
+      if (updateData[field] !== undefined) {
+        livreurPayload[field] = updateData[field]
+      }
+    }
+
+    if (Object.keys(livreurPayload).length > 0) {
+      livreurPayload.updated_at = nowIso()
+
+      const { error: updateError } = await supabase
+        .from(TABLE)
+        .update(livreurPayload)
         .eq('id', id)
-      if (lUpdateErr) return NextResponse.json({ error: lUpdateErr.message }, { status: 500 })
+
+      if (updateError) {
+        if (isDuplicateError(updateError)) {
+          return NextResponse.json(
+            {
+              error: 'Cette valeur est déjà utilisée.',
+              code: 'DUPLICATE',
+              details: errorMessage(updateError, 'Doublon'),
+            },
+            { status: 409 }
+          )
+        }
+
+        throw updateError
+      }
     }
 
-    // Mise à jour dans profiles (nom, prénom, email, téléphone)
-    const profileUpdates: any = {}
-    if (updateData.nom !== undefined) profileUpdates.nom = updateData.nom
-    if (updateData.prenom !== undefined) profileUpdates.prenom = updateData.prenom
-    if (updateData.email !== undefined) profileUpdates.email = updateData.email
-    if (updateData.telephone !== undefined) profileUpdates.telephone = updateData.telephone
+    /* ---------------------------------------------------------- */
+    /* Synchronisation optionnelle avec profiles                    */
+    /* ---------------------------------------------------------- */
 
-    if (Object.keys(profileUpdates).length > 0) {
-      const { error: pUpdateErr } = await supabase
-        .from('profiles')
-        .update(profileUpdates)
-        .eq('id', id)
-      if (pUpdateErr) return NextResponse.json({ error: pUpdateErr.message }, { status: 500 })
+    const profilePayload: Record<string, unknown> = {}
+
+    if (updateData.nom !== undefined) profilePayload.nom = updateData.nom
+    if (updateData.prenom !== undefined) profilePayload.prenom = updateData.prenom
+    if (updateData.email !== undefined) profilePayload.email = updateData.email
+    if (updateData.telephone !== undefined)
+      profilePayload.telephone = updateData.telephone
+    if (updateData.photo_url !== undefined)
+      profilePayload.avatar_url = updateData.photo_url
+
+    if (Object.keys(profilePayload).length > 0) {
+      try {
+        const { error: profileError } = await supabase
+          .from(PROFILES_TABLE)
+          .update(profilePayload)
+          .eq('id', id)
+
+        if (profileError) {
+          if (isDuplicateError(profileError)) {
+            return NextResponse.json(
+              {
+                error: 'Cet email est déjà utilisé par un autre compte.',
+                code: 'DUPLICATE_EMAIL',
+                details: errorMessage(profileError, 'Email doublon'),
+              },
+              { status: 409 }
+            )
+          }
+
+          if (!isTableMissingError(profileError) && !isColumnError(profileError)) {
+            log.warn?.('admin-livreurs PUT profile sync warning', profileError)
+          }
+        }
+      } catch (profileSyncErr) {
+        log.warn?.(
+          'admin-livreurs PUT profile sync exception',
+          profileSyncErr
+        )
+      }
     }
 
-    cache.clear()
-    logger.info(`Livreur ${id} mis à jour`, { updates })
-    return NextResponse.json({ success: true })
+    /* ---------------------------------------------------------- */
+    /* Récupération finale                                          */
+    /* ---------------------------------------------------------- */
+
+    const { data: updatedRow, error: refetchError } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (refetchError) {
+      log.warn?.('admin-livreurs PUT refetch warning', refetchError)
+    }
+
+    cacheClear()
+
+    const normalized = updatedRow
+      ? normalizeLivreurRow(updatedRow)
+      : {
+          id,
+          nom: updateData.nom || '',
+          prenom: updateData.prenom || '',
+          email: updateData.email || '',
+          telephone: updateData.telephone || null,
+          est_actif: updateData.est_actif ?? true,
+          est_disponible: updateData.est_disponible ?? false,
+          total_livraisons: updateData.total_livraisons ?? 0,
+          distance_parcourue_km: updateData.distance_parcourue_km ?? 0,
+          derniere_activite: updateData.derniere_activite || null,
+          zone_operation_principale: updateData.zone_operation_principale || null,
+          photo_url: updateData.photo_url || null,
+          moto_modele: updateData.moto_modele || null,
+          moto_plaque: updateData.moto_plaque || null,
+          note_moyenne: updateData.note_moyenne ?? null,
+          created_at: null,
+          updated_at: nowIso(),
+        }
+
+    log.info?.('Livreur mis à jour', {
+      livreurId: id,
+      updatedFields: Object.keys(livreurPayload).filter(
+        (k) => k !== 'updated_at'
+      ),
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Livreur mis à jour avec succès.',
+      data: normalized,
+    })
   } catch (error: any) {
-    logger.error('Crash PUT admin/livreurs', error)
-    return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
+    log.error?.('Crash PUT /api/admin/livreurs', error)
+
+    return NextResponse.json(
+      {
+        error: 'Erreur serveur interne lors de la mise à jour du livreur.',
+        code: 'INTERNAL_ERROR',
+        details:
+          process.env.NODE_ENV === 'development'
+            ? errorMessage(error, 'Erreur inconnue')
+            : undefined,
+      },
+      { status: 500 }
+    )
   }
 }
 
-/* ========================================================================== */
-/*  DELETE – Suppression d'un livreur (et rétrogradation du rôle)             */
-/* ========================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  DELETE – Suppression d'un livreur                              */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export async function DELETE(request: Request) {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    '127.0.0.1'
+
   const { allowed, headers: rateLimitHeaders } = rateLimit({
     id: `admin-livreurs-delete:${ip}`,
     maxRequests: 10,
     windowSeconds: 60,
   })
+
   if (!allowed) {
     return applyRateLimitHeaders(
-      NextResponse.json({ error: 'Trop de requêtes.' }, { status: 429 }),
+      NextResponse.json(
+        {
+          error: 'Trop de requêtes. Patientez une minute.',
+          code: 'RATE_LIMITED',
+        },
+        { status: 429 }
+      ),
       rateLimitHeaders
     )
   }
@@ -462,45 +1496,106 @@ export async function DELETE(request: Request) {
   try {
     await requireAdmin()
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Accès non autorisé' }, { status: err.status || 403 })
+    return NextResponse.json(
+      {
+        error: err?.message || 'Accès non autorisé',
+        code: 'FORBIDDEN',
+      },
+      { status: err?.status || 403 }
+    )
   }
 
   const { searchParams } = new URL(request.url)
-  const id = searchParams.get('id')
-  if (!id || !z.string().uuid().safeParse(id).success) {
-    return NextResponse.json({ error: 'ID invalide' }, { status: 400 })
+
+  let id = searchParams.get('id')
+
+  if (!id) {
+    try {
+      const body = await request.json()
+      id = body?.id || body?.livreurId
+    } catch {
+      // silencieux : id peut venir uniquement des query params
+    }
+  }
+
+  if (!isUuid(id)) {
+    return NextResponse.json(
+      {
+        error: 'ID de livreur invalide.',
+        code: 'INVALID_ID',
+      },
+      { status: 400 }
+    )
   }
 
   try {
-    const supabase = await createClient(true)
+    const supabase = await getSupabaseAdmin()
 
-    // Récupérer l'email pour rétrograder le rôle dans profiles
-    const { data: livreur, error: fetchErr } = await supabase
-      .from('livreurs')
-      .select('email')
+    const { data: existing, error: fetchError } = await supabase
+      .from(TABLE)
+      .select('id, email')
       .eq('id', id)
-      .single()
+      .maybeSingle()
 
-    // Supprimer l'entrée livreur
-    const { error: deleteErr } = await supabase
-      .from('livreurs')
+    if (fetchError) {
+      if (isTableMissingError(fetchError)) {
+        return NextResponse.json(
+          {
+            error:
+              'La table public.livreurs est introuvable. Exécute la migration SQL nécessaire.',
+            code: 'TABLE_MISSING',
+            details: errorMessage(fetchError, 'Table manquante'),
+          },
+          { status: 503 }
+        )
+      }
+
+      throw fetchError
+    }
+
+    if (!existing) {
+      return NextResponse.json(
+        {
+          error: 'Livreur introuvable.',
+          code: 'NOT_FOUND',
+        },
+        { status: 404 }
+      )
+    }
+
+    const { error: deleteError } = await supabase
+      .from(TABLE)
       .delete()
       .eq('id', id)
 
-    if (deleteErr) return NextResponse.json({ error: deleteErr.message }, { status: 500 })
-
-    // Rétrograder l'utilisateur lié (s'il existe)
-    if (livreur?.email) {
-      await supabase
-        .from('profiles')
-        .update({ type_user: 'acheteur' })
-        .eq('email', livreur.email)
+    if (deleteError) {
+      throw deleteError
     }
 
-    cache.clear()
-    return NextResponse.json({ success: true })
+    cacheClear()
+
+    log.info?.('Livreur supprimé', {
+      livreurId: id,
+      email: existing.email || null,
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Livreur supprimé avec succès.',
+    })
   } catch (error: any) {
-    logger.error('Crash DELETE admin/livreurs', error)
-    return NextResponse.json({ error: 'Erreur serveur interne' }, { status: 500 })
+    log.error?.('Crash DELETE /api/admin/livreurs', error)
+
+    return NextResponse.json(
+      {
+        error: 'Erreur serveur interne lors de la suppression du livreur.',
+        code: 'INTERNAL_ERROR',
+        details:
+          process.env.NODE_ENV === 'development'
+            ? errorMessage(error, 'Erreur inconnue')
+            : undefined,
+      },
+      { status: 500 }
+    )
   }
 }

@@ -1,3 +1,4 @@
+//app/search/page.tsx
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
@@ -5,15 +6,16 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search as SearchIcon, SlidersHorizontal, X, Sparkles, ChevronLeft, ChevronRight,
-  Grid3x3, Folder, FolderOpen, ChevronRight as ChevronRightIcon, Image as ImageIcon
+  Grid3x3, Folder, FolderOpen, ChevronRight as ChevronRightIcon, Image as ImageIcon, Package
 } from 'lucide-react';
+import * as Icons from 'lucide-react';
 
 import { Container } from '../../components/layout/Container';
 import { ProductGrid } from '../../components/ProductGrid';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useSearch } from '@/hooks/useSearch';
-import { categoryTree, getCategoryIconComponent, getCategoryByIdFast } from '@/lib/categories';
+import { useCategories, findCategoryById, type CategoryNode } from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
 import { ScrollToTop } from '@/components/ui/ScrollToTop';
 import FilterToolbar from '../../components/product/FilterToolbar';
@@ -21,11 +23,26 @@ import React from 'react';
 
 const RESULTS_PER_PAGE = 12;
 
-function CategoryTreeItem({ node, selectedId, onSelect, depth = 0 }: any) {
+// ✅ NOUVEAU : Composant d'arbre de catégories dynamique
+function CategoryTreeItem({ 
+  node, 
+  selectedId, 
+  onSelect, 
+  depth = 0 
+}: { 
+  node: CategoryNode; 
+  selectedId: string; 
+  onSelect: (id: string) => void; 
+  depth?: number 
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedId === node.id;
-  const IconComponent = getCategoryIconComponent(node.id);
+
+  // ✅ Résolution dynamique de l'icône Lucide
+  const IconComponent = node.icone && (Icons as any)[node.icone] 
+    ? (Icons as any)[node.icone] 
+    : Package;
 
   return (
     <div>
@@ -45,15 +62,21 @@ function CategoryTreeItem({ node, selectedId, onSelect, depth = 0 }: any) {
         ) : (
           <IconComponent size={14} className="text-gray-400" />
         )}
-        <span className="truncate flex-1">{node.name}</span>
+        <span className="truncate flex-1">{node.nom}</span>
         {hasChildren && (
           <ChevronRightIcon size={12} className={cn("transition-transform", isOpen && "rotate-90")} />
         )}
       </button>
       {hasChildren && isOpen && (
         <div className="mt-1">
-          {node.children.map((child: any) => (
-            <CategoryTreeItem key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} depth={depth + 1} />
+          {node.children!.map((child) => (
+            <CategoryTreeItem 
+              key={child.id} 
+              node={child} 
+              selectedId={selectedId} 
+              onSelect={onSelect} 
+              depth={depth + 1} 
+            />
           ))}
         </div>
       )}
@@ -61,7 +84,16 @@ function CategoryTreeItem({ node, selectedId, onSelect, depth = 0 }: any) {
   );
 }
 
-function CategoryTreeFilter({ selectedId, onSelect }: any) {
+// ✅ NOUVEAU : Filtre d'arbre de catégories dynamique
+function CategoryTreeFilter({ 
+  selectedId, 
+  onSelect, 
+  categories 
+}: { 
+  selectedId: string; 
+  onSelect: (id: string) => void;
+  categories: CategoryNode[];
+}) {
   return (
     <div className="space-y-1 max-h-96 overflow-y-auto pr-2">
       <button
@@ -74,8 +106,13 @@ function CategoryTreeFilter({ selectedId, onSelect }: any) {
         <Grid3x3 size={14} />
         <span>Toutes les catégories</span>
       </button>
-      {categoryTree.map((node) => (
-        <CategoryTreeItem key={node.id} node={node} selectedId={selectedId} onSelect={onSelect} />
+      {categories.map((node) => (
+        <CategoryTreeItem 
+          key={node.id} 
+          node={node} 
+          selectedId={selectedId} 
+          onSelect={onSelect} 
+        />
       ))}
     </div>
   );
@@ -120,7 +157,7 @@ function VisualSearchResults() {
               <Sparkles className="text-purple-500" size={18} />
               Résultats pour cette image
             </h3>
-            {text && <p className="text-sm text-gray-500 mt-1">Combiné avec le texte : "{text}"</p>}
+            {text && <p className="text-sm text-gray-500 mt-1">Combiné avec le texte : &quot;{text}&quot;</p>}
           </div>
         </div>
       )}
@@ -133,6 +170,9 @@ export default function SearchPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const searchMode = searchParams.get('mode');
+
+  // ✅ NOUVEAU : Récupération dynamique de l'arbre des catégories
+  const { data: categoriesTree, isLoading: isLoadingCategories } = useCategories();
 
   // Si le mode est 'visual', on affiche uniquement les résultats visuels
   if (searchMode === 'visual') {
@@ -239,11 +279,20 @@ export default function SearchPage() {
   const handleResetFilters = () => router.replace('/search', { scroll: false });
   const clearSearch = () => updateUrlParams({ q: undefined, page: undefined });
 
+  // ✅ NOUVEAU : Recherche du chemin_complet pour le filtre
   const searchFilters = useMemo(() => {
-    const categoryName = urlCategoryId ? getCategoryByIdFast(urlCategoryId)?.name : undefined;
+    // Trouver la catégorie sélectionnée et obtenir son chemin_complet
+    let categoryPrefix: string | undefined;
+    if (urlCategoryId && categoriesTree) {
+      const selectedCat = findCategoryById(categoriesTree, urlCategoryId);
+      if (selectedCat) {
+        categoryPrefix = selectedCat.chemin_complet;
+      }
+    }
+
     return {
       query: urlQuery,
-      categoryPrefix: categoryName,
+      categoryPrefix,
       minPrice: urlMinPrice ? Number(urlMinPrice) : undefined,
       maxPrice: urlMaxPrice ? Number(urlMaxPrice) : undefined,
       sortBy: urlSortBy,
@@ -261,7 +310,7 @@ export default function SearchPage() {
       tags: urlTags,
       secondarySorts: urlSecondarySorts,
     };
-  }, [urlQuery, urlCategoryId, urlMinPrice, urlMaxPrice, urlSortBy, urlSortOrder, page, urlInStock, urlFreeShipping, urlExpress, urlMinDiscount, urlMaxDiscount, urlDateFrom, urlDateTo, urlVendor, urlTags, urlSecondarySorts]);
+  }, [urlQuery, urlCategoryId, urlMinPrice, urlMaxPrice, urlSortBy, urlSortOrder, page, urlInStock, urlFreeShipping, urlExpress, urlMinDiscount, urlMaxDiscount, urlDateFrom, urlDateTo, urlVendor, urlTags, urlSecondarySorts, categoriesTree]);
 
   const {
     results: textProducts,
@@ -373,7 +422,17 @@ export default function SearchPage() {
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                 <Folder size={16} className="text-gold-500" /> Catégories
               </h3>
-              <CategoryTreeFilter selectedId={urlCategoryId} onSelect={handleCategoryChange} />
+              {isLoadingCategories ? (
+                <div className="text-sm text-muted-foreground py-4 text-center">Chargement...</div>
+              ) : categoriesTree ? (
+                <CategoryTreeFilter 
+                  selectedId={urlCategoryId} 
+                  onSelect={handleCategoryChange}
+                  categories={categoriesTree}
+                />
+              ) : (
+                <div className="text-sm text-muted-foreground py-4 text-center">Aucune catégorie</div>
+              )}
             </div>
             
             <div className="bg-card rounded-2xl shadow-card border border-border p-4">
@@ -427,7 +486,7 @@ export default function SearchPage() {
                     onRetry={() => refetch()}
                     emptyState={{
                       title: 'Aucun produit trouvé',
-                      description: 'Essayez avec d’autres mots‑clés ou parcourez le catalogue.',
+                      description: 'Essayez avec d\'autres mots‑clés ou parcourez le catalogue.',
                       actionLabel: 'Voir tout le catalogue',
                       onAction: handleResetFilters,
                     }}
@@ -512,7 +571,17 @@ export default function SearchPage() {
               </button>
             </div>
             <div className="p-4 space-y-6">
-              <CategoryTreeFilter selectedId={urlCategoryId} onSelect={(id: string) => { handleCategoryChange(id); setShowMobileFilters(false); }} />
+              {isLoadingCategories ? (
+                <div className="text-sm text-muted-foreground py-4 text-center">Chargement...</div>
+              ) : categoriesTree ? (
+                <CategoryTreeFilter 
+                  selectedId={urlCategoryId} 
+                  onSelect={(id: string) => { handleCategoryChange(id); setShowMobileFilters(false); }}
+                  categories={categoriesTree}
+                />
+              ) : (
+                <div className="text-sm text-muted-foreground py-4 text-center">Aucune catégorie</div>
+              )}
               <Button variant="outline" className="w-full" onClick={handleResetFilters}>Réinitialiser les filtres</Button>
             </div>
           </motion.div>

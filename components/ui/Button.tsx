@@ -7,87 +7,175 @@ import { Loader2 } from 'lucide-react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { Tooltip } from '@/components/ui/Tooltip'
 
+/* ═══════════════════════════════════════════════════════════════ */
+/*  BUTTON VARIANTS                                                */
+/* ═══════════════════════════════════════════════════════════════ */
+
 const buttonVariants = cva(
   [
-    'inline-flex items-center justify-center gap-2 rounded-xl font-medium',
-    'transition-[color,box-shadow,transform,background-color] duration-200 ease-out',
-    'focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-midnight-950',
-    'disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none',
-    'active:scale-[0.98] active:transition-transform active:duration-75',
+    'group/button relative inline-flex items-center justify-center gap-2',
+    'whitespace-nowrap rounded-control font-medium leading-none select-none',
+    'transition-all duration-200 ease-out',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+    'focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+    'disabled:pointer-events-none disabled:opacity-50',
+    'active:scale-[0.98]',
+    '[&>svg]:shrink-0',
   ],
   {
     variants: {
       variant: {
+        /**
+         * Bouton principal du design system.
+         * - Mode clair : bleu saphir
+         * - Mode sombre : or champagne sobre
+         */
         primary:
-          'bg-gradient-brand text-white shadow-soft hover:shadow-medium focus:ring-brand-500/50',
-        // Alias de compatibilité : même rendu que primary
+          'bg-accent text-accent-contrast shadow-card hover:bg-accent-hover hover:shadow-card-hover',
+
+        /**
+         * Compatibilité ancienne.
+         * Maintenant aligné sur le bouton principal.
+         */
         brand:
-          'bg-gradient-brand text-white shadow-soft hover:shadow-medium focus:ring-brand-500/50',
+          'bg-accent text-accent-contrast shadow-card hover:bg-accent-hover hover:shadow-card-hover',
+
+        /**
+         * Bouton secondaire premium.
+         * Surface propre, bordure fine, hover discret.
+         */
         secondary:
-          'bg-neutral-100 text-neutral-800 hover:bg-neutral-200 focus:ring-neutral-400 ' +
-          'dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700 dark:focus:ring-neutral-500',
+          'border border-line bg-surface text-fg shadow-card hover:border-line-strong hover:bg-raised',
+
+        /**
+         * Bouton outline sobre.
+         * Utile pour actions secondaires visibles.
+         */
         outline:
-          'border-2 border-neutral-300 text-neutral-700 hover:bg-neutral-100 hover:border-neutral-400 focus:ring-brand-500/50 ' +
-          'dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:border-neutral-600',
+          'border border-line-strong bg-transparent text-fg hover:bg-muted hover:text-accent',
+
+        /**
+         * Bouton fantôme.
+         * Très utile dans toolbars, cards, sections compactes.
+         */
         ghost:
-          'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 focus:ring-neutral-400 ' +
-          'dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200',
+          'bg-transparent text-fg-muted hover:bg-muted hover:text-fg',
+
+        /**
+         * Action destructive.
+         */
         danger:
-          'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500/50 shadow-soft',
+          'bg-danger text-white shadow-card hover:bg-danger-600 focus-visible:ring-danger',
+
+        /**
+         * Ancien variant "accent" vert jade.
+         * Reconverti en succès / confirmation.
+         */
         accent:
-          'bg-accent-600 text-white hover:bg-accent-700 focus:ring-accent-500/50 shadow-soft',
+          'bg-success text-white shadow-card hover:bg-success-600 focus-visible:ring-success',
+
+        /**
+         * Ancien variant warm.
+         * Reconverti en avertissement contrôlé.
+         */
         warm:
-          'bg-warm-500 text-white dark:text-white hover:bg-warm-600 dark:hover:bg-warm-700 focus:ring-warm-500/50 shadow-soft',
+          'bg-warning text-white shadow-card hover:bg-warning-600 focus-visible:ring-warning',
+
+        /**
+         * Ancien variant luxury.
+         * Devient un bouton d’accentuation soft, premium mais discret.
+         */
         luxury:
-          'bg-luxury-600 text-white hover:bg-luxury-700 focus:ring-luxury-500/50 shadow-soft',
+          'border border-accent/30 bg-accent-soft text-accent hover:border-accent/50 hover:bg-accent-soft',
 
-        // Variante premium sans hover:scale pour éviter la double animation.
+        /**
+         * Compatibilité ancienne.
+         * Anciennement bouton gold / luxe.
+         * Maintenant aligné sur l’accent principal du thème.
+         */
         luxe:
-          'bg-gradient-gold text-white shadow-gold hover:shadow-glow-gold focus:ring-gold-500/50 dark:text-gold-100 dark:hover:shadow-glow-gold/50',
+          'bg-accent text-accent-contrast shadow-card hover:bg-accent-hover hover:shadow-card-hover',
 
-        // Alias de compatibilité : même rendu que luxe
+        /**
+         * Compatibilité ancienne.
+         * Anciennement bouton gold.
+         * Maintenant aligné sur l’accent principal du thème.
+         */
         gold:
-          'bg-gradient-gold text-white shadow-gold hover:shadow-glow-gold focus:ring-gold-500/50 dark:text-gold-100 dark:hover:shadow-glow-gold/50',
+          'bg-accent text-accent-contrast shadow-card hover:bg-accent-hover hover:shadow-card-hover',
 
+        /**
+         * Bouton glassmorphism maîtrisé.
+         * À utiliser uniquement sur overlays, hero, modales, panneaux flottants.
+         */
         glass:
-          'bg-white/10 dark:bg-midnight-800/30 backdrop-blur-xl border border-white/20 dark:border-midnight-500/30 text-white dark:text-neutral-100 hover:bg-white/20 dark:hover:bg-midnight-700/50 shadow-soft',
+          'border border-line/60 bg-surface/75 text-fg backdrop-blur-md shadow-soft hover:bg-surface/90',
+
+        /**
+         * Compatibilité ancienne.
+         * Anciennement outline gold.
+         * Maintenant outline accent.
+         */
         'outline-gold':
-          'border-2 border-gold-400 text-gold-400 bg-transparent hover:bg-gold-400/10 hover:border-gold-300 focus:ring-gold-500/50 shadow-sm hover:shadow-gold',
+          'border border-accent/40 bg-transparent text-accent hover:border-accent/60 hover:bg-accent-soft',
+
+        /**
+         * Compatibilité ancienne.
+         * Anciennement gradient premium.
+         * Maintenant bouton principal solide, plus professionnel.
+         */
         'gradient-premium':
-          'bg-gradient-premium text-white shadow-soft hover:shadow-medium focus:ring-brand-500/50',
+          'bg-accent text-accent-contrast shadow-card hover:bg-accent-hover hover:shadow-card-hover',
+
+        /**
+         * Compatibilité ancienne.
+         * Anciennement gradient accent vert.
+         * Maintenant succès / confirmation.
+         */
         'gradient-accent':
-          'bg-gradient-accent text-white shadow-soft hover:shadow-medium focus:ring-accent-500/50',
+          'bg-success text-white shadow-card hover:bg-success-600 focus-visible:ring-success',
+
+        /**
+         * Lien-bouton minimal.
+         * Utile pour "Voir tout", "En savoir plus", actions discrètes.
+         */
         minimal:
-          'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 underline-offset-2 hover:underline',
+          'bg-transparent text-fg-muted underline-offset-4 hover:text-accent hover:underline',
       },
+
       size: {
-        xs: 'px-2.5 py-1.5 text-xs',
-        sm: 'px-3 py-2 text-sm',
-        md: 'px-4 py-2.5 text-sm',
-        // Alias de compatibilité : même taille que md
-        default: 'px-4 py-2.5 text-sm',
-        lg: 'px-5 py-3 text-base',
-        xl: 'px-6 py-3.5 text-base',
-        'icon-sm': 'p-1.5',
-        icon: 'p-2',
-        'icon-lg': 'p-2.5',
+        xs: 'h-8 min-h-8 px-3 text-xs',
+        sm: 'h-9 min-h-9 px-3.5 text-sm',
+        md: 'h-10 min-h-10 px-4 text-sm',
+        default: 'h-10 min-h-10 px-4 text-sm',
+        lg: 'h-11 min-h-11 px-5 text-base',
+        xl: 'h-12 min-h-12 px-6 text-base',
+        'icon-sm': 'h-8 w-8 p-0',
+        icon: 'h-10 w-10 p-0',
+        'icon-lg': 'h-11 w-11 p-0',
       },
+
       fullWidth: {
         true: 'w-full',
       },
+
       rounded: {
-        true: 'rounded-full',
+        true: 'rounded-pill',
       },
+
       glowing: {
-        true: 'focus:ring-4',
+        true: 'shadow-medium',
       },
+
       hoverScale: {
-        true: 'hover:scale-[1.03]',
+        true: 'hover:scale-[1.02]',
       },
+
       pulse: {
         true: 'animate-pulse-soft',
       },
     },
+
     defaultVariants: {
       variant: 'primary',
       size: 'md',
@@ -100,15 +188,23 @@ const buttonVariants = cva(
   }
 )
 
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   loading?: boolean
   leftIcon?: React.ReactNode
   rightIcon?: React.ReactNode
-  loadingText?: string
+  loadingText?: React.ReactNode
   tooltip?: string
 }
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  BUTTON                                                         */
+/* ═══════════════════════════════════════════════════════════════ */
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   (
@@ -132,7 +228,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    const loaderSize = size?.startsWith('icon') ? 'h-4 w-4' : 'h-4 w-4'
     const isDisabled = disabled || loading
 
     const buttonElement = (
@@ -147,24 +242,24 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             glowing,
             hoverScale,
             pulse,
-            className,
           }),
-          // Évite la double animation : si hoverScale est actif,
-          // on neutralise le active:scale de base.
-          hoverScale ? 'active:scale-100' : ''
+          // Évite la double animation :
+          // si hoverScale est actif, on neutralise le active:scale de base.
+          hoverScale ? 'active:scale-100' : '',
+          className
         )}
         disabled={isDisabled}
         aria-busy={loading || undefined}
+        data-loading={loading ? 'true' : undefined}
         {...props}
       >
         {loading ? (
           <>
             <Loader2
-              className={cn('animate-spin', loaderSize)}
+              className="h-4 w-4 animate-spin"
               aria-hidden="true"
             />
-
-            {loadingText ? <span>{loadingText}</span> : children}
+            {loadingText ?? children}
           </>
         ) : (
           <>

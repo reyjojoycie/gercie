@@ -1,26 +1,47 @@
 // components/ui/ThemeToggle.tsx
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/contexts/ThemeContext'
 import { motion, AnimatePresence } from 'framer-motion'
+
 import {
   Sun,
   Moon,
   Monitor,
   ChevronDown,
-  Sparkles,
-  Sunrise,
-  Sunset,
 } from 'lucide-react'
-import { Tooltip } from './Tooltip'
-import { Dropdown, DropdownItem, DropdownSeparator, DropdownRadioItem } from './Dropdown'
 
-/* ========================================================================
-   Types
-   ======================================================================== */
-type ThemeToggleVariant = 'icon' | 'switch' | 'dropdown' | 'button' | 'minimal'
+import { Tooltip } from './Tooltip'
+import {
+  Dropdown,
+  DropdownRadioItem,
+  DropdownSeparator,
+} from './Dropdown'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+type ThemeChoice = 'light' | 'dark' | 'system'
+type ResolvedTheme = 'light' | 'dark'
+
+type ThemeToggleVariant =
+  | 'icon'
+  | 'switch'
+  | 'dropdown'
+  | 'button'
+  | 'minimal'
+  | 'segment'
+  | 'cycle'
+
 type ThemeToggleSize = 'sm' | 'md' | 'lg'
 
 interface ThemeToggleProps {
@@ -33,58 +54,128 @@ interface ThemeToggleProps {
   className?: string
   tooltipPosition?: 'top' | 'bottom' | 'left' | 'right'
   disableTooltip?: boolean
-  onChange?: (theme: 'light' | 'dark' | 'system') => void
+  onChange?: (theme: ThemeChoice) => void
 }
 
-/* ========================================================================
-   Mappings
-   ======================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SIZE MAPS                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
+
 const sizeMap: Record<ThemeToggleSize, string> = {
-  sm: 'h-8 w-8 text-sm',
-  md: 'h-10 w-10 text-base',
-  lg: 'h-12 w-12 text-lg',
+  sm: 'h-8 w-8',
+  md: 'h-10 w-10',
+  lg: 'h-12 w-12',
 }
 
-const switchSizeMap: Record<ThemeToggleSize, { track: string; thumb: string }> = {
-  sm: { track: 'w-10 h-5', thumb: 'w-4 h-4' },
-  md: { track: 'w-12 h-6', thumb: 'w-5 h-5' },
-  lg: { track: 'w-14 h-7', thumb: 'w-6 h-6' },
+const iconSizeMap: Record<ThemeToggleSize, string> = {
+  sm: 'h-4 w-4',
+  md: 'h-5 w-5',
+  lg: 'h-6 w-6',
 }
 
-/* ========================================================================
-   Sous-composants
-   ======================================================================== */
+const buttonPaddingMap: Record<ThemeToggleSize, string> = {
+  sm: 'px-3 py-1.5 text-xs',
+  md: 'px-4 py-2 text-sm',
+  lg: 'px-5 py-2.5 text-base',
+}
 
-// --- Icône animée (soleil/lune) ---
-const AnimatedIcon = ({
-  resolvedTheme,
-  className,
-}: {
-  resolvedTheme: 'light' | 'dark'
+const segmentItemSizeMap: Record<ThemeToggleSize, string> = {
+  sm: 'px-2.5 py-1 text-xs',
+  md: 'px-3 py-1.5 text-sm',
+  lg: 'px-4 py-2 text-sm',
+}
+
+const switchDimensions: Record<
+  ThemeToggleSize,
+  {
+    track: string
+    thumb: string
+    travel: number
+    icon: string
+  }
+> = {
+  sm: {
+    track: 'h-5 w-10',
+    thumb: 'h-4 w-4',
+    travel: 20,
+    icon: 'h-2.5 w-2.5',
+  },
+  md: {
+    track: 'h-6 w-12',
+    thumb: 'h-5 w-5',
+    travel: 24,
+    icon: 'h-3 w-3',
+  },
+  lg: {
+    track: 'h-7 w-14',
+    thumb: 'h-6 w-6',
+    travel: 28,
+    icon: 'h-3.5 w-3.5',
+  },
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  BASE STYLES                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const controlBase =
+  'relative inline-flex items-center justify-center border border-line bg-surface text-fg shadow-card transition-all duration-200 ease-out hover:bg-raised hover:border-line-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-60'
+
+const minimalBase =
+  'relative inline-flex items-center justify-center rounded-full text-fg transition-colors duration-200 ease-out hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-60'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  ANIMATED ICON                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface AnimatedIconProps {
+  mode: ThemeChoice
   className?: string
-}) => {
+}
+
+const AnimatedIcon = ({ mode, className }: AnimatedIconProps) => {
+  const visualMode = mode === 'system' ? 'auto' : mode
+
   return (
-    <div className={cn('relative flex items-center justify-center', className)}>
+    <div
+      className={cn(
+        'relative flex items-center justify-center',
+        className
+      )}
+    >
       <AnimatePresence mode="wait">
-        {resolvedTheme === 'light' ? (
+        {visualMode === 'auto' ? (
           <motion.div
-            key="sun"
+            key="auto"
             initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
             animate={{ rotate: 0, opacity: 1, scale: 1 }}
             exit={{ rotate: 90, opacity: 0, scale: 0.5 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            className="h-full w-full"
           >
-            <Sun className="h-full w-full text-gold-500" />
+            <Monitor className="h-full w-full text-fg-muted" />
+          </motion.div>
+        ) : visualMode === 'light' ? (
+          <motion.div
+            key="light"
+            initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
+            animate={{ rotate: 0, opacity: 1, scale: 1 }}
+            exit={{ rotate: 90, opacity: 0, scale: 0.5 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            className="h-full w-full"
+          >
+            <Sun className="h-full w-full text-accent" />
           </motion.div>
         ) : (
           <motion.div
-            key="moon"
+            key="dark"
             initial={{ rotate: 90, opacity: 0, scale: 0.5 }}
             animate={{ rotate: 0, opacity: 1, scale: 1 }}
             exit={{ rotate: -90, opacity: 0, scale: 0.5 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            className="h-full w-full"
           >
-            <Moon className="h-full w-full text-blue-300" />
+            <Moon className="h-full w-full text-accent" />
           </motion.div>
         )}
       </AnimatePresence>
@@ -92,102 +183,167 @@ const AnimatedIcon = ({
   )
 }
 
-// --- Bouton icône simple ---
-const IconToggle = ({
-  resolvedTheme,
-  toggleTheme,
-  size,
-  tooltipContent,
-  disableTooltip,
-  className,
-}: {
-  resolvedTheme: 'light' | 'dark'
-  toggleTheme: () => void
+/* ═══════════════════════════════════════════════════════════════ */
+/*  ICON TOGGLE                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface IconToggleProps {
+  mode: ThemeChoice
   size: ThemeToggleSize
-  tooltipContent: string
-  disableTooltip?: boolean
   className?: string
-}) => {
-  const button = (
+  onClick: () => void
+  disabled?: boolean
+}
+
+const IconToggle = ({
+  mode,
+  size,
+  className,
+  onClick,
+  disabled,
+}: IconToggleProps) => {
+  return (
     <button
-      onClick={toggleTheme}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className={cn(
-        'relative rounded-xl flex items-center justify-center transition-all duration-300',
-        'hover:bg-neutral-100 dark:hover:bg-neutral-800',
-        'focus-visible:outline-2 focus-visible:outline-brand-500',
+        controlBase,
+        'rounded-control',
         sizeMap[size],
         className
       )}
-      aria-label={tooltipContent}
     >
-      <AnimatedIcon resolvedTheme={resolvedTheme} className="w-5 h-5" />
-      <span
-        className={cn(
-          'absolute inset-0 rounded-xl opacity-0 transition-opacity duration-300',
-          resolvedTheme === 'dark' ? 'bg-blue-400/10' : 'bg-gold-400/10'
-        )}
+      <AnimatedIcon
+        mode={mode}
+        className={iconSizeMap[size]}
       />
     </button>
   )
-
-  if (disableTooltip) return button
-  return <Tooltip content={tooltipContent}>{button}</Tooltip>
 }
 
-// --- Interrupteur (switch) ---
+/* ═══════════════════════════════════════════════════════════════ */
+/*  MINIMAL TOGGLE                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface MinimalToggleProps {
+  mode: ThemeChoice
+  size: ThemeToggleSize
+  className?: string
+  onClick: () => void
+  disabled?: boolean
+}
+
+const MinimalToggle = ({
+  mode,
+  size,
+  className,
+  onClick,
+  disabled,
+}: MinimalToggleProps) => {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        minimalBase,
+        sizeMap[size],
+        className
+      )}
+    >
+      <AnimatedIcon
+        mode={mode}
+        className={iconSizeMap[size]}
+      />
+    </button>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SWITCH TOGGLE                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface SwitchToggleProps {
+  resolvedTheme: ResolvedTheme
+  themeChoice: ThemeChoice
+  size: ThemeToggleSize
+  showLabel: boolean
+  lightLabel: string
+  darkLabel: string
+  className?: string
+  onClick: () => void
+  disabled?: boolean
+}
+
 const SwitchToggle = ({
   resolvedTheme,
-  toggleTheme,
+  themeChoice,
   size,
+  showLabel,
   lightLabel,
   darkLabel,
   className,
-}: {
-  resolvedTheme: 'light' | 'dark'
-  toggleTheme: () => void
-  size: ThemeToggleSize
-  lightLabel?: string
-  darkLabel?: string
-  className?: string
-}) => {
-  const { track, thumb } = switchSizeMap[size]
+  onClick,
+  disabled,
+}: SwitchToggleProps) => {
+  const dims = switchDimensions[size]
   const isDark = resolvedTheme === 'dark'
+  const isAuto = themeChoice === 'system'
 
   return (
     <button
-      onClick={toggleTheme}
-      className={cn('relative inline-flex items-center gap-2', className)}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       role="switch"
       aria-checked={isDark}
-      aria-label="Changer le thème"
+      className={cn(
+        'relative inline-flex items-center gap-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-60',
+        className
+      )}
     >
-      <div
+      <span
         className={cn(
-          'relative rounded-full transition-colors duration-300',
-          track,
+          'relative rounded-full border transition-colors duration-300',
+          dims.track,
           isDark
-            ? 'bg-blue-600'
-            : 'bg-neutral-300 dark:bg-neutral-600'
+            ? 'border-accent bg-accent-soft'
+            : 'border-line bg-muted'
         )}
       >
-        <motion.div
+        <motion.span
           className={cn(
-            'absolute top-1/2 -translate-y-1/2 rounded-full bg-white shadow-md flex items-center justify-center',
-            thumb
+            'absolute left-0.5 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-full bg-surface shadow-card',
+            dims.thumb
           )}
           initial={false}
-          animate={{ left: isDark ? `calc(100% - ${thumb} - 2px)` : '2px' }}
-          transition={{ type: 'spring', stiffness: 600, damping: 30 }}
+          animate={{
+            x: isDark ? dims.travel : 0,
+          }}
+          transition={{
+            type: 'spring',
+            stiffness: 600,
+            damping: 32,
+          }}
         >
           {isDark ? (
-            <Moon className="w-3 h-3 text-blue-600" />
+            <Moon className={cn(dims.icon, 'text-accent')} />
           ) : (
-            <Sun className="w-3 h-3 text-gold-500" />
+            <Sun className={cn(dims.icon, 'text-accent')} />
           )}
-        </motion.div>
-      </div>
-      {lightLabel !== undefined && darkLabel !== undefined && (
-        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+        </motion.span>
+
+        {isAuto && (
+          <span
+            className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent"
+            aria-hidden="true"
+          />
+        )}
+      </span>
+
+      {showLabel && (
+        <span className="text-sm font-medium text-fg-muted">
           {isDark ? darkLabel : lightLabel}
         </span>
       )}
@@ -195,291 +351,470 @@ const SwitchToggle = ({
   )
 }
 
-// --- Bouton avec texte ---
-const ButtonToggle = ({
-  resolvedTheme,
-  toggleTheme,
-  size,
-  lightLabel,
-  darkLabel,
-  className,
-}: {
-  resolvedTheme: 'light' | 'dark'
-  toggleTheme: () => void
-  size: ThemeToggleSize
-  lightLabel?: string
-  darkLabel?: string
-  className?: string
-}) => {
-  const isDark = resolvedTheme === 'dark'
-  const padding = size === 'sm' ? 'px-3 py-1.5' : size === 'lg' ? 'px-5 py-3' : 'px-4 py-2'
-  const fontSize = size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-base' : 'text-sm'
+/* ═══════════════════════════════════════════════════════════════ */
+/*  BUTTON TOGGLE                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
 
+interface ButtonToggleProps {
+  mode: ThemeChoice
+  label: string
+  size: ThemeToggleSize
+  className?: string
+  onClick: () => void
+  disabled?: boolean
+}
+
+const ButtonToggle = ({
+  mode,
+  label,
+  size,
+  className,
+  onClick,
+  disabled,
+}: ButtonToggleProps) => {
   return (
     <button
-      onClick={toggleTheme}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className={cn(
-        'flex items-center gap-2 rounded-xl font-medium transition-all duration-300',
-        'bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700',
-        padding,
-        fontSize,
-        'text-neutral-700 dark:text-neutral-300',
-        'focus-visible:outline-2 focus-visible:outline-brand-500',
+        controlBase,
+        'rounded-pill gap-2 font-medium',
+        buttonPaddingMap[size],
         className
       )}
-      aria-label="Changer le thème"
     >
-      <AnimatedIcon resolvedTheme={resolvedTheme} className="w-4 h-4" />
-      <span>{isDark ? darkLabel || 'Sombre' : lightLabel || 'Clair'}</span>
+      <AnimatedIcon
+        mode={mode}
+        className="h-4 w-4"
+      />
+      <span>{label}</span>
     </button>
   )
 }
 
-// --- Dropdown avec choix système ---
+/* ═══════════════════════════════════════════════════════════════ */
+/*  DROPDOWN TOGGLE                                                */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface DropdownToggleProps {
+  themeChoice: ThemeChoice
+  resolvedTheme: ResolvedTheme
+  size: ThemeToggleSize
+  lightLabel: string
+  darkLabel: string
+  systemLabel: string
+  className?: string
+  onSelect: (choice: ThemeChoice) => void
+  disabled?: boolean
+}
+
 const DropdownToggle = ({
   themeChoice,
   resolvedTheme,
-  setThemeChoice,
-  toggleTheme,
   size,
   lightLabel,
   darkLabel,
   systemLabel,
   className,
-}: {
-  themeChoice: 'light' | 'dark' | 'system'
-  resolvedTheme: 'light' | 'dark'
-  setThemeChoice: (choice: 'light' | 'dark' | 'system') => void
-  toggleTheme: () => void
-  size: ThemeToggleSize
-  lightLabel?: string
-  darkLabel?: string
-  systemLabel?: string
-  className?: string
-}) => {
-  const padding = size === 'sm' ? 'px-2 py-1' : size === 'lg' ? 'px-4 py-2' : 'px-3 py-1.5'
-  const fontSize = size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-base' : 'text-sm'
-
+  onSelect,
+  disabled,
+}: DropdownToggleProps) => {
   const currentIcon =
     themeChoice === 'system' ? (
-      <Monitor className="w-4 h-4" />
+      <Monitor className="h-4 w-4 text-fg-muted" />
     ) : resolvedTheme === 'dark' ? (
-      <Moon className="w-4 h-4 text-blue-400" />
+      <Moon className="h-4 w-4 text-accent" />
     ) : (
-      <Sun className="w-4 h-4 text-gold-500" />
+      <Sun className="h-4 w-4 text-accent" />
     )
 
   const label =
     themeChoice === 'system'
-      ? systemLabel || 'Système'
+      ? systemLabel
       : themeChoice === 'dark'
-        ? darkLabel || 'Sombre'
-        : lightLabel || 'Clair'
+        ? darkLabel
+        : lightLabel
 
   return (
     <Dropdown
       trigger={
-        <div
+        <button
+          type="button"
+          disabled={disabled}
           className={cn(
-            'flex items-center gap-2 rounded-xl font-medium transition-all duration-300 cursor-pointer',
-            'bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700',
-            padding,
-            fontSize,
-            'text-neutral-700 dark:text-neutral-300',
-            'focus-visible:outline-2 focus-visible:outline-brand-500',
+            controlBase,
+            'rounded-pill gap-2 font-medium',
+            buttonPaddingMap[size],
             className
           )}
-          aria-label="Choisir le thème"
+          aria-label="Choisir le mode d'affichage"
         >
           {currentIcon}
           <span>{label}</span>
-          <ChevronDown className="w-3 h-3 opacity-50" />
-        </div>
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </button>
       }
       align="right"
     >
       <DropdownRadioItem
         value="light"
         checked={themeChoice === 'light'}
-        onSelect={() => setThemeChoice('light')}
-        icon={<Sun className="w-4 h-4 text-gold-500" />}
+        onSelect={() => onSelect('light')}
+        icon={<Sun className="h-4 w-4 text-accent" />}
       >
-        {lightLabel || 'Clair'}
+        {lightLabel}
       </DropdownRadioItem>
+
       <DropdownRadioItem
         value="dark"
         checked={themeChoice === 'dark'}
-        onSelect={() => setThemeChoice('dark')}
-        icon={<Moon className="w-4 h-4 text-blue-400" />}
+        onSelect={() => onSelect('dark')}
+        icon={<Moon className="h-4 w-4 text-accent" />}
       >
-        {darkLabel || 'Sombre'}
+        {darkLabel}
       </DropdownRadioItem>
+
       <DropdownSeparator />
+
       <DropdownRadioItem
         value="system"
         checked={themeChoice === 'system'}
-        onSelect={() => setThemeChoice('system')}
-        icon={<Monitor className="w-4 h-4 text-neutral-500" />}
+        onSelect={() => onSelect('system')}
+        icon={<Monitor className="h-4 w-4 text-fg-muted" />}
       >
-        {systemLabel || 'Système'}
+        {systemLabel}
       </DropdownRadioItem>
     </Dropdown>
   )
 }
 
-// --- Minimal : juste le soleil/lune avec un petit indicateur système ---
-const MinimalToggle = ({
-  resolvedTheme,
-  toggleTheme,
-  size,
-  className,
-}: {
-  resolvedTheme: 'light' | 'dark'
-  toggleTheme: () => void
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SEGMENT TOGGLE                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface SegmentToggleProps {
+  themeChoice: ThemeChoice
   size: ThemeToggleSize
+  showLabel: boolean
+  lightLabel: string
+  darkLabel: string
+  systemLabel: string
   className?: string
-}) => {
+  onSelect: (choice: ThemeChoice) => void
+  disabled?: boolean
+}
+
+const SegmentToggle = ({
+  themeChoice,
+  size,
+  showLabel,
+  lightLabel,
+  darkLabel,
+  systemLabel,
+  className,
+  onSelect,
+  disabled,
+}: SegmentToggleProps) => {
+  const options: Array<{
+    value: ThemeChoice
+    label: string
+    icon: typeof Sun | typeof Moon | typeof Monitor
+  }> = [
+    {
+      value: 'light',
+      label: lightLabel,
+      icon: Sun,
+    },
+    {
+      value: 'dark',
+      label: darkLabel,
+      icon: Moon,
+    },
+    {
+      value: 'system',
+      label: systemLabel,
+      icon: Monitor,
+    },
+  ]
+
   return (
-    <button
-      onClick={toggleTheme}
+    <div
+      role="group"
+      aria-label="Mode d'affichage"
       className={cn(
-        'relative rounded-full flex items-center justify-center transition-all duration-300 hover:opacity-80',
-        sizeMap[size],
+        'inline-flex items-center gap-1 rounded-pill border border-line bg-muted p-1 shadow-card',
         className
       )}
-      aria-label="Changer le thème"
     >
-      <AnimatedIcon resolvedTheme={resolvedTheme} className="w-full h-full" />
-    </button>
+      {options.map((option) => {
+        const isActive = themeChoice === option.value
+        const Icon = option.icon
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(option.value)}
+            aria-pressed={isActive}
+            className={cn(
+              'inline-flex items-center justify-center gap-1.5 rounded-pill font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-60',
+              segmentItemSizeMap[size],
+              isActive
+                ? 'bg-surface text-accent shadow-card'
+                : 'text-fg-muted hover:bg-raised hover:text-fg'
+            )}
+          >
+            <Icon
+              className={cn(
+                size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4'
+              )}
+            />
+
+            {showLabel ? (
+              <span
+                className={cn(
+                  size === 'sm' && 'hidden sm:inline'
+                )}
+              >
+                {option.label}
+              </span>
+            ) : (
+              <span className="sr-only">
+                {option.label}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
-/* ========================================================================
-   Composant principal ThemeToggle (corrigé pour l'hydratation)
-   ======================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  MAIN COMPONENT                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
 const ThemeToggle = ({
   variant = 'icon',
   size = 'md',
   showLabel = false,
   lightLabel = 'Clair',
   darkLabel = 'Sombre',
-  systemLabel = 'Système',
+  systemLabel = 'Auto',
   className,
-  tooltipPosition = 'bottom',
+  tooltipPosition,
   disableTooltip = false,
   onChange,
 }: ThemeToggleProps) => {
-  const { themeChoice, resolvedTheme, setThemeChoice, toggleTheme, isTransitioning } = useTheme()
+  // Keep prop for API compatibility.
+  void tooltipPosition
 
-  // ✅ Protection hydratation : le vrai thème n'est appliqué qu'après montage
+  const {
+    themeChoice,
+    resolvedTheme,
+    setThemeChoice,
+    toggleTheme,
+    cycleTheme,
+  } = useTheme()
+
   const [mounted, setMounted] = useState(false)
+
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  // Thème d'affichage : avant montage, on force 'light' pour un rendu identique serveur/client
-  const displayTheme = mounted ? resolvedTheme : 'light'
-
-  // Callback onChange
   useEffect(() => {
     if (mounted) {
       onChange?.(themeChoice)
     }
-  }, [themeChoice, mounted, onChange])
+  }, [mounted, onChange, themeChoice])
 
-  // Tooltip neutre avant montage
+  const displayThemeChoice: ThemeChoice = mounted
+    ? themeChoice
+    : 'light'
+
+  const displayResolvedTheme: ResolvedTheme = mounted
+    ? resolvedTheme
+    : 'light'
+
+  const currentLabel = useMemo(() => {
+    if (!mounted) return lightLabel
+
+    if (themeChoice === 'system') return systemLabel
+    if (themeChoice === 'dark') return darkLabel
+    return lightLabel
+  }, [
+    darkLabel,
+    lightLabel,
+    mounted,
+    systemLabel,
+    themeChoice,
+  ])
+
   const tooltipContent = useMemo(() => {
-    if (!mounted) return 'Changer le thème'
-    if (themeChoice === 'system') {
-      return `Thème système (${resolvedTheme === 'dark' ? 'sombre' : 'clair'})`
-    }
-    return resolvedTheme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'
-  }, [resolvedTheme, themeChoice, mounted])
+    if (!mounted) return 'Chargement du thème'
 
-  // Rendu selon la variante (on passe displayTheme au lieu de resolvedTheme)
+    if (variant === 'switch') {
+      return resolvedTheme === 'dark'
+        ? 'Passer en mode clair'
+        : 'Passer en mode sombre'
+    }
+
+    if (themeChoice === 'system') {
+      return `Mode automatique (actuel : ${
+        resolvedTheme === 'dark' ? 'sombre' : 'clair'
+      }) — cliquer pour forcer le mode clair`
+    }
+
+    if (themeChoice === 'light') {
+      return 'Mode clair — cliquer pour passer en mode sombre'
+    }
+
+    return 'Mode sombre — cliquer pour revenir au mode automatique'
+  }, [
+    mounted,
+    resolvedTheme,
+    themeChoice,
+    variant,
+  ])
+
+  const handleCycle = useCallback(() => {
+    if (!mounted) return
+
+    if (typeof cycleTheme === 'function') {
+      cycleTheme()
+      return
+    }
+
+    // Fallback si un ancien contexte ne fournit pas cycleTheme.
+    const order: ThemeChoice[] = ['system', 'light', 'dark']
+    const currentIndex = order.indexOf(themeChoice)
+    const nextIndex = (currentIndex + 1) % order.length
+    setThemeChoice(order[nextIndex])
+  }, [
+    cycleTheme,
+    mounted,
+    setThemeChoice,
+    themeChoice,
+  ])
+
+  const handleToggle = useCallback(() => {
+    if (!mounted) return
+    toggleTheme()
+  }, [mounted, toggleTheme])
+
+  const handleSelect = useCallback(
+    (choice: ThemeChoice) => {
+      if (!mounted) return
+      setThemeChoice(choice)
+    },
+    [mounted, setThemeChoice]
+  )
+
   const renderToggle = () => {
     switch (variant) {
       case 'icon':
+      case 'cycle':
         return (
           <IconToggle
-            resolvedTheme={displayTheme}      // ✅ utilisation du thème d'affichage
-            toggleTheme={toggleTheme}
+            mode={displayThemeChoice}
             size={size}
-            tooltipContent={tooltipContent}
-            disableTooltip={disableTooltip}
             className={className}
+            onClick={handleCycle}
+            disabled={!mounted}
           />
         )
+
+      case 'minimal':
+        return (
+          <MinimalToggle
+            mode={displayThemeChoice}
+            size={size}
+            className={className}
+            onClick={handleCycle}
+            disabled={!mounted}
+          />
+        )
+
       case 'switch':
         return (
           <SwitchToggle
-            resolvedTheme={displayTheme}
-            toggleTheme={toggleTheme}
+            resolvedTheme={displayResolvedTheme}
+            themeChoice={displayThemeChoice}
             size={size}
-            lightLabel={showLabel ? lightLabel : undefined}
-            darkLabel={showLabel ? darkLabel : undefined}
-            className={className}
-          />
-        )
-      case 'button':
-        return (
-          <ButtonToggle
-            resolvedTheme={displayTheme}
-            toggleTheme={toggleTheme}
-            size={size}
+            showLabel={showLabel}
             lightLabel={lightLabel}
             darkLabel={darkLabel}
             className={className}
+            onClick={handleToggle}
+            disabled={!mounted}
           />
         )
+
+      case 'button':
+        return (
+          <ButtonToggle
+            mode={displayThemeChoice}
+            label={currentLabel}
+            size={size}
+            className={className}
+            onClick={handleCycle}
+            disabled={!mounted}
+          />
+        )
+
       case 'dropdown':
-        // Le dropdown utilise themeChoice et resolvedTheme réels, mais seulement après montage ?
-        // On peut lui passer le vrai resolvedTheme (car il ne cause pas d'hydratation sur le trigger lui-même)
-        // Pour éviter toute divergence, on affiche un placeholder neutre avant montage.
-        if (!mounted) {
-          return (
-            <div className={cn('inline-flex items-center gap-2 rounded-xl font-medium', className)}>
-              <Sun className="w-4 h-4 text-gold-500" />
-              <span>{lightLabel}</span>
-              <ChevronDown className="w-3 h-3 opacity-50" />
-            </div>
-          )
-        }
         return (
           <DropdownToggle
-            themeChoice={themeChoice}
-            resolvedTheme={resolvedTheme}
-            setThemeChoice={setThemeChoice}
-            toggleTheme={toggleTheme}
+            themeChoice={displayThemeChoice}
+            resolvedTheme={displayResolvedTheme}
             size={size}
             lightLabel={lightLabel}
             darkLabel={darkLabel}
             systemLabel={systemLabel}
             className={className}
+            onSelect={handleSelect}
+            disabled={!mounted}
           />
         )
-      case 'minimal':
+
+      case 'segment':
         return (
-          <MinimalToggle
-            resolvedTheme={displayTheme}
-            toggleTheme={toggleTheme}
+          <SegmentToggle
+            themeChoice={displayThemeChoice}
             size={size}
+            showLabel={showLabel}
+            lightLabel={lightLabel}
+            darkLabel={darkLabel}
+            systemLabel={systemLabel}
             className={className}
+            onSelect={handleSelect}
+            disabled={!mounted}
           />
         )
+
       default:
         return null
     }
   }
 
-  return (
-    <div className="inline-flex items-center">
-      {renderToggle()}
-      {isTransitioning && mounted && (
-        <span className="ml-2 inline-block w-2 h-2 rounded-full bg-brand-500 animate-pulse" />
-      )}
-    </div>
-  )
+  const node = renderToggle()
+
+  const shouldWrapWithTooltip =
+    variant === 'icon' ||
+    variant === 'cycle' ||
+    variant === 'switch' ||
+    variant === 'button' ||
+    variant === 'minimal'
+
+  if (shouldWrapWithTooltip && !disableTooltip) {
+    return <Tooltip content={tooltipContent}>{node}</Tooltip>
+  }
+
+  return node
 }
 
 export { ThemeToggle }
+export default ThemeToggle

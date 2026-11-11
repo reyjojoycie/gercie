@@ -2,105 +2,213 @@
 import React, { forwardRef } from 'react'
 import { cn } from '@/lib/utils'
 
-/* ========================================================================
-   Container – Layout premium, anticipatif, ultra‑flexible
-   ======================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
 
-// Types enrichis pour un usage illimité (marketplace, page, sections, dashboard…)
-interface ContainerProps extends React.HTMLAttributes<HTMLElement> {
+export type ContainerElement =
+  | 'div'
+  | 'section'
+  | 'main'
+  | 'header'
+  | 'footer'
+  | 'aside'
+  | 'article'
+  | 'nav'
+
+export type ContainerSize =
+  | 'default'
+  | 'small'
+  | 'medium'
+  | 'large'
+  | 'wide'
+  | 'full'
+  | 'fluid'
+  | 'prose'
+  | 'dashboard'
+  | 'narrow'
+
+export type ContainerBackground =
+  | 'none'
+  | 'primary'
+  | 'secondary'
+  | 'card'
+  | 'elevated'
+  | 'glass'
+  | 'inverse'
+  | 'canvas'
+  | 'surface'
+  | 'raised'
+  | 'muted'
+
+export type ContainerPadding =
+  | 'none'
+  | 'default'
+  | 'compact'
+  | 'loose'
+  | 'section'
+  | 'page'
+  | 'hero'
+
+export type ContainerAnimate =
+  | 'none'
+  | 'fade-in'
+  | 'fade-in-up'
+  | 'fade-in-down'
+  | 'fade-in-left'
+  | 'fade-in-right'
+  | 'scale-in'
+
+export type ContainerDivider = 'top' | 'bottom' | 'both'
+
+export type ContainerPattern =
+  | 'none'
+  | 'dots'
+  | 'lines'
+  | 'waves'
+  | 'zigzag'
+
+export interface ContainerProps extends React.HTMLAttributes<HTMLElement> {
   children: React.ReactNode
   className?: string
 
   /** Balise sémantique rendue */
-  as?: 'div' | 'section' | 'main' | 'header' | 'footer' | 'aside' | 'article' | 'nav'
+  as?: ContainerElement
 
-  /** Largeur maximale (conservé + nouvelles) */
-  size?: 'default' | 'small' | 'large' | 'full' | 'fluid' | 'prose' | 'dashboard'
+  /** Largeur maximale du conteneur */
+  size?: ContainerSize
 
-  /** Arrière‑plan adaptatif (compatible dark mode) */
-  background?: 'none' | 'primary' | 'secondary' | 'card' | 'elevated' | 'glass' | 'inverse'
+  /** Arrière-plan adaptatif clair / sombre */
+  background?: ContainerBackground
 
-  /** Padding vertical / horizontal */
-  padding?: 'none' | 'default' | 'compact' | 'loose' | 'section'
+  /** Padding horizontal + vertical */
+  padding?: ContainerPadding
 
-  /** Animation d’entrée élégante */
-  animate?: 'fade-in-up' | 'fade-in' | 'fade-in-left' | 'fade-in-right' | 'scale-in' | 'none'
+  /** Animation d’entrée */
+  animate?: ContainerAnimate
 
-  /** Bordure arrondie */
+  /** Bordure arrondie premium */
   bordered?: boolean
 
-  /** Bordure décorative supérieure / inférieure */
-  divider?: 'top' | 'bottom' | 'both'
+  /** Séparateur haut / bas / both */
+  divider?: ContainerDivider
 
-  /** Motif d’arrière‑plan discret */
-  pattern?: 'dots' | 'lines' | 'waves' | 'none'
+  /** Motif de fond discret */
+  pattern?: ContainerPattern
 
   /** Accessibilité */
-  id?: string
-  role?: string
   ariaLabel?: string
   ariaLabelledby?: string
 
-  /** Pour les tests et le suivi analytique */
+  /** Tests / analytics */
   dataTestId?: string
   dataTrack?: string
 }
 
-// Mapping des tailles de conteneur
-const sizeClasses: Record<string, string> = {
-  default: 'max-w-7xl',
+export interface SectionProps extends ContainerProps {
+  title?: React.ReactNode
+  subtitle?: React.ReactNode
+  headingLevel?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
+  titleClassName?: string
+  subtitleClassName?: string
+  actions?: React.ReactNode
+}
+
+export interface StackProps extends React.HTMLAttributes<HTMLDivElement> {
+  direction?: 'col' | 'row'
+  gap?: 'none' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl'
+  wrap?: boolean
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CLASS MAPS                                                     */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const sizeClasses: Record<ContainerSize, string> = {
+  narrow: 'max-w-2xl',
   small: 'max-w-4xl',
+  medium: 'max-w-5xl',
+  default: 'max-w-7xl',
   large: 'max-w-[90rem]',
+  wide: 'max-w-[96rem]',
   full: 'max-w-full',
-  fluid: 'max-w-full', // sans contrainte
-  prose: 'max-w-3xl', // idéal pour la lecture
+  fluid: 'max-w-full',
+  prose: 'max-w-3xl',
   dashboard: 'max-w-[100rem]',
 }
 
-// Mapping des fonds (utilise les variables CSS dynamiques du thème midnight premium)
-const bgClasses: Record<string, string> = {
+const backgroundClasses: Record<ContainerBackground, string> = {
   none: '',
-  primary: 'bg-primary',
-  secondary: 'bg-secondary',
-  card: 'bg-card',
-  elevated: 'bg-elevated',
+
+  // Compatibilité legacy
+  primary: 'bg-canvas',
+  secondary: 'bg-muted',
+  card: 'bg-surface',
+  elevated: 'bg-raised',
   glass: 'glass-card',
-  inverse: 'bg-inverse text-inverse',
+  inverse: 'bg-fg text-canvas',
+
+  // Nouveaux tokens sémantiques
+  canvas: 'bg-canvas',
+  surface: 'bg-surface',
+  raised: 'bg-raised',
+  muted: 'bg-muted',
 }
 
-// Mapping des paddings
-const paddingClasses: Record<string, string> = {
+const paddingClasses: Record<ContainerPadding, string> = {
   none: 'p-0',
-  default: 'px-4 sm:px-6 lg:px-8 py-8',
-  compact: 'px-4 py-4',
-  loose: 'px-4 sm:px-6 lg:px-10 py-12 md:py-16',
-  section: 'px-4 sm:px-6 lg:px-8 py-16 md:py-24',
+
+  default: 'px-4 py-8 sm:px-6 md:py-10 lg:px-8',
+
+  compact: 'px-4 py-4 sm:px-5',
+
+  loose: 'px-4 py-12 sm:px-6 md:py-16 lg:px-10',
+
+  section: 'px-4 py-16 sm:px-6 md:py-20 lg:px-8 lg:py-24',
+
+  page: 'px-4 pt-6 pb-16 sm:px-6 md:pt-8 md:pb-24 lg:px-8',
+
+  hero: 'px-4 pt-8 pb-12 sm:px-6 md:pt-12 md:pb-16 lg:px-8',
 }
 
-// Animations
-const animateClasses: Record<string, string> = {
-  'fade-in-up': 'animate-fade-in-up',
+const animateClasses: Record<ContainerAnimate, string> = {
+  none: '',
   'fade-in': 'animate-fade-in',
+  'fade-in-up': 'animate-fade-in-up',
+  'fade-in-down': 'animate-fade-in-down',
   'fade-in-left': 'animate-fade-in-left',
   'fade-in-right': 'animate-fade-in-right',
   'scale-in': 'animate-scale-in',
-  none: '',
 }
 
-// Motifs
-const patternClasses: Record<string, string> = {
+const patternClasses: Record<ContainerPattern, string> = {
+  none: '',
   dots: 'pattern-dots',
   lines: 'pattern-lines',
   waves: 'pattern-waves',
-  none: '',
+  zigzag: 'pattern-zigzag',
 }
+
+const gapClasses: Record<NonNullable<StackProps['gap']>, string> = {
+  none: 'gap-0',
+  xs: 'gap-1',
+  sm: 'gap-2',
+  md: 'gap-4',
+  lg: 'gap-6',
+  xl: 'gap-10',
+  '2xl': 'gap-16',
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONTAINER                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
 
 const Container = forwardRef<HTMLElement, ContainerProps>(
   (
     {
       children,
       className,
-      as: Component = 'div',
+      as = 'div',
       size = 'default',
       background = 'none',
       padding = 'default',
@@ -108,8 +216,6 @@ const Container = forwardRef<HTMLElement, ContainerProps>(
       bordered = false,
       divider,
       pattern = 'none',
-      id,
-      role,
       ariaLabel,
       ariaLabelledby,
       dataTestId,
@@ -118,28 +224,30 @@ const Container = forwardRef<HTMLElement, ContainerProps>(
     },
     ref
   ) => {
-    // Classes composées
-    // ✅ Ajout systématique de la classe 'relative' pour sécuriser les calculs d'offsets de scroll (Framer Motion)
+    const Component = as as React.ElementType
+
     const layoutClasses = cn(
-      'mx-auto relative', 
+      'relative mx-auto w-full',
       sizeClasses[size],
-      bgClasses[background],
+      backgroundClasses[background],
       paddingClasses[padding],
       animateClasses[animate],
       patternClasses[pattern],
-      bordered && 'border border-light rounded-2xl',
-      divider === 'top' && 'border-t border-light',
-      divider === 'bottom' && 'border-b border-light',
-      divider === 'both' && 'border-t border-b border-light',
+
+      bordered && 'rounded-card border border-line',
+      bordered && background === 'none' && 'bg-surface',
+
+      divider === 'top' && 'border-t border-line',
+      divider === 'bottom' && 'border-b border-line',
+      divider === 'both' && 'border-y border-line',
+
       className
     )
 
     return (
       <Component
-        ref={ref}
+        ref={ref as any}
         className={layoutClasses}
-        id={id}
-        role={role}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledby}
         data-testid={dataTestId}
@@ -151,19 +259,12 @@ const Container = forwardRef<HTMLElement, ContainerProps>(
     )
   }
 )
+
 Container.displayName = 'Container'
 
-/* ========================================================================
-   Section – Bloc de mise en page avec titre et sous‑titre, prêt pour le SEO
-   ======================================================================== */
-interface SectionProps extends ContainerProps {
-  title?: string
-  subtitle?: string
-  headingLevel?: 'h1' | 'h2' | 'h3' | 'h4'
-  titleClassName?: string
-  subtitleClassName?: string
-  actions?: React.ReactNode
-}
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SECTION                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
 
 const Section = forwardRef<HTMLElement, SectionProps>(
   (
@@ -175,29 +276,44 @@ const Section = forwardRef<HTMLElement, SectionProps>(
       subtitleClassName,
       actions,
       children,
+      className,
+      padding = 'section',
+      size = 'default',
+      background = 'none',
       ...containerProps
     },
     ref
   ) => {
+    const hasHeader = Boolean(title || subtitle || actions)
+
     return (
-      <Container as="section" {...containerProps} ref={ref}>
-        {(title || subtitle || actions) && (
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between mb-8 md:mb-12 gap-4">
-            <div>
+      <Container
+        ref={ref}
+        as="section"
+        size={size}
+        background={background}
+        padding={padding}
+        className={className}
+        {...containerProps}
+      >
+        {hasHeader && (
+          <div className="mb-8 flex flex-col gap-4 sm:mb-10 sm:flex-row sm:items-end sm:justify-between md:mb-12">
+            <div className="min-w-0 flex-1">
               {title && (
                 <Heading
                   className={cn(
-                    'text-3xl md:text-4xl font-bold text-primary tracking-tight',
+                    'text-balance text-2xl font-bold tracking-tight text-fg sm:text-3xl md:text-4xl',
                     titleClassName
                   )}
                 >
                   {title}
                 </Heading>
               )}
+
               {subtitle && (
                 <p
                   className={cn(
-                    'mt-2 text-secondary text-base md:text-lg max-w-2xl',
+                    'mt-2 max-w-2xl text-pretty text-sm leading-relaxed text-fg-muted sm:text-base md:text-lg',
                     subtitleClassName
                   )}
                 >
@@ -205,53 +321,62 @@ const Section = forwardRef<HTMLElement, SectionProps>(
                 </p>
               )}
             </div>
+
             {actions && (
-              <div className="flex-shrink-0">{actions}</div>
+              <div className="flex shrink-0 flex-wrap items-center gap-3">
+                {actions}
+              </div>
             )}
           </div>
         )}
+
         {children}
       </Container>
     )
   }
 )
+
 Section.displayName = 'Section'
 
-/* ========================================================================
-   Stack – Empilement vertical / horizontal avec espacement régulier
-   ======================================================================== */
-interface StackProps extends React.HTMLAttributes<HTMLDivElement> {
-  direction?: 'col' | 'row'
-  gap?: 'none' | 'xs' | 'sm' | 'md' | 'lg' | 'xl'
-  wrap?: boolean
-}
+/* ═══════════════════════════════════════════════════════════════ */
+/*  STACK                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
 
 const Stack = forwardRef<HTMLDivElement, StackProps>(
-  ({ direction = 'col', gap = 'md', wrap = false, className, ...props }, ref) => {
-    const gapMap: Record<string, string> = {
-      none: 'gap-0',
-      xs: 'gap-1',
-      sm: 'gap-2',
-      md: 'gap-4',
-      lg: 'gap-6',
-      xl: 'gap-10',
-    }
+  (
+    {
+      direction = 'col',
+      gap = 'md',
+      wrap = false,
+      className,
+      children,
+      ...props
+    },
+    ref
+  ) => {
     return (
       <div
         ref={ref}
         className={cn(
           'flex',
           direction === 'col' ? 'flex-col' : 'flex-row',
-          gapMap[gap],
+          gapClasses[gap],
           wrap && 'flex-wrap',
           className
         )}
         {...props}
-      />
+      >
+        {children}
+      </div>
     )
   }
 )
+
 Stack.displayName = 'Stack'
 
+/* ═══════════════════════════════════════════════════════════════ */
+/*  EXPORTS                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export { Container, Section, Stack }
-export type { ContainerProps, SectionProps, StackProps }
+export default Container

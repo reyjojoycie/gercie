@@ -1,32 +1,47 @@
 // components/navbar/NavbarActions.tsx
- 
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+
 import Link from 'next/link'
 import Image from 'next/image'
-import { motion, AnimatePresence } from 'framer-motion'
+
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { useCart } from '@/contexts/CartContext'
+
+import { NavbarCartPreview } from './NavbarCartPreview'
+
 import {
-  Sun,
-  Moon,
-  Heart,
   Bell,
   BellDot,
-  ShoppingBag,
+  ClipboardCheck,
+  Heart,
+  LayoutDashboard,
   Loader2,
   LogIn,
+  LogOut,
+  MonitorSmartphone,
+  Moon,
+  Settings,
+  ShoppingBag,
+  Sun,
+  Truck,
+  User,
   UserPlus,
-  ChevronDown,
 } from 'lucide-react'
-import { NavbarCartPreview } from './NavbarCartPreview'
-import { NavbarUserMenu } from './NavbarUserMenu'
 
-/* ========================================================================== */
-/*  Types                                                                     */
-/* ========================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export type ThemeMode = 'auto' | 'light' | 'dark'
 
 export interface CartItem {
   id: string
@@ -37,50 +52,145 @@ export interface CartItem {
   variante?: any
 }
 
-interface NavbarActionsProps {
-  /** Thème actuel */
-  theme: 'light' | 'dark'
-  /** Callback pour basculer le thème */
-  toggleTheme: () => void
-  /** Nombre de notifications non lues */
+export interface NavbarActionsProps {
+  theme?: 'light' | 'dark'
+  toggleTheme?: () => void
+  themeMode?: ThemeMode
+  resolvedTheme?: 'light' | 'dark'
+  onThemeCycle?: () => void
+  showMobileActions?: boolean
   notifCount: number
-  /** Nombre d'articles dans le panier */
   itemCount: number
-  /** Indique si le panier est en cours de synchronisation */
   isSyncing: boolean
-  /** Articles du panier (pour l'aperçu) */
   items: CartItem[]
-  /** Le panier est-il ouvert ? */
-  cartPreviewOpen: boolean
-  /** Callback pour changer l'état du panier */
-  onCartPreviewChange: (open: boolean) => void
-  /** Le menu utilisateur est-il ouvert ? */
-  userMenuOpen: boolean
-  /** Callback pour basculer le menu utilisateur */
-  onUserMenuToggle: () => void
-  /** URL de l'avatar */
+  cartPreviewOpen?: boolean
+  onCartPreviewChange?: (open: boolean) => void
+  userMenuOpen?: boolean
+  onUserMenuToggle?: () => void
   avatarUrl: string | null
-  /** Objet utilisateur (ou null) */
   user: any | null
-  /** L'utilisateur est-il admin ? */
   isAdmin: boolean
-  /** L'utilisateur est-il livreur ? */
   isLivreur: boolean
-  /** Solde du portefeuille */
-  walletBalance: number | null
-  /** Callback de déconnexion */
+  walletBalance?: number | null
   onLogout: () => void
-  /** Classes additionnelles */
   className?: string
 }
 
-/* ========================================================================== */
-/*  Composant NavbarActions                                                    */
-/* ========================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  STYLES                                                         */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const actionButtonBase =
+  'relative inline-flex h-10 w-10 items-center justify-center rounded-control text-fg-muted transition-colors duration-200 motion-reduce:transition-none hover:bg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+
+const notificationBadgeClass =
+  'absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-pill bg-accent px-1 text-[9px] font-bold leading-none text-accent-contrast ring-2 ring-surface'
+
+const authPrimaryClass =
+  'inline-flex h-9 items-center justify-center gap-2 rounded-pill bg-accent px-3 text-xs font-semibold text-accent-contrast shadow-card transition-colors duration-200 motion-reduce:transition-none hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+
+const authSecondaryClass =
+  'inline-flex h-9 items-center justify-center gap-2 rounded-pill border border-line bg-surface px-3 text-xs font-semibold text-fg transition-colors duration-200 motion-reduce:transition-none hover:border-accent/30 hover:bg-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+
+const menuRowClass =
+  'flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left text-sm text-fg-muted transition-colors duration-200 motion-reduce:transition-none hover:bg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+
+const menuRowDangerClass =
+  'flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left text-sm text-danger transition-colors duration-200 motion-reduce:transition-none hover:bg-danger-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SMALL MENU ROW                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function MenuRow({
+  href,
+  icon,
+  label,
+  onClick,
+  danger = false,
+  external = false,
+}: {
+  href?: string
+  icon?: React.ReactNode
+  label: string
+  onClick?: () => void
+  danger?: boolean
+  external?: boolean
+}) {
+  const content = (
+    <>
+      {icon ? (
+        <span
+          className={cn(
+            'flex h-5 w-5 shrink-0 items-center justify-center',
+            danger ? 'text-danger' : 'text-fg-subtle'
+          )}
+          aria-hidden="true"
+        >
+          {icon}
+        </span>
+      ) : null}
+
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </>
+  )
+
+  const className = danger ? menuRowDangerClass : menuRowClass
+
+  if (href) {
+    const handleClick = onClick
+      ? () => {
+          onClick()
+        }
+      : undefined
+
+    if (external) {
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={className}
+          role="menuitem"
+          onClick={handleClick}
+        >
+          {content}
+        </a>
+      )
+    }
+
+    return (
+      <Link
+        href={href}
+        className={className}
+        role="menuitem"
+        onClick={handleClick}
+      >
+        {content}
+      </Link>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={className}
+      role="menuitem"
+    >
+      {content}
+    </button>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  NAVBAR ACTIONS                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export function NavbarActions({
-  theme,
-  toggleTheme,
+  themeMode,
+  resolvedTheme,
+  onThemeCycle,
   notifCount,
   itemCount,
   isSyncing,
@@ -93,176 +203,494 @@ export function NavbarActions({
   user,
   isAdmin,
   isLivreur,
-  walletBalance,
   onLogout,
   className,
 }: NavbarActionsProps) {
-  const cartRef = useRef<HTMLDivElement>(null)
-  const userMenuRef = useRef<HTMLDivElement>(null)
-  
-  // État pour éviter les erreurs d'hydratation liées au thème
-  const [isMounted, setIsMounted] = useState(false)
+  const cart = useCart() as any
+
+  const cartRef = useRef<HTMLDivElement | null>(null)
+  const userMenuRef = useRef<HTMLDivElement | null>(null)
+  const cartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [mounted, setMounted] = useState(false)
+  const [internalCartOpen, setInternalCartOpen] = useState(false)
+  const [internalUserMenuOpen, setInternalUserMenuOpen] = useState(false)
+
+  const isCartControlled = typeof cartPreviewOpen === 'boolean'
+  const isUserMenuControlled = typeof userMenuOpen === 'boolean'
+
+  const cartOpen = isCartControlled ? cartPreviewOpen : internalCartOpen
+  const userMenuOpenState = isUserMenuControlled
+    ? userMenuOpen
+    : internalUserMenuOpen
 
   useEffect(() => {
-    setIsMounted(true)
+    setMounted(true)
   }, [])
 
-  // Fermeture du panier et du menu utilisateur au clic extérieur
-  useEffect(() => {
-    if (!cartPreviewOpen && !userMenuOpen) return
+  const clearCartTimer = useCallback(() => {
+    if (cartTimerRef.current) {
+      clearTimeout(cartTimerRef.current)
+      cartTimerRef.current = null
+    }
+  }, [])
 
-    const handleClickOutside = (e: MouseEvent) => {
-      if (cartPreviewOpen && cartRef.current && !cartRef.current.contains(e.target as Node)) {
-        onCartPreviewChange(false)
+  const setCartOpen = useCallback(
+    (open: boolean) => {
+      if (typeof onCartPreviewChange === 'function') {
+        onCartPreviewChange(open)
+        return
       }
-      if (userMenuOpen && userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+
+      setInternalCartOpen(open)
+    },
+    [onCartPreviewChange]
+  )
+
+  const openCartPreview = useCallback(() => {
+    clearCartTimer()
+    setCartOpen(true)
+  }, [clearCartTimer, setCartOpen])
+
+  const closeCartPreview = useCallback(() => {
+    clearCartTimer()
+
+    cartTimerRef.current = setTimeout(() => {
+      setCartOpen(false)
+    }, 180)
+  }, [clearCartTimer, setCartOpen])
+
+  const handleCartBlur = useCallback(
+    (event: React.FocusEvent<HTMLDivElement>) => {
+      const relatedTarget = event.relatedTarget as Node | null
+
+      if (relatedTarget && cartRef.current?.contains(relatedTarget)) {
+        return
+      }
+
+      closeCartPreview()
+    },
+    [closeCartPreview]
+  )
+
+  const toggleUserMenu = useCallback(() => {
+    if (typeof onUserMenuToggle === 'function') {
+      onUserMenuToggle()
+      return
+    }
+
+    setInternalUserMenuOpen((previous) => !previous)
+  }, [onUserMenuToggle])
+
+  const closeUserMenu = useCallback(() => {
+    if (typeof onUserMenuToggle === 'function') {
+      if (userMenuOpen) {
         onUserMenuToggle()
+      }
+
+      return
+    }
+
+    setInternalUserMenuOpen(false)
+  }, [onUserMenuToggle, userMenuOpen])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  CLICK OUTSIDE                                                */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (!userMenuOpenState) return
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target as Node)
+      ) {
+        closeUserMenu()
       }
     }
 
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [cartPreviewOpen, userMenuOpen, onCartPreviewChange, onUserMenuToggle])
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeUserMenu()
+      }
+    }
+
+    document.addEventListener('mousedown', handleMouseDown)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [closeUserMenu, userMenuOpenState])
+
+  useEffect(() => {
+    return () => {
+      clearCartTimer()
+    }
+  }, [clearCartTimer])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  MENU KEYBOARD NAVIGATION                                     */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const handleMenuKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const menu = event.currentTarget
+      const menuItems = Array.from(
+        menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])')
+      )
+
+      if (menuItems.length === 0) return
+
+      const activeElement = document.activeElement as HTMLElement | null
+      let currentIndex = activeElement ? menuItems.indexOf(activeElement) : -1
+
+      switch (event.key) {
+        case 'ArrowDown':
+          event.preventDefault()
+          currentIndex =
+            currentIndex < 0 ? 0 : Math.min(currentIndex + 1, menuItems.length - 1)
+          menuItems[currentIndex]?.focus()
+          break
+
+        case 'ArrowUp':
+          event.preventDefault()
+          currentIndex =
+            currentIndex <= 0 ? menuItems.length - 1 : currentIndex - 1
+          menuItems[currentIndex]?.focus()
+          break
+
+        case 'Home':
+          event.preventDefault()
+          menuItems[0]?.focus()
+          break
+
+        case 'End':
+          event.preventDefault()
+          menuItems[menuItems.length - 1]?.focus()
+          break
+
+        default:
+          break
+      }
+    },
+    []
+  )
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  THEME                                                        */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const currentThemeMode: ThemeMode | null = themeMode ?? null
+  const currentResolvedTheme: 'light' | 'dark' = resolvedTheme ?? 'light'
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  CART                                                         */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const safeItems = useMemo(() => (Array.isArray(items) ? items : []), [items])
+
+  const handleRemoveCartItem = useCallback(
+    (id: string) => {
+      cart?.removeItem?.(id)
+    },
+    [cart]
+  )
+
+  const notificationAriaLabel =
+    mounted && notifCount > 0
+      ? `Notifications — ${notifCount} non lue${notifCount > 1 ? 's' : ''}`
+      : 'Notifications'
+
+  const cartAriaLabel =
+    mounted && itemCount > 0
+      ? `Panier — ${itemCount} article${itemCount > 1 ? 's' : ''}`
+      : 'Panier'
+
+  const hasAvatar = Boolean(avatarUrl && avatarUrl.trim() !== '')
+  const displayName = user?.email?.split('@')[0] || 'Utilisateur'
+  const userInitial = (displayName[0] || 'U').toUpperCase()
 
   return (
-    <div className={cn('flex items-center gap-1 ml-auto', className)}>
-      {/* Bouton thème (caché sur mobile) */}
-      <Tooltip content={!isMounted ? 'Chargement du thème' : (theme === 'light' ? 'Mode sombre' : 'Mode clair')}>
-        <button
-          onClick={toggleTheme}
-          className="hidden sm:flex p-2 rounded-xl text-neutral-400 hover:text-gold-500 dark:hover:text-gold-400 hover:bg-neutral-100 dark:hover:bg-midnight-700/40 transition-colors"
-          aria-label={!isMounted ? 'Chargement du thème' : (theme === 'light' ? 'Activer le mode sombre' : 'Activer le mode clair')}
-          disabled={!isMounted}
-        >
-          {!isMounted ? (
-            // Espace réservé avec les mêmes dimensions pour éviter un décalage de mise en page (layout shift)
-            <div className="w-[18px] h-[18px]" />
-          ) : theme === 'light' ? (
-            <Moon size={18} />
-          ) : (
-            <Sun size={18} />
-          )}
-        </button>
-      </Tooltip>
-
-      {/* Utilisateur connecté */}
-      {user ? (
-        <>
-          {/* Notifications */}
-          <Link
-            href="/profile/notifications"
-            className="hidden sm:flex relative p-2 rounded-xl text-neutral-400 hover:text-gold-500 dark:hover:text-gold-400 hover:bg-neutral-100 dark:hover:bg-midnight-700/40 transition-colors"
-            aria-label="Notifications"
+    <div className={cn('flex items-center gap-1', className)}>
+      {/* Thème */}
+      {typeof onThemeCycle === 'function' ? (
+        <Tooltip content="Basculer le thème">
+          <button
+            type="button"
+            onClick={onThemeCycle}
+            className={actionButtonBase}
+            aria-label="Basculer le thème"
           >
-            {notifCount > 0 ? <BellDot size={18} /> : <Bell size={18} />}
-            {notifCount > 0 && (
-              <span className="absolute top-0 right-0 w-4 h-4 text-[9px] font-bold rounded-full bg-red-500 text-white flex items-center justify-center">
-                {notifCount > 9 ? '9+' : notifCount}
-              </span>
-            )}
-          </Link>
-
-          {/* Favoris */}
-          <Link
-            href="/profile/favoris"
-            className="hidden sm:flex p-2 rounded-xl text-neutral-400 hover:text-gold-500 dark:hover:text-gold-400 hover:bg-neutral-100 dark:hover:bg-midnight-700/40 transition-colors"
-            aria-label="Favoris"
-          >
-            <Heart size={18} />
-          </Link>
-
-          {/* Panier */}
-          <div
-            ref={cartRef}
-            className="relative"
-            onMouseEnter={() => onCartPreviewChange(true)}
-            onMouseLeave={() => onCartPreviewChange(false)}
-          >
-            <Link
-              href="/panier"
-              className="relative flex items-center gap-1.5 px-2 py-2 rounded-xl text-neutral-400 hover:text-gold-500 dark:hover:text-gold-400 hover:bg-neutral-100 dark:hover:bg-midnight-700/40 transition-colors"
-              aria-label="Panier"
+            <span
+              className="relative inline-flex h-[18px] w-[18px]"
+              aria-hidden="true"
             >
-              <ShoppingBag size={20} />
-              {itemCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full text-[10px] font-bold bg-gradient-to-r from-gold-400 to-gold-600 text-midnight-950 shadow-gold">
-                  {itemCount > 99 ? '99+' : itemCount}
-                </span>
-              )}
-              {isSyncing && (
-                <Loader2 size={14} className="absolute -bottom-1 -right-1 text-gold-500 animate-spin" />
-              )}
-            </Link>
-
-            <AnimatePresence>
-              {cartPreviewOpen && itemCount > 0 && (
-                <NavbarCartPreview items={items} />
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Menu utilisateur */}
-          <div className="relative user-menu" ref={userMenuRef}>
-            <button
-              onClick={onUserMenuToggle}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-midnight-700/40 transition-colors"
-              aria-label="Menu utilisateur"
-              aria-expanded={userMenuOpen}
-            >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-r from-gold-400 to-gold-600 flex items-center justify-center shadow-gold overflow-hidden">
-                {avatarUrl && avatarUrl.trim() !== '' ? (
-                  <Image
-                    src={avatarUrl}
-                    alt="Avatar"
-                    width={32}
-                    height={32}
-                    className="w-8 h-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <span className="text-midnight-900 font-bold text-sm">
-                    {(user.email?.[0] || 'G').toUpperCase()}
-                  </span>
-                )}
-              </div>
-              <ChevronDown
-                size={14}
+              <MonitorSmartphone
+                size={18}
                 className={cn(
-                  'hidden sm:block text-neutral-400 transition-transform duration-300',
-                  userMenuOpen && 'rotate-180'
+                  'absolute inset-0 transition-opacity duration-200 motion-reduce:transition-none',
+                  mounted
+                    ? currentThemeMode === 'auto'
+                      ? 'opacity-100'
+                      : 'opacity-0'
+                    : 'opacity-0'
                 )}
               />
-            </button>
 
-            <AnimatePresence>
-              {userMenuOpen && (
-                <NavbarUserMenu
-                  user={user}
-                  isAdmin={isAdmin}
-                  isLivreur={isLivreur}
-                  walletBalance={walletBalance}
-                  notifCount={notifCount}
-                  onLogout={onLogout}
-                  onClose={() => onUserMenuToggle()}
-                />
-              )}
-            </AnimatePresence>
-          </div>
-        </>
+              <Sun
+                size={18}
+                className={cn(
+                  'absolute inset-0 transition-opacity duration-200 motion-reduce:transition-none',
+                  mounted
+                    ? currentThemeMode !== 'auto' &&
+                      currentResolvedTheme === 'light'
+                      ? 'opacity-100'
+                      : 'opacity-0'
+                    : 'opacity-100 dark:opacity-0'
+                )}
+              />
+
+              <Moon
+                size={18}
+                className={cn(
+                  'absolute inset-0 transition-opacity duration-200 motion-reduce:transition-none',
+                  mounted
+                    ? currentThemeMode !== 'auto' &&
+                      currentResolvedTheme === 'dark'
+                      ? 'opacity-100'
+                      : 'opacity-0'
+                    : 'opacity-0 dark:opacity-100'
+                )}
+              />
+            </span>
+          </button>
+        </Tooltip>
+      ) : null}
+
+      {/* Notifications */}
+      <Tooltip content="Notifications">
+        <Link
+          href="/profile/notifications"
+          className={actionButtonBase}
+          aria-label={notificationAriaLabel}
+        >
+          {mounted && notifCount > 0 ? (
+            <BellDot size={18} aria-hidden="true" />
+          ) : (
+            <Bell size={18} aria-hidden="true" />
+          )}
+
+          {mounted && notifCount > 0 && (
+            <span className={notificationBadgeClass} aria-hidden="true">
+              {notifCount > 9 ? '9+' : notifCount}
+            </span>
+          )}
+        </Link>
+      </Tooltip>
+
+      {/* Favoris */}
+      <Tooltip content="Favoris">
+        <Link
+          href="/profile/favoris"
+          className={actionButtonBase}
+          aria-label="Favoris"
+        >
+          <Heart size={18} aria-hidden="true" />
+        </Link>
+      </Tooltip>
+
+      {/* Panier + aperçu desktop */}
+      <div
+        ref={cartRef}
+        className="relative"
+        onMouseEnter={openCartPreview}
+        onMouseLeave={closeCartPreview}
+        onFocusCapture={openCartPreview}
+        onBlurCapture={handleCartBlur}
+      >
+        <Tooltip content="Panier">
+          <Link
+            href="/panier"
+            className={actionButtonBase}
+            aria-label={cartAriaLabel}
+            onClick={() => setCartOpen(false)}
+          >
+            <ShoppingBag size={18} aria-hidden="true" />
+
+            {mounted && itemCount > 0 && (
+              <span className={notificationBadgeClass} aria-hidden="true">
+                {itemCount > 99 ? '99+' : itemCount}
+              </span>
+            )}
+
+            {mounted && isSyncing && (
+              <Loader2
+                size={12}
+                className="absolute -bottom-0.5 -right-0.5 motion-safe:animate-spin text-accent"
+                aria-hidden="true"
+              />
+            )}
+          </Link>
+        </Tooltip>
+
+        {cartOpen ? (
+          <NavbarCartPreview
+            items={safeItems as any}
+            totalItems={itemCount}
+            onRemove={handleRemoveCartItem}
+            onClose={() => setCartOpen(false)}
+          />
+        ) : null}
+      </div>
+
+      {/* Compte utilisateur */}
+      {!user ? (
+        <div className="ml-1 flex items-center gap-2">
+          <Link href="/login" className={authSecondaryClass}>
+            <LogIn size={14} aria-hidden="true" />
+            <span className="hidden xl:inline">Connexion</span>
+          </Link>
+
+          <Link href="/register" className={authPrimaryClass}>
+            <UserPlus size={14} aria-hidden="true" />
+            <span className="hidden xl:inline">Inscription</span>
+          </Link>
+        </div>
       ) : (
-        /* Utilisateur non connecté */
-        <div className="hidden sm:flex items-center gap-2">
-          <Link href="/login">
-            <Button variant="luxe" size="sm" leftIcon={<LogIn size={16} />}>
-              Connexion
-            </Button>
-          </Link>
-          <Link href="/register">
-            <Button variant="outline-gold" size="sm" leftIcon={<UserPlus size={16} />}>
-              Inscription
-            </Button>
-          </Link>
+        <div ref={userMenuRef} className="relative ml-1">
+          <button
+            type="button"
+            onClick={toggleUserMenu}
+            aria-expanded={userMenuOpenState}
+            aria-haspopup="menu"
+            aria-label="Menu du compte"
+            className="flex items-center gap-2 rounded-control p-1 pr-2 transition-colors duration-200 motion-reduce:transition-none hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          >
+            <span className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-pill bg-accent text-xs font-bold text-accent-contrast shadow-card">
+              {mounted && hasAvatar ? (
+                <Image
+                  src={avatarUrl!}
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 rounded-pill object-cover"
+                />
+              ) : (
+                userInitial
+              )}
+            </span>
+
+            <span className="hidden max-w-[8rem] truncate text-xs font-semibold text-fg xl:inline">
+              {displayName}
+            </span>
+          </button>
+
+          {userMenuOpenState ? (
+            <div
+              role="menu"
+              aria-label="Menu utilisateur"
+              onKeyDown={handleMenuKeyDown}
+              className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-card border border-line bg-surface p-2 shadow-card"
+            >
+              <div className="mb-1 flex items-center gap-3 rounded-control bg-muted px-3 py-2.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-pill bg-accent text-sm font-bold text-accent-contrast">
+                  {mounted && hasAvatar ? (
+                    <Image
+                      src={avatarUrl!}
+                      alt=""
+                      width={36}
+                      height={36}
+                      className="h-9 w-9 rounded-pill object-cover"
+                    />
+                  ) : (
+                    userInitial
+                  )}
+                </span>
+
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-fg">
+                    {displayName}
+                  </p>
+
+                  <p className="truncate text-xs text-fg-subtle">
+                    {user?.email ?? 'Compte Gercie'}
+                  </p>
+                </div>
+              </div>
+
+              <MenuRow
+                href="/profile"
+                icon={<User size={16} />}
+                label="Mon compte"
+                onClick={closeUserMenu}
+              />
+
+              <MenuRow
+                href="/profile/commandes"
+                icon={<ClipboardCheck size={16} />}
+                label="Mes commandes"
+                onClick={closeUserMenu}
+              />
+
+              <MenuRow
+                href="/profile/favoris"
+                icon={<Heart size={16} />}
+                label="Mes favoris"
+                onClick={closeUserMenu}
+              />
+
+              <MenuRow
+                href="/profile/notifications"
+                icon={<Bell size={16} />}
+                label="Notifications"
+                onClick={closeUserMenu}
+              />
+
+              {isAdmin ? (
+                <MenuRow
+                  href="/admin"
+                  icon={<LayoutDashboard size={16} />}
+                  label="Administration"
+                  onClick={closeUserMenu}
+                />
+              ) : null}
+
+              {isLivreur ? (
+                <MenuRow
+                  href="/dashboard/livreur"
+                  icon={<Truck size={16} />}
+                  label="Espace Livreur"
+                  onClick={closeUserMenu}
+                />
+              ) : null}
+
+              <MenuRow
+                href="/profile/parametres"
+                icon={<Settings size={16} />}
+                label="Paramètres"
+                onClick={closeUserMenu}
+              />
+
+              <div className="my-1 h-px bg-line" aria-hidden="true" />
+
+              <MenuRow
+                icon={<LogOut size={16} />}
+                label="Déconnexion"
+                danger
+                onClick={() => {
+                  closeUserMenu()
+                  onLogout()
+                }}
+              />
+            </div>
+          ) : null}
         </div>
       )}
     </div>
   )
 }
+
+export default NavbarActions

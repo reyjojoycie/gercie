@@ -1,22 +1,24 @@
+// components/navbar/NavbarCartPreview.tsx
 'use client'
 
-import { motion } from 'framer-motion'
-import Image from 'next/image'
+import React, { useMemo } from 'react'
+
 import Link from 'next/link'
+import Image from 'next/image'
+
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
-import { Skeleton } from '@/components/ui/Skeleton'
+
 import {
+  ArrowRight,
+  Percent,
   ShoppingBag,
   Trash2,
-  ArrowRight,
   X,
 } from 'lucide-react'
 
-/* ========================================================================== */
-/*  Types (partagés avec NavbarActions / CartContext)                          */
-/* ========================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export interface CartPreviewItem {
   id: string
@@ -26,31 +28,53 @@ export interface CartPreviewItem {
   remise?: number
   quantite: number
   image?: string
-  variante?: { attributes: Record<string, string> }
+  variante?: {
+    attributes?: Record<string, string>
+  }
 }
 
-interface NavbarCartPreviewProps {
-  /** Articles du panier à afficher */
+export interface NavbarCartPreviewProps {
   items: CartPreviewItem[]
-  /** Nombre total d'articles (si différent de items.length) */
   totalItems?: number
-  /** Sous‑total du panier (FC) */
   subTotal?: number
-  /** Callback pour supprimer un article (si fourni, affiche un bouton) */
   onRemove?: (id: string) => void
-  /** Callback pour fermer la preview */
   onClose?: () => void
-  /** Nombre maximum d'articles affichés avant "+X autres" */
   maxVisible?: number
-  /** État de chargement */
   loading?: boolean
-  /** Classes additionnelles */
   className?: string
 }
 
-/* ========================================================================== */
-/*  Sous‑composant : une ligne d'article                                       */
-/* ========================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  HELPERS                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function formatFC(value: number | null | undefined): string {
+  const n = Number(value || 0)
+
+  if (!Number.isFinite(n)) return '0 FC'
+
+  return `${new Intl.NumberFormat('fr-FR').format(Math.round(n))} FC`
+}
+
+function getItemImage(item: CartPreviewItem): string | null {
+  if (typeof item.image === 'string' && item.image.trim()) {
+    return item.image
+  }
+
+  return null
+}
+
+function getItemUnitPrice(item: CartPreviewItem): number {
+  return Number(item.prix ?? 0)
+}
+
+function getItemOriginalPrice(item: CartPreviewItem): number {
+  return Number(item.prix_initial ?? item.prix ?? 0)
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  ROW                                                            */
+/* ═══════════════════════════════════════════════════════════════ */
 
 function CartPreviewRow({
   item,
@@ -59,73 +83,77 @@ function CartPreviewRow({
   item: CartPreviewItem
   onRemove?: (id: string) => void
 }) {
-  const itemTotal = (item.prix || 0) * item.quantite
-  const variantDisplay = item.variante?.attributes
-    ? Object.entries(item.variante.attributes)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join(', ')
-    : null
+  const image = getItemImage(item)
+  const unitPrice = getItemUnitPrice(item)
+  const originalPrice = getItemOriginalPrice(item)
+  const hasDiscount = originalPrice > unitPrice
 
   return (
-    <div className="flex gap-3 items-start group">
-      {/* Image */}
-      <div className="w-12 h-12 rounded-lg bg-neutral-100 dark:bg-neutral-800 overflow-hidden relative flex-shrink-0">
-        {item.image ? (
+    <div className="flex items-start gap-3 rounded-lg p-2 transition-colors duration-200 hover:bg-muted">
+      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-line bg-muted">
+        {image ? (
           <Image
-            src={item.image}
+            src={image}
             alt={item.nom}
-            fill
-            className="object-cover"
-            sizes="48px"
+            width={48}
+            height={48}
+            className="h-12 w-12 object-cover"
+            loading="lazy"
+            decoding="async"
           />
         ) : (
-          <ShoppingBag size={18} className="m-auto text-neutral-400" />
-        )}
-        {item.remise && item.remise > 0 && (
-          <Badge variant="danger" size="sm" className="absolute -top-1 -right-1 text-[9px] px-1">
-            -{item.remise}%
-          </Badge>
+          <div
+            className="flex h-full w-full items-center justify-center text-fg-subtle"
+            aria-hidden="true"
+          >
+            <ShoppingBag size={16} />
+          </div>
         )}
       </div>
 
-      {/* Infos */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate">
+      <div className="min-w-0 flex-1">
+        <p className="line-clamp-2 text-xs font-semibold text-fg">
           {item.nom}
         </p>
-        {variantDisplay && (
-          <p className="text-xs text-gold-600 truncate">{variantDisplay}</p>
-        )}
-        <p className="text-xs text-neutral-500 mt-0.5">
-          {item.quantite} × {(item.prix || 0).toLocaleString()} FC
+
+        <p className="mt-1 text-[11px] text-fg-muted">
+          Qté : {item.quantite}
         </p>
+
+        <div className="mt-1 flex items-baseline gap-1.5">
+          <span className="text-xs font-bold text-fg">
+            {formatFC(unitPrice * item.quantite)}
+          </span>
+
+          {hasDiscount ? (
+            <span className="text-[10px] text-fg-subtle line-through">
+              {formatFC(originalPrice * item.quantite)}
+            </span>
+          ) : null}
+        </div>
       </div>
 
-      {/* Total + suppression */}
-      <div className="text-right flex-shrink-0">
-        <p className="text-sm font-semibold text-gold-600">
-          {itemTotal.toLocaleString()} FC
-        </p>
-        {onRemove && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onRemove(item.id)
-            }}
-            className="mt-1 p-1 rounded-md text-neutral-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-            aria-label={`Supprimer ${item.nom}`}
-          >
-            <Trash2 size={14} />
-          </button>
-        )}
-      </div>
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onRemove(item.id)
+          }}
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-subtle transition-colors duration-200 hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+          aria-label={`Retirer ${item.nom} du panier`}
+        >
+          <Trash2 size={14} aria-hidden="true" />
+        </button>
+      ) : null}
     </div>
   )
 }
 
-/* ========================================================================== */
-/*  Composant principal                                                        */
-/* ========================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  COMPONENT                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export function NavbarCartPreview({
   items,
@@ -137,82 +165,100 @@ export function NavbarCartPreview({
   loading = false,
   className,
 }: NavbarCartPreviewProps) {
-  const visibleItems = items.slice(0, maxVisible)
-  const hiddenCount = items.length - visibleItems.length
-  const displayedTotal = totalItems ?? items.length
-  const total = subTotal ?? items.reduce((sum, i) => sum + (i.prix || 0) * i.quantite, 0)
+  const safeItems = useMemo(() => {
+    return Array.isArray(items) ? items : []
+  }, [items])
+
+  const visibleItems = safeItems.slice(0, maxVisible)
+  const hiddenCount = safeItems.length - visibleItems.length
+
+  const displayedTotal =
+    totalItems ??
+    safeItems.reduce((sum, item) => sum + Number(item.quantite ?? 1), 0)
+
+  const subtotal =
+    subTotal ??
+    safeItems.reduce(
+      (sum, item) => sum + getItemUnitPrice(item) * Number(item.quantite ?? 1),
+      0
+    )
+
+  const savings = useMemo(() => {
+    return safeItems.reduce((sum, item) => {
+      const original = getItemOriginalPrice(item)
+      const current = getItemUnitPrice(item)
+      const quantity = Number(item.quantite ?? 1)
+
+      return sum + Math.max(0, (original - current) * quantity)
+    }, 0)
+  }, [safeItems])
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 5, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 5, scale: 0.98 }}
-      transition={{ duration: 0.15 }}
+    <div
+      role="dialog"
+      aria-label="Aperçu du panier"
       className={cn(
-        // Positionnement : centré sur mobile, aligné à droite sur desktop
-        'absolute left-1/2 sm:left-auto sm:right-0 top-full mt-2',
-        // Largeur adaptative
-        'w-[calc(100vw-2rem)] max-w-[320px] sm:w-80',
-        'bg-white/95 dark:bg-midnight-800/95 backdrop-blur-xl rounded-xl shadow-strong border border-gold-400/20 p-4 z-20',
-        'transform -translate-x-1/2 sm:translate-x-0',
+        'absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-card border border-line bg-surface shadow-card',
         className
       )}
+      onMouseLeave={onClose}
     >
-      {/* En‑tête */}
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100">
-          Panier ({displayedTotal})
-        </h3>
-        <div className="flex items-center gap-2">
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
-              aria-label="Fermer"
-            >
-              <X size={16} />
-            </button>
-          )}
-          {items.length > 0 && (
-            <Link
-              href="/panier"
-              className="text-xs text-gold-600 hover:underline"
-              onClick={onClose}
-            >
-              Voir tout
-            </Link>
-          )}
+      <div className="flex items-center justify-between border-b border-line px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-fg">Votre panier</p>
+
+          <p className="text-[11px] text-fg-muted">
+            {displayedTotal} article{displayedTotal > 1 ? 's' : ''}
+          </p>
         </div>
+
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-fg-subtle transition-colors duration-200 hover:bg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            aria-label="Fermer l’aperçu du panier"
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
-      {/* Contenu */}
       {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="flex gap-3 items-center">
-              <Skeleton variant="rectangular" className="w-12 h-12 rounded-lg" shimmer shimmerVariant="gold" />
+        <div className="space-y-2 p-4">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <div key={`cart-preview-skeleton-${index}`} className="flex gap-3">
+              <div className="skeleton h-12 w-12 rounded-lg" />
               <div className="flex-1 space-y-2">
-                <Skeleton variant="text" className="w-3/4 h-4" shimmer shimmerVariant="gold" />
-                <Skeleton variant="text" className="w-1/2 h-3" shimmer shimmerVariant="gold" />
+                <div className="skeleton h-3 w-3/4 rounded-full" />
+                <div className="skeleton h-3 w-1/2 rounded-full" />
               </div>
             </div>
           ))}
         </div>
-      ) : items.length === 0 ? (
-        <div className="flex flex-col items-center py-6 text-center">
-          <ShoppingBag size={32} className="text-neutral-300 mb-2" />
-          <p className="text-sm text-neutral-500">Votre panier est vide</p>
+      ) : safeItems.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+          <ShoppingBag
+            size={28}
+            className="text-fg-subtle"
+            aria-hidden="true"
+          />
+
+          <p className="text-sm font-medium text-fg">
+            Votre panier est vide
+          </p>
+
           <Link
             href="/search"
-            className="text-xs text-gold-600 hover:underline mt-1"
             onClick={onClose}
+            className="text-xs font-semibold text-accent transition-colors hover:text-accent-hover"
           >
             Découvrir des produits
           </Link>
         </div>
       ) : (
         <>
-          <div className="space-y-3 max-h-64 overflow-y-auto">
+          <div className="max-h-64 space-y-1 overflow-y-auto p-2">
             {visibleItems.map((item) => (
               <CartPreviewRow
                 key={item.id}
@@ -220,29 +266,61 @@ export function NavbarCartPreview({
                 onRemove={onRemove}
               />
             ))}
-            {hiddenCount > 0 && (
-              <p className="text-xs text-neutral-400 text-center py-1">
-                + {hiddenCount} autre{hiddenCount > 1 ? 's' : ''} article{hiddenCount > 1 ? 's' : ''}
+
+            {hiddenCount > 0 ? (
+              <p className="py-1 text-center text-[11px] text-fg-subtle">
+                + {hiddenCount} autre{hiddenCount > 1 ? 's' : ''} article
+                {hiddenCount > 1 ? 's' : ''}
               </p>
-            )}
+            ) : null}
           </div>
 
-          {/* Sous‑total */}
-          <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-midnight-500/30">
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-sm text-neutral-500">Sous‑total</span>
-              <span className="text-sm font-bold text-gold-600">
-                {total.toLocaleString()} FC
-              </span>
+          <div className="border-t border-line p-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-fg-muted">Sous-total</span>
+              <span className="font-bold text-fg">{formatFC(subtotal)}</span>
             </div>
-            <Link href="/panier" onClick={onClose}>
-              <Button variant="luxe" size="sm" fullWidth rightIcon={<ArrowRight size={14} />}>
-                Voir le panier
-              </Button>
+
+            {savings > 0 ? (
+              <div className="mt-1 flex items-center justify-between text-xs">
+                <span className="inline-flex items-center gap-1 text-fg-muted">
+                  <Percent size={12} aria-hidden="true" />
+                  Économies
+                </span>
+
+                <span className="font-semibold text-success">
+                  −{formatFC(savings)}
+                </span>
+              </div>
+            ) : null}
+
+            <p className="mt-2 text-[11px] leading-relaxed text-fg-subtle">
+              Livraison et taxes calculées à l’étape suivante.
+            </p>
+
+            <Link
+              href="/panier"
+              onClick={onClose}
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-pill bg-accent px-4 py-2.5 text-sm font-semibold text-accent-contrast shadow-card transition-colors duration-200 hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            >
+              Voir le panier
+              <ArrowRight size={16} aria-hidden="true" />
             </Link>
+
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-2 w-full text-center text-xs font-medium text-fg-muted transition-colors duration-200 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                Continuer mes achats
+              </button>
+            ) : null}
           </div>
         </>
       )}
-    </motion.div>
+    </div>
   )
 }
+
+export default NavbarCartPreview

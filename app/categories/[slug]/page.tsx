@@ -1,390 +1,771 @@
 // app/categories/[slug]/page.tsx
 'use client'
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
-import { useParams } from 'next/navigation'
-import Link from 'next/link'
-import Image from 'next/image'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Container,
-  Section,
-  Stack,
-} from '@/components/layout/Container'
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import dynamic from 'next/dynamic'
+
+import { motion, AnimatePresence } from 'framer-motion'
+
+import { Container } from '@/components/layout/Container'
 import { ProductGrid } from '@/components/ProductGrid'
 import { FilterBar } from '@/components/FilterBar'
 import { useProductFilters } from '@/hooks/useProductFilters'
-import { useProducts, useInfiniteProducts } from '@/hooks/useProducts'
-import { categoryTree, mainCategories, getSubCategories, getTypes, getDetails, getCategoryIcon } from '@/lib/categories'
-import { Skeleton } from '@/components/ui/Skeleton'
+import { useProducts } from '@/hooks/useProducts'
+
+import { useCategories, findCategoryBySlug } from '@/hooks/useCategories'
+
 import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { ScrollToTop } from '@/components/ui/ScrollToTop'
+
 import {
-  ChevronRight,
-  Home,
-  SlidersHorizontal,
-  Search,
-  Grid3X3,
-  List,
-  TrendingUp,
-  Sparkles,
-  Filter,
-  X,
-  ChevronDown,
-  Star,
-  Package,
-  Users,
   AlertTriangle,
+  ChevronRight,
+  Filter,
+  Grid3X3,
+  Home,
+  List,
+  Loader2,
+  Package,
   RefreshCw,
-  ChevronLeft,
-  ChevronUp,
+  Search,
+  X,
 } from 'lucide-react'
+
+import * as Icons from 'lucide-react'
+
 import { cn } from '@/lib/utils'
 
-/* ------------------------------------------------------------------ */
-/*  Types utilitaires pour l'arbre des catégories (inchangé)          */
-/* ------------------------------------------------------------------ */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  DYNAMIC IMPORTS                                                */
+/* ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Vrai QuickView aligné USD principal / CDF calculé.
+ * Il charge le produit, applique useExchangeRate(), gère les variantes
+ * et ajoute au panier avec un payload cohérent CartContext.
+ */
+const ProductQuickView = dynamic(
+  () => import('@/components/ProductQuickView'),
+  { ssr: false }
+)
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
 interface CategoryNode {
   id: string
-  name: string
-  icon?: string
+  nom: string
+  slug?: string | null
+  chemin_complet?: string | null
+  description?: string | null
+  icone?: string | null
   children?: CategoryNode[]
+  [key: string]: any
 }
 
-/* ------------------------------------------------------------------ */
-/*  Fonctions récursives pour le breadcrumb et le chemin              */
-/* ------------------------------------------------------------------ */
-function getCategoryPathById(
-  node: CategoryNode,
-  targetId: string,
-  path: string[] = [],
-): string[] | null {
-  const currentPath = [...path, node.name]
-  if (node.id === targetId) return currentPath
-  if (node.children) {
-    for (const child of node.children) {
-      const result = getCategoryPathById(child, targetId, currentPath)
-      if (result) return result
+type ViewMode = 'grid' | 'list'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONSTANTS                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const PAGE_SIZE = 20
+const SEARCH_DEBOUNCE_MS = 350
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  HELPERS                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function getSlugParam(param: unknown): string | undefined {
+  if (Array.isArray(param)) {
+    return typeof param[0] === 'string' ? param[0] : undefined
+  }
+
+  return typeof param === 'string' ? param : undefined
+}
+
+function findCategoryPath(
+  nodes: CategoryNode[] | undefined,
+  slug: string,
+  trail: CategoryNode[] = []
+): CategoryNode[] | null {
+  for (const node of nodes || []) {
+    const nextTrail = [...trail, node]
+
+    if (node.slug === slug) {
+      return nextTrail
+    }
+
+    const childPath = findCategoryPath(node.children, slug, nextTrail)
+
+    if (childPath) {
+      return childPath
     }
   }
+
   return null
 }
 
-function getCategoryNodeById(node: CategoryNode, targetId: string): CategoryNode | null {
-  if (node.id === targetId) return node
-  if (node.children) {
-    for (const child of node.children) {
-      const found = getCategoryNodeById(child, targetId)
-      if (found) return found
-    }
-  }
-  return null
+function resolveIcon(iconName?: string | null) {
+  if (!iconName) return Package
+
+  const candidate = (Icons as any)[iconName]
+
+  return typeof candidate === 'function' ? candidate : Package
 }
 
-function getFullPathFromSlug(slug: string): string | null {
-  for (const root of categoryTree) {
-    const path = getCategoryPathById(root, slug)
-    if (path) return path.join(' > ')
+function getCategoryPrefix(
+  category: CategoryNode | null,
+  path: CategoryNode[] | null
+): string | undefined {
+  if (category?.chemin_complet) {
+    return category.chemin_complet
   }
-  return null
+
+  if (path && path.length > 0) {
+    return path.map((node) => node.nom).join(' > ')
+  }
+
+  return category?.nom || undefined
 }
 
-function getBreadcrumbsFromSlug(slug: string): { name: string; id: string }[] {
-  for (const root of categoryTree) {
-    const parts = getCategoryPathById(root, slug)
-    if (parts) {
-      let currentRoot = categoryTree
-      return parts.map(name => {
-        const found = currentRoot.find(c => c.name === name)
-        const id = found?.id ?? ''
-        currentRoot = found?.children || []
-        return { name, id }
-      })
-    }
-  }
-  return []
+function buildCategoryHref(node: CategoryNode): string {
+  const slug = node.slug || node.nom
+
+  return `/categories/${encodeURIComponent(slug)}`
 }
 
-/* ================================================================== */
-/*  Composant principal de la page catégorie                           */
-/* ================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SKELETON                                                       */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function CategoryPageSkeleton() {
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="sticky top-16 z-30 border-b border-border bg-background/80 backdrop-blur-xl">
+        <Container className="py-4">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="skeleton h-4 w-20 rounded-full" />
+            <div className="skeleton h-4 w-4 rounded-full" />
+            <div className="skeleton h-4 w-32 rounded-full" />
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-2">
+              <div className="skeleton h-9 w-64 rounded-full" />
+              <div className="skeleton h-4 w-96 rounded-full" />
+            </div>
+
+            <div className="skeleton h-10 w-64 rounded-full" />
+          </div>
+        </Container>
+      </div>
+
+      <Container className="py-8">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div
+              key={`category-skeleton-${index}`}
+              className="space-y-3 rounded-card border border-border bg-card p-3"
+            >
+              <div className="skeleton aspect-square w-full rounded-control" />
+              <div className="skeleton h-4 w-3/4 rounded-full" />
+              <div className="skeleton h-3 w-1/2 rounded-full" />
+            </div>
+          ))}
+        </div>
+      </Container>
+
+      <span className="sr-only">Chargement de la catégorie…</span>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  PAGE                                                           */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export default function CategoryPage() {
-  const { slug } = useParams<{ slug: string }>()
+  const params = useParams<{ slug: string | string[] }>()
+  const slug = getSlugParam(params?.slug)
+
+  const router = useRouter()
   const filters = useProductFilters()
 
-  // États locaux
-  const [categoryName, setCategoryName] = useState<string>('')
-  const [categoryPath, setCategoryPath] = useState<string | null>(null)
-  const [categoryBreadcrumbs, setCategoryBreadcrumbs] = useState<{ name: string; id: string }[]>([])
-  const [categoryDescription, setCategoryDescription] = useState<string>('')
-  const [categoryIcon, setCategoryIcon] = useState<string | undefined>(undefined)
+  const {
+    data: categoriesTree,
+    isLoading: isCategoriesLoading,
+    error: categoriesError,
+  } = useCategories()
+
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [deferredSearchQuery, setDeferredSearchQuery] = useState('')
+
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
 
-  // Catégorie courante (nœud complet)
-  const currentCategoryNode = useMemo(() => {
-    for (const root of categoryTree) {
-      const node = getCategoryNodeById(root, slug)
-      if (node) return node
-    }
-    return null
-  }, [slug])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [quickViewProductId, setQuickViewProductId] = useState<string | null>(null)
 
-  // Sous-catégories directes (enfants du nœud courant)
-  const subCategories = useMemo(
-    () => currentCategoryNode?.children || [],
-    [currentCategoryNode],
-  )
+  /* ---------------------------------------------------------- */
+  /* Arbre catégories                                            */
+  /* ---------------------------------------------------------- */
 
-  // Initialisation des métadonnées et du breadcrumb
+  const tree = useMemo<CategoryNode[]>(() => {
+    return Array.isArray(categoriesTree) ? categoriesTree : []
+  }, [categoriesTree])
+
+  const currentCategory = useMemo(() => {
+    if (!tree.length || !slug) return null
+
+    return findCategoryBySlug(tree, slug) || null
+  }, [slug, tree])
+
+  const categoryPath = useMemo(() => {
+    if (!tree.length || !slug) return null
+
+    return findCategoryPath(tree, slug)
+  }, [slug, tree])
+
+  const subCategories = useMemo(() => {
+    return currentCategory?.children || []
+  }, [currentCategory])
+
+  const categoryPrefix = useMemo(() => {
+    return getCategoryPrefix(currentCategory, categoryPath)
+  }, [categoryPath, currentCategory])
+
+  const lockedMainCategory = useMemo(() => {
+    return (
+      categoryPath?.[0]?.nom ||
+      currentCategory?.nom ||
+      'Catalogue'
+    )
+  }, [categoryPath, currentCategory])
+
+  /* ---------------------------------------------------------- */
+  /* Recherche débouncée                                         */
+  /* ---------------------------------------------------------- */
+
   useEffect(() => {
-    if (!slug) return
-    const fullPath = getFullPathFromSlug(slug)
-    const parts = fullPath ? fullPath.split(' > ') : []
-    const name = parts[parts.length - 1] || 'Catégorie'
-    setCategoryName(name)
-    setCategoryPath(fullPath)
+    const timeout = setTimeout(() => {
+      setDeferredSearchQuery(searchQuery.trim())
+    }, SEARCH_DEBOUNCE_MS)
 
-    const crumbs = getBreadcrumbsFromSlug(slug)
-    setCategoryBreadcrumbs(crumbs)
+    return () => clearTimeout(timeout)
+  }, [searchQuery])
 
-    const node = crumbs.length > 0
-      ? getCategoryNodeById(categoryTree.find(c => c.id === crumbs[0].id)!, slug) // un peu tordu mais pour récup l'icône
-      : null
-    if (currentCategoryNode) {
-      setCategoryIcon(currentCategoryNode.icon)
-      // On peut définir une description basée sur le nom
-      setCategoryDescription(`Découvrez notre sélection de ${name.toLowerCase()}.`)
+  /* ---------------------------------------------------------- */
+  /* Filtres produits                                            */
+  /* ---------------------------------------------------------- */
+
+  /**
+   * IMPORTANT :
+   * On ne passe pas selectedMainCategory depuis les filtres globaux,
+   * sinon il pourrait entrer en conflit avec la catégorie courante.
+   *
+   * La catégorie est verrouillée via categorie_prefix.
+   * Les autres filtres restent actifs.
+   */
+  const productFilters = useMemo(() => {
+    return {
+      categorie_prefix: categoryPrefix,
+
+      selectedSubCategory: filters.selectedSubCategory || undefined,
+      selectedType: filters.selectedType || undefined,
+      selectedDetail: filters.selectedDetail || undefined,
+
+      min_price: filters.minPrice || undefined,
+      max_price: filters.maxPrice || undefined,
+
+      sort_by: filters.sortBy || 'recent',
+      sort_order: filters.sortOrder || 'desc',
+
+      search: deferredSearchQuery || undefined,
     }
+  }, [
+    categoryPrefix,
+    deferredSearchQuery,
+    filters.maxPrice,
+    filters.minPrice,
+    filters.selectedDetail,
+    filters.selectedSubCategory,
+    filters.selectedType,
+    filters.sortBy,
+    filters.sortOrder,
+  ])
 
-    // Mise à jour du titre de la page
-    document.title = `${name} | Gercie`
-  }, [slug, currentCategoryNode])
-
-  // Récupération des produits avec filtres et recherche locale
   const {
     products,
     isLoading,
     isFetching,
     error,
     refetch,
-  } = useProducts({
-    categorie_prefix: categoryPath || undefined,
-    search: searchQuery || undefined,
-    min_price: filters.minPrice || undefined,
-    max_price: filters.maxPrice || undefined,
-    sort_by: filters.sortBy,
-    sort_order: filters.sortOrder,
-  })
+  } = useProducts(productFilters as any)
 
-  // Pagination infinie (alternative, on peut laisser le choix selon les besoins)
-  // Ici, nous utilisons la version simple, mais nous pourrions switcher si nécessaire.
-  // Pour l'exemple, on garde la pagination simple, mais on ajoute un bouton "Charger plus".
-  const [pageSize, setPageSize] = useState(20)
-  const [currentPage, setCurrentPage] = useState(1)
+  /* ---------------------------------------------------------- */
+  /* Pagination locale                                           */
+  /* ---------------------------------------------------------- */
+
+  const visibleCount = currentPage * PAGE_SIZE
+
   const paginatedProducts = useMemo(() => {
-    const start = (currentPage - 1) * pageSize
-    return products.slice(start, start + pageSize)
-  }, [products, currentPage, pageSize])
-  const totalPages = Math.ceil(products.length / pageSize)
-  const canLoadMore = currentPage < totalPages
+    return products.slice(0, visibleCount)
+  }, [products, visibleCount])
+
+  const canLoadMore = visibleCount < products.length
 
   const loadMore = useCallback(() => {
-    setCurrentPage(prev => prev + 1)
+    setCurrentPage((previous) => previous + 1)
   }, [])
 
-  // Réinitialiser la page quand les filtres changent
+  /* ---------------------------------------------------------- */
+  /* Reset pagination                                            */
+  /* ---------------------------------------------------------- */
+
   useEffect(() => {
     setCurrentPage(1)
-  }, [filters.selectedMainCategory, searchQuery, filters.minPrice, filters.maxPrice, categoryPath])
+  }, [
+    categoryPrefix,
+    deferredSearchQuery,
+    filters.maxPrice,
+    filters.minPrice,
+    filters.selectedDetail,
+    filters.selectedSubCategory,
+    filters.selectedType,
+    filters.sortBy,
+    filters.sortOrder,
+    slug,
+  ])
 
-  // Gérer la recherche via FilterBar (si on utilise la version enrichie, il faut lui passer les props)
-  // Nous allons utiliser FilterBar avec les nouvelles props : searchQuery, onSearchChange, viewMode...
-  // Si la version enrichie n'est pas utilisée, on peut gérer la recherche localement.
+  /* ---------------------------------------------------------- */
+  /* Titre document                                              */
+  /* ---------------------------------------------------------- */
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+
+    if (currentCategory?.nom) {
+      document.title = `${currentCategory.nom} | Gercie`
+    } else if (slug) {
+      document.title = 'Catégorie | Gercie'
+    }
+  }, [currentCategory?.nom, slug])
+
+  /* ---------------------------------------------------------- */
+  /* Handlers                                                    */
+  /* ---------------------------------------------------------- */
+
+  const handleResetFilters = useCallback(() => {
+    filters.resetFilters?.()
+    setSearchQuery('')
+    setDeferredSearchQuery('')
+    setCurrentPage(1)
+  }, [filters])
+
+  const handleCloseQuickView = useCallback(() => {
+    setQuickViewProductId(null)
+  }, [])
+
+  const handleGoToAllCategories = useCallback(() => {
+    router.push('/categories')
+  }, [router])
+
+  /* ---------------------------------------------------------- */
+  /* FilterBar props                                             */
+  /* ---------------------------------------------------------- */
+
+  const filterBarProps = useMemo(() => {
+    return {
+      selectedMainCategory: lockedMainCategory,
+      setSelectedMainCategory: () => {
+        // Verrouillé sur la page catégorie.
+      },
+
+      selectedSubCategory: filters.selectedSubCategory ?? '',
+      setSelectedSubCategory:
+        filters.setSelectedSubCategory ?? (() => {}),
+
+      selectedType: filters.selectedType ?? '',
+      setSelectedType: filters.setSelectedType ?? (() => {}),
+
+      selectedDetail: filters.selectedDetail ?? '',
+      setSelectedDetail: filters.setSelectedDetail ?? (() => {}),
+
+      minPrice: filters.minPrice ?? 0,
+      setMinPrice: filters.setMinPrice ?? (() => {}),
+
+      maxPrice: filters.maxPrice ?? 0,
+      setMaxPrice: filters.setMaxPrice ?? (() => {}),
+
+      sortBy: filters.sortBy ?? 'recent',
+      setSortBy: filters.setSortBy ?? (() => {}),
+
+      sortOrder: filters.sortOrder ?? 'desc',
+      setSortOrder: filters.setSortOrder ?? (() => {}),
+    }
+  }, [
+    filters.maxPrice,
+    filters.minPrice,
+    filters.selectedDetail,
+    filters.selectedSubCategory,
+    filters.selectedType,
+    filters.setDetail,
+    filters.setMaxPrice,
+    filters.setMinPrice,
+    filters.setSelectedDetail,
+    filters.setSelectedSubCategory,
+    filters.setSelectedType,
+    filters.setSortBy,
+    filters.setSortOrder,
+    filters.sortBy,
+    filters.sortOrder,
+    lockedMainCategory,
+  ])
+
+  /* ---------------------------------------------------------- */
+  /* Icône catégorie                                             */
+  /* ---------------------------------------------------------- */
+
+  const IconComponent = useMemo(() => {
+    return resolveIcon(currentCategory?.icone)
+  }, [currentCategory?.icone])
+
+  /* ---------------------------------------------------------- */
+  /* États early return                                          */
+  /* ---------------------------------------------------------- */
+
+  if (isCategoriesLoading) {
+    return <CategoryPageSkeleton />
+  }
+
+  if (categoriesError && !currentCategory) {
+    return (
+      <Container className="py-20 text-center">
+        <AlertTriangle
+          className="mx-auto mb-4 text-amber-500"
+          size={48}
+          aria-hidden="true"
+        />
+
+        <h2 className="mb-2 text-2xl font-bold text-foreground">
+          Catégories indisponibles
+        </h2>
+
+        <p className="mb-6 text-muted-foreground">
+          Impossible de charger l’arborescence des catégories pour le moment.
+        </p>
+
+        <Button
+          variant="luxe"
+          onClick={() => router.refresh()}
+          leftIcon={<RefreshCw size={16} aria-hidden="true" />}
+        >
+          Réessayer
+        </Button>
+      </Container>
+    )
+  }
+
+  if (!currentCategory) {
+    return (
+      <Container className="py-20 text-center">
+        <AlertTriangle
+          className="mx-auto mb-4 text-amber-500"
+          size={48}
+          aria-hidden="true"
+        />
+
+        <h2 className="mb-2 text-2xl font-bold text-foreground">
+          Catégorie introuvable
+        </h2>
+
+        <p className="mb-6 text-muted-foreground">
+          La catégorie que vous recherchez n’existe pas ou a été supprimée.
+        </p>
+
+        <Button
+          variant="luxe"
+          onClick={handleGoToAllCategories}
+          leftIcon={<Package size={16} aria-hidden="true" />}
+        >
+          Voir toutes les catégories
+        </Button>
+      </Container>
+    )
+  }
+
+  /* ---------------------------------------------------------- */
+  /* Rendu principal                                             */
+  /* ---------------------------------------------------------- */
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* --- Barre supérieure avec glassmorphism & filtres --- */}
-      <div className="sticky top-16 z-30 backdrop-blur-xl bg-background/80 border-b border-border shadow-sm">
+    <div className="flex min-h-screen flex-col bg-background">
+      {/* ====================================================
+          BARRE SUPÉRIEURE / FILTRES
+         ==================================================== */}
+      <div className="sticky top-16 z-30 border-b border-border bg-background/80 shadow-sm backdrop-blur-xl">
         <Container className="py-3">
           {/* Breadcrumb */}
-          <nav className="flex items-center gap-2 text-xs mb-3 overflow-x-auto scrollbar-hide" aria-label="Breadcrumb">
-            <Link href="/" className="flex items-center gap-1 text-muted-foreground hover:text-gold-500 transition-colors">
-              <Home size={14} />
+          <nav
+            className="scrollbar-hide mb-3 flex items-center gap-2 overflow-x-auto text-xs"
+            aria-label="Fil d’Ariane"
+          >
+            <Link
+              href="/"
+              className="flex shrink-0 items-center gap-1 text-muted-foreground transition-colors hover:text-gold-500"
+            >
+              <Home size={14} aria-hidden="true" />
               <span className="hidden sm:inline">Accueil</span>
             </Link>
-            <ChevronRight size={12} className="text-muted-foreground" />
-            {categoryBreadcrumbs.length === 0 && (
-              <span className="text-gold-500 font-medium">{categoryName}</span>
-            )}
-            {categoryBreadcrumbs.map((crumb, index) => {
-              const isLast = index === categoryBreadcrumbs.length - 1
-              return (
-                <div key={crumb.id} className="flex items-center gap-2">
-                  {isLast ? (
-                    <span className="text-gold-500 font-medium truncate max-w-[150px]">{crumb.name}</span>
-                  ) : (
-                    <>
-                      <Link
-                        href={`/categories/${crumb.id}`}
-                        className="text-muted-foreground hover:text-gold-500 transition-colors truncate max-w-[120px]"
+
+            {categoryPath && categoryPath.length > 0 ? (
+              categoryPath.map((node, index) => {
+                const isLast = index === categoryPath.length - 1
+
+                return (
+                  <div
+                    key={`${node.id || node.nom}-${index}`}
+                    className="flex shrink-0 items-center gap-2"
+                  >
+                    <ChevronRight
+                      size={12}
+                      className="text-muted-foreground"
+                      aria-hidden="true"
+                    />
+
+                    {isLast ? (
+                      <span
+                        className="max-w-[180px] truncate font-medium text-gold-500"
+                        aria-current="page"
                       >
-                        {crumb.name}
+                        {node.nom}
+                      </span>
+                    ) : node.slug ? (
+                      <Link
+                        href={buildCategoryHref(node)}
+                        className="max-w-[140px] truncate text-muted-foreground transition-colors hover:text-gold-500"
+                      >
+                        {node.nom}
                       </Link>
-                      <ChevronRight size={12} className="text-muted-foreground" />
-                    </>
-                  )}
-                </div>
-              )
-            })}
+                    ) : (
+                      <span className="max-w-[140px] truncate text-muted-foreground">
+                        {node.nom}
+                      </span>
+                    )}
+                  </div>
+                )
+              })
+            ) : (
+              <>
+                <ChevronRight
+                  size={12}
+                  className="text-muted-foreground"
+                  aria-hidden="true"
+                />
+
+                <span
+                  className="max-w-[180px] truncate font-medium text-gold-500"
+                  aria-current="page"
+                >
+                  {currentCategory.nom}
+                </span>
+              </>
+            )}
           </nav>
 
-          {/* Titre & description */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-foreground font-serif flex items-center gap-3">
-                {categoryIcon && <span className="text-4xl">{categoryIcon}</span>}
-                {categoryName || 'Catégorie'}
+          {/* Titre + actions */}
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="flex items-center gap-3 font-serif text-3xl font-bold text-foreground md:text-4xl">
+                <IconComponent
+                  className="shrink-0 text-gold-500"
+                  size={32}
+                  aria-hidden="true"
+                />
+
+                <span className="truncate">{currentCategory.nom}</span>
               </h1>
-              {categoryDescription && (
-                <p className="text-sm text-muted-foreground mt-1">{categoryDescription}</p>
+
+              {currentCategory.description && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {currentCategory.description}
+                </p>
               )}
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="flex shrink-0 items-center gap-2">
               <Button
                 variant="outline-gold"
                 size="sm"
                 onClick={() => setShowMobileFilters(true)}
                 className="md:hidden"
-                leftIcon={<Filter size={16} />}
+                leftIcon={<Filter size={16} aria-hidden="true" />}
               >
                 Filtres
               </Button>
-              <div className="hidden md:flex items-center gap-2">
+
+              <div className="hidden items-center gap-2 md:flex">
                 <Input
-                  leftIcon={<Search size={16} className="text-muted-foreground" />}
+                  leftIcon={
+                    <Search
+                      size={16}
+                      className="text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  }
                   placeholder="Rechercher dans cette catégorie..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(event) => setSearchQuery(event.target.value)}
                   allowClear
                   onClear={() => setSearchQuery('')}
                   variant="glass"
                   size="sm"
                   className="w-64"
                 />
-                <div className="flex rounded-full bg-muted p-1 border border-border">
+
+                <div className="flex rounded-full border border-border bg-muted p-1">
                   <button
+                    type="button"
                     onClick={() => setViewMode('grid')}
-                    className={cn('p-1.5 rounded-full transition', viewMode === 'grid' ? 'bg-gold-500 text-white' : 'text-muted-foreground')}
+                    className={cn(
+                      'rounded-full p-1.5 transition focus:outline-none focus:ring-2 focus:ring-gold-500',
+                      viewMode === 'grid'
+                        ? 'bg-gold-500 text-white'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
                     aria-label="Vue grille"
+                    aria-pressed={viewMode === 'grid'}
                   >
-                    <Grid3X3 size={16} />
+                    <Grid3X3 size={16} aria-hidden="true" />
                   </button>
+
                   <button
+                    type="button"
                     onClick={() => setViewMode('list')}
-                    className={cn('p-1.5 rounded-full transition', viewMode === 'list' ? 'bg-gold-500 text-white' : 'text-muted-foreground')}
+                    className={cn(
+                      'rounded-full p-1.5 transition focus:outline-none focus:ring-2 focus:ring-gold-500',
+                      viewMode === 'list'
+                        ? 'bg-gold-500 text-white'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
                     aria-label="Vue liste"
+                    aria-pressed={viewMode === 'list'}
                   >
-                    <List size={16} />
+                    <List size={16} aria-hidden="true" />
                   </button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Barre de sous-catégories (si présentes) */}
+          {/* Sous-catégories */}
           {subCategories.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
-              {subCategories.map(sub => (
+            <div className="scrollbar-hide -mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-2">
+              {subCategories.map((sub) => (
                 <Link
-                  key={sub.id}
-                  href={`/categories/${sub.id}`}
-                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-card border border-border hover:bg-gold-400/10 hover:border-gold-400 transition-colors text-muted-foreground hover:text-gold-600"
+                  key={sub.id || sub.nom}
+                  href={buildCategoryHref(sub)}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-gold-400 hover:bg-gold-400/10 hover:text-gold-600"
                 >
-                  {sub.icon && <span>{sub.icon}</span>}
-                  {sub.name}
+                  {sub.nom}
                 </Link>
               ))}
             </div>
           )}
 
-          {/* FilterBar (version enrichie) – ici on lui passe les nouvelles props */}
-          <FilterBar
-            selectedMainCategory={filters.selectedMainCategory}
-            setSelectedMainCategory={filters.setSelectedMainCategory}
-            selectedSubCategory={filters.selectedSubCategory}
-            setSelectedSubCategory={filters.setSelectedSubCategory}
-            selectedType={filters.selectedType}
-            setSelectedType={filters.setSelectedType}
-            selectedDetail={filters.selectedDetail}
-            setSelectedDetail={filters.setSelectedDetail}
-            minPrice={filters.minPrice}
-            setMinPrice={filters.setMinPrice}
-            maxPrice={filters.maxPrice}
-            setMaxPrice={filters.setMaxPrice}
-            sortBy={filters.sortBy}
-            setSortBy={filters.setSortBy}
-            sortOrder={filters.sortOrder}
-            setSortOrder={filters.sortOrder}
-            totalProducts={products.length}
-            onResetFilters={filters.resetFilters}
-            // nouvelles props
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            placeholderSearch="Rechercher un produit..."
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            showViewToggle
-            isFetching={isFetching || isLoading}
-          />
+          {/* FilterBar desktop */}
+          <div className="hidden md:block">
+            <FilterBar
+              {...filterBarProps}
+              totalProducts={products.length}
+              onResetFilters={handleResetFilters}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              placeholderSearch="Rechercher un produit..."
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              showViewToggle
+              isFetching={isFetching || isLoading}
+            />
+          </div>
         </Container>
       </div>
 
-      {/* --- Contenu principal --- */}
-      <Container className="py-8 flex-1">
-        {/* État d'erreur */}
-        {error && (
+      {/* ====================================================
+          CONTENU PRINCIPAL
+         ==================================================== */}
+      <Container className="flex-1 py-8">
+        {error ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <AlertTriangle className="mx-auto text-burgundy-500 mb-4" size={48} />
-            <h3 className="text-xl font-semibold text-foreground mb-2">Erreur de chargement</h3>
-            <p className="text-muted-foreground text-sm mb-6">{error}</p>
-            <Button variant="danger" size="sm" onClick={() => refetch()} leftIcon={<RefreshCw size={16} />}>
+            <AlertTriangle
+              className="mx-auto mb-4 text-red-500"
+              size={48}
+              aria-hidden="true"
+            />
+
+            <h3 className="mb-2 text-xl font-semibold text-foreground">
+              Erreur de chargement
+            </h3>
+
+            <p className="mb-6 text-sm text-muted-foreground">
+              {typeof error === 'string'
+                ? error
+                : 'Impossible de charger les produits de cette catégorie.'}
+            </p>
+
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => refetch()}
+              leftIcon={<RefreshCw size={16} aria-hidden="true" />}
+            >
               Réessayer
             </Button>
           </div>
-        )}
-
-        {/* Grille de produits */}
-        {!error && (
+        ) : (
           <>
             <ProductGrid
               products={paginatedProducts}
               loading={isLoading}
-              error={null}
               onRetry={refetch}
               emptyState={{
                 title: 'Aucun produit dans cette catégorie',
-                description: 'Aucun article trouvé avec les critères actuels. Essayez d’élargir votre recherche.',
+                description:
+                  'Aucun article trouvé avec les critères actuels. Essayez d’élargir votre recherche.',
                 actionLabel: 'Voir toutes les catégories',
-                onAction: () => { window.location.href = '/' },
+                onAction: handleGoToAllCategories,
               }}
               columns="auto"
               viewMode={viewMode}
               animated
+              showQuickSort
+              onQuickView={setQuickViewProductId}
             />
 
-            {/* Pagination "Charger plus" */}
             {canLoadMore && (
-              <div className="flex justify-center mt-8">
+              <div className="mt-8 flex justify-center">
                 <Button
                   variant="outline-gold"
                   size="md"
                   onClick={loadMore}
                   disabled={isFetching || isLoading}
                   loading={isFetching || isLoading}
+                  leftIcon={
+                    isFetching || isLoading ? (
+                      <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                    ) : undefined
+                  }
                 >
                   Afficher plus de produits
                 </Button>
@@ -394,10 +775,9 @@ export default function CategoryPage() {
         )}
       </Container>
 
-      {/* Bouton retour en haut */}
-      <ScrollToTop variant="circle" showProgress tooltip="Retour en haut" />
-
-      {/* Overlay & drawer mobile pour les filtres (similaire à celui de FilterBar mais ici on peut l'étendre) */}
+      {/* ====================================================
+          MOBILE FILTER DRAWER
+         ==================================================== */}
       <AnimatePresence>
         {showMobileFilters && (
           <div className="fixed inset-0 z-50 md:hidden">
@@ -407,36 +787,65 @@ export default function CategoryPage() {
               exit={{ opacity: 0 }}
               className="absolute inset-0 bg-black/50 backdrop-blur-sm"
               onClick={() => setShowMobileFilters(false)}
+              aria-hidden="true"
             />
+
             <motion.div
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="absolute left-0 top-0 bottom-0 w-80 bg-card p-6 overflow-y-auto shadow-2xl z-10"
+              className="absolute bottom-0 left-0 top-0 z-10 w-80 overflow-y-auto bg-card p-6 shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Filtres mobiles"
             >
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-lg text-foreground">Filtres</h3>
-                <button onClick={() => setShowMobileFilters(false)}>
-                  <X size={20} className="text-muted-foreground" />
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-foreground">Filtres</h3>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFilters(false)}
+                  className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-gold-500"
+                  aria-label="Fermer les filtres"
+                >
+                  <X size={20} aria-hidden="true" />
                 </button>
               </div>
-              {/* Contenu simplifié des filtres, on réutilise FilterBar mais sans sticky */}
+
               <FilterBar
-                {...filters}
+                {...filterBarProps}
                 totalProducts={products.length}
-                onResetFilters={filters.resetFilters}
+                onResetFilters={handleResetFilters}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 viewMode={viewMode}
                 onViewModeChange={setViewMode}
                 showViewToggle
-                className="static border-none shadow-none p-0 bg-transparent backdrop-blur-none"
+                isFetching={isFetching || isLoading}
+                className="static border-none bg-transparent p-0 shadow-none backdrop-blur-none"
               />
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* ====================================================
+          QUICK VIEW
+         ==================================================== */}
+      {quickViewProductId && (
+        <ProductQuickView
+          productId={quickViewProductId}
+          isOpen
+          onClose={handleCloseQuickView}
+        />
+      )}
+
+      <ScrollToTop
+        variant="circle"
+        showProgress
+        tooltip="Retour en haut"
+      />
     </div>
   )
 }

@@ -3,38 +3,62 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
-  useState,
-  useCallback,
-  useSyncExternalStore,
+  useMemo,
   useRef,
-  ReactNode,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
 } from "react";
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  TYPES                                                          */
 /* ═══════════════════════════════════════════════════════════════ */
 
-type ThemeChoice = "light" | "dark" | "system";
-type ResolvedTheme = "light" | "dark";
+export type ThemeChoice = "light" | "dark" | "system";
+export type ThemeMode = "auto" | "light" | "dark";
+export type ResolvedTheme = "light" | "dark";
 
-interface ThemeContextType {
-  /** Le choix actuel de l'utilisateur (light, dark ou system) */
+export interface ThemeContextValue {
+  /** Choix persisté de l'utilisateur */
   themeChoice: ThemeChoice;
-  /** Le thème résolu effectif (light ou dark) */
+
+  /** Mode exposé à la navbar : auto / light / dark */
+  themeMode: ThemeMode;
+
+  /** Thème réellement appliqué */
   resolvedTheme: ResolvedTheme;
-  /** Alias de resolvedTheme (compatibilité avec les composants qui lisent `theme`) */
+
+  /** Alias pour compatibilité */
   theme: ResolvedTheme;
-  /** Définit un nouveau choix de thème */
+
+  /** Définit un choix explicite */
   setThemeChoice: (choice: ThemeChoice) => void;
-  /** Bascule rapide entre light et dark (ignore "system") */
+
+  /** Définit un mode compatible navbar */
+  setThemeMode: (mode: ThemeMode) => void;
+
+  /** Cycle : auto -> light -> dark -> auto */
+  cycleTheme: () => void;
+
+  /** Alias pour NavbarActions */
+  onThemeCycle: () => void;
+
+  /** Bascule simple light <-> dark */
   toggleTheme: () => void;
-  /** Indique si le thème est en cours de transition (pour les animations) */
+
+  /** Transition visuelle en cours */
   isTransitioning: boolean;
-  /** Indique si le mode réduit est activé (accessibilité) */
+
+  /** Hydratation client terminée */
+  isHydrated: boolean;
+
+  /** Préférence accessibilité : mouvement réduit */
   prefersReducedMotion: boolean;
-  /** Indique si le mode contraste élevé est activé */
+
+  /** Préférence accessibilité : contraste élevé */
   prefersHighContrast: boolean;
 }
 
@@ -42,69 +66,184 @@ interface ThemeContextType {
 /*  CONSTANTS                                                      */
 /* ═══════════════════════════════════════════════════════════════ */
 
-const STORAGE_KEY = "gercie-theme-choice";
-const TRANSITION_DURATION = 300; // ms
-const VALID_CHOICES: ThemeChoice[] = ["light", "dark", "system"];
+const STORAGE_KEY = "gercie-theme";
+
+const LEGACY_STORAGE_KEYS = [
+  "gercie-theme-choice",
+  "theme",
+] as const;
+
+const THEME_EVENT = "gercie-theme-change";
+
+const VALID_CHOICES = new Set<ThemeChoice>(["light", "dark", "system"]);
+
+const TRANSITION_DURATION = 280;
+
+/**
+ * Couleurs alignées sur la nouvelle fondation visuelle.
+ *
+ * Light  : blanc cassé lumineux, pas blanc pur agressif
+ * Dark   : minuit profond, pas noir pur
+ */
 const THEME_COLORS = {
-  light: "#ffffff",
-  dark: "#040715",
+  light: "#f8f8f5",
+  dark: "#070a14",
 } as const;
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  CONTEXT                                                        */
 /* ═══════════════════════════════════════════════════════════════ */
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  LOCAL STORAGE HELPERS                                          */
+/*  DOM HELPERS                                                    */
 /* ═══════════════════════════════════════════════════════════════ */
 
-function subscribeToLocalStorage(callback: () => void) {
-  window.addEventListener("storage", callback);
-  return () => window.removeEventListener("storage", callback);
+function canUseDOM(): boolean {
+  return typeof window !== "undefined" && typeof document !== "undefined";
 }
 
-function getLocalStorageThemeChoice(): ThemeChoice {
-  if (typeof window === "undefined") return "system";
-  
+function normalizeStoredTheme(value: string | null | undefined): ThemeChoice | null {
+  if (!value) return null;
+
+  if (value === "auto") return "system";
+  if (value === "light") return "light";
+  if (value === "dark") return "dark";
+  if (value === "system") return "system";
+
+  return null;
+}
+
+function readThemeChoice(): ThemeChoice {
+  if (!canUseDOM()) return "system";
+
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && VALID_CHOICES.includes(stored as ThemeChoice)) {
-      return stored as ThemeChoice;
+    const primary = normalizeStoredTheme(window.localStorage.getItem(STORAGE_KEY));
+    if (primary) return primary;
+
+    for (const key of LEGACY_STORAGE_KEYS) {
+      const legacy = normalizeStoredTheme(window.localStorage.getItem(key));
+      if (legacy) return legacy;
     }
-  } catch (err) {
-    console.warn("Erreur lecture localStorage:", err);
+  } catch {
+    // localStorage peut être bloqué en private browsing / restrictions navigateur
   }
+
   return "system";
 }
 
-function setLocalStorageThemeChoice(choice: ThemeChoice) {
-  if (typeof window === "undefined") return;
-  
+function writeThemeChoice(choice: ThemeChoice): void {
+  if (!canUseDOM()) return;
+
   try {
-    localStorage.setItem(STORAGE_KEY, choice);
-    // Notifier les autres onglets
-    window.dispatchEvent(new Event("storage"));
-  } catch (err) {
-    console.warn("Erreur écriture localStorage:", err);
+    window.localStorage.setItem(STORAGE_KEY, choice);
+    window.dispatchEvent(new Event(THEME_EVENT));
+  } catch {
+    // silencieux : le thème peut quand même être appliqué en mémoire
   }
+}
+
+function subscribeToThemeChanges(callback: () => void): () => void {
+  if (!canUseDOM()) return () => {};
+
+  const handler = () => callback();
+
+  window.addEventListener("storage", handler);
+  window.addEventListener(THEME_EVENT, handler);
+
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener(THEME_EVENT, handler);
+  };
+}
+
+function getThemeSnapshot(): ThemeChoice {
+  return readThemeChoice();
+}
+
+function getServerThemeSnapshot(): ThemeChoice {
+  return "system";
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  THEME RESOLUTION                                               */
 /* ═══════════════════════════════════════════════════════════════ */
 
+function getSystemTheme(): ResolvedTheme {
+  if (!canUseDOM() || !window.matchMedia) return "light";
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
 function resolveTheme(choice: ThemeChoice): ResolvedTheme {
-  if (choice === "system") {
-    if (typeof window !== "undefined" && window.matchMedia) {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
-    }
-    return "light"; // fallback SSR
-  }
+  if (choice === "system") return getSystemTheme();
   return choice;
+}
+
+/**
+ * Lit l'état déjà appliqué dans le DOM par le script d'initialisation
+ * afin d'éviter un mismatch d'hydratation.
+ */
+function getInitialResolvedTheme(): ResolvedTheme {
+  if (!canUseDOM()) return "light";
+
+  const root = document.documentElement;
+
+  if (root.dataset.theme === "dark") return "dark";
+  if (root.dataset.theme === "light") return "light";
+
+  if (root.classList.contains("dark")) return "dark";
+
+  return resolveTheme(readThemeChoice());
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  META SYNC                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function updateThemeMeta(theme: ResolvedTheme): void {
+  if (!canUseDOM()) return;
+
+  const color = THEME_COLORS[theme];
+
+  /**
+   * Plusieurs metas theme-color peuvent exister avec des media queries.
+   * Pour un thème forcé par l'utilisateur, on normalise sur une seule meta.
+   */
+  const metas = Array.from(document.querySelectorAll('meta[name="theme-color"]'));
+
+  if (metas.length === 0) {
+    const meta = document.createElement("meta");
+    meta.setAttribute("name", "theme-color");
+    meta.setAttribute("content", color);
+    document.head.appendChild(meta);
+  } else {
+    const primary = metas[0];
+    primary.setAttribute("content", color);
+    primary.removeAttribute("media");
+
+    metas.slice(1).forEach((meta) => meta.remove());
+  }
+
+  const appleMeta = document.querySelector(
+    'meta[name="apple-mobile-web-app-status-bar-style"]'
+  );
+
+  if (appleMeta) {
+    appleMeta.setAttribute(
+      "content",
+      theme === "dark" ? "black-translucent" : "default"
+    );
+  }
+
+  const msMeta = document.querySelector('meta[name="msapplication-navbutton-color"]');
+
+  if (msMeta) {
+    msMeta.setAttribute("content", color);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -112,205 +251,185 @@ function resolveTheme(choice: ThemeChoice): ResolvedTheme {
 /* ═══════════════════════════════════════════════════════════════ */
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // Stockage local synchronisé via useSyncExternalStore
   const themeChoice = useSyncExternalStore(
-    subscribeToLocalStorage,
-    getLocalStorageThemeChoice,
-    getLocalStorageThemeChoice
+    subscribeToThemeChanges,
+    getThemeSnapshot,
+    getServerThemeSnapshot
   );
 
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
-    resolveTheme(themeChoice)
+    getInitialResolvedTheme()
   );
 
-  // États pour accessibilité
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [prefersHighContrast, setPrefersHighContrast] = useState(false);
 
-  // Gestion de la transition pour animations fluides
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const transitionTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const previousThemeRef = useRef<ResolvedTheme>(resolvedTheme);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousThemeRef = useRef<ResolvedTheme | null>(null);
+  const mountedRef = useRef(false);
 
   /* ───────────────────────────────────────────────────────────── */
-  /*  APPLICATION DU THÈME AU DOM                                  */
+  /*  TRANSITION TIMER                                             */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const clearTransitionTimer = useCallback(() => {
+    if (transitionTimerRef.current) {
+      clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+  }, []);
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  APPLY THEME TO DOM                                           */
   /* ───────────────────────────────────────────────────────────── */
 
   const applyThemeToDOM = useCallback(
     (theme: ResolvedTheme, animate = true) => {
-      if (typeof window === "undefined") return;
+      if (!canUseDOM()) return;
 
       const root = document.documentElement;
       const isDark = theme === "dark";
-
-      // Vérifier si le thème a vraiment changé
       const hasChanged = previousThemeRef.current !== theme;
-      if (!hasChanged) return;
 
-      // Animation de transition
-      if (animate && !prefersReducedMotion) {
+      if (hasChanged && animate && !prefersReducedMotion && mountedRef.current) {
         setIsTransitioning(true);
-        if (transitionTimerRef.current) {
-          clearTimeout(transitionTimerRef.current);
-        }
+        clearTransitionTimer();
+
         transitionTimerRef.current = setTimeout(() => {
           setIsTransitioning(false);
         }, TRANSITION_DURATION);
       }
 
-      // Appliquer la classe dark
       root.classList.toggle("dark", isDark);
-
-      // Mettre à jour colorScheme
+      root.dataset.theme = theme;
       root.style.colorScheme = isDark ? "dark" : "light";
 
-      // Mettre à jour les métadonnées PWA et navigateur
-      try {
-        const metaTheme = document.querySelector('meta[name="theme-color"]');
-        if (metaTheme) {
-          metaTheme.setAttribute("content", THEME_COLORS[theme]);
-        }
-
-        // Pour Safari / iOS status bar
-        const appleMeta = document.querySelector(
-          'meta[name="apple-mobile-web-app-status-bar-style"]'
-        );
-        if (appleMeta) {
-          appleMeta.setAttribute(
-            "content",
-            isDark ? "black-translucent" : "default"
-          );
-        }
-
-        // Windows tiles
-        const msMeta = document.querySelector(
-          'meta[name="msapplication-navbutton-color"]'
-        );
-        if (msMeta) {
-          msMeta.setAttribute("content", THEME_COLORS[theme]);
-        }
-      } catch (err) {
-        console.warn("Erreur mise à jour meta tags:", err);
-      }
+      updateThemeMeta(theme);
 
       previousThemeRef.current = theme;
-
-      // Logging en développement
-      if (process.env.NODE_ENV === "development") {
-        console.log("🎨 Theme applied:", {
-          choice: themeChoice,
-          resolved: theme,
-          animate,
-        });
-      }
     },
-    [themeChoice, prefersReducedMotion]
+    [clearTransitionTimer, prefersReducedMotion]
   );
 
   /* ───────────────────────────────────────────────────────────── */
-  /*  APPLIQUER LE THÈME QUAND LE CHOIX CHANGE                     */
+  /*  MOUNT                                                        */
   /* ───────────────────────────────────────────────────────────── */
 
   useEffect(() => {
-    const newResolved = resolveTheme(themeChoice);
-    setResolvedTheme(newResolved);
-    applyThemeToDOM(newResolved);
-  }, [themeChoice, applyThemeToDOM]);
+    mountedRef.current = true;
+    setIsHydrated(true);
 
-  /* ───────────────────────────────────────────────────────────── */
-  /*  ÉCOUTEUR DE CHANGEMENT DE PRÉFÉRENCE SYSTÈME                 */
-  /* ───────────────────────────────────────────────────────────── */
+    // Application initiale sans animation pour éviter un flash visuel.
+    applyThemeToDOM(resolvedTheme, false);
 
-  useEffect(() => {
-    if (themeChoice !== "system" || typeof window === "undefined") return;
-
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const listener = (e: MediaQueryListEvent) => {
-      const newTheme: ResolvedTheme = e.matches ? "dark" : "light";
-      setResolvedTheme(newTheme);
-      applyThemeToDOM(newTheme);
-    };
-
-    // Support pour anciens navigateurs
-    if (mq.addEventListener) {
-      mq.addEventListener("change", listener);
-      return () => mq.removeEventListener("change", listener);
-    } else if (mq.addListener) {
-      mq.addListener(listener);
-      return () => mq.removeListener(listener);
-    }
-  }, [themeChoice, applyThemeToDOM]);
-
-  /* ───────────────────────────────────────────────────────────── */
-  /*  DÉTECTION PRÉFÉRENCES D'ACCESSIBILITÉ                        */
-  /* ───────────────────────────────────────────────────────────── */
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-
-    // Détection prefers-reduced-motion
-    const mqReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const motionListener = (e: MediaQueryListEvent) => {
-      setPrefersReducedMotion(e.matches);
-      document.documentElement.classList.toggle("reduce-motion", e.matches);
-    };
-
-    setPrefersReducedMotion(mqReducedMotion.matches);
-    document.documentElement.classList.toggle(
-      "reduce-motion",
-      mqReducedMotion.matches
-    );
-
-    if (mqReducedMotion.addEventListener) {
-      mqReducedMotion.addEventListener("change", motionListener);
-    } else if (mqReducedMotion.addListener) {
-      mqReducedMotion.addListener(motionListener);
-    }
-
-    // Détection prefers-contrast: high
-    const mqHighContrast = window.matchMedia("(prefers-contrast: high)");
-    const contrastListener = (e: MediaQueryListEvent) => {
-      setPrefersHighContrast(e.matches);
-      document.documentElement.classList.toggle("high-contrast", e.matches);
-    };
-
-    setPrefersHighContrast(mqHighContrast.matches);
-    document.documentElement.classList.toggle(
-      "high-contrast",
-      mqHighContrast.matches
-    );
-
-    if (mqHighContrast.addEventListener) {
-      mqHighContrast.addEventListener("change", contrastListener);
-    } else if (mqHighContrast.addListener) {
-      mqHighContrast.addListener(contrastListener);
-    }
-
-    // Cleanup
     return () => {
-      if (mqReducedMotion.removeEventListener) {
-        mqReducedMotion.removeEventListener("change", motionListener);
-      } else if (mqReducedMotion.removeListener) {
-        mqReducedMotion.removeListener(motionListener);
-      }
-
-      if (mqHighContrast.removeEventListener) {
-        mqHighContrast.removeEventListener("change", contrastListener);
-      } else if (mqHighContrast.removeListener) {
-        mqHighContrast.removeListener(contrastListener);
-      }
+      clearTransitionTimer();
     };
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ───────────────────────────────────────────────────────────── */
-  /*  CLEANUP AU DÉMONTAGE                                         */
+  /*  SYNC WHEN CHOICE CHANGES                                     */
   /* ───────────────────────────────────────────────────────────── */
 
   useEffect(() => {
+    const nextTheme = resolveTheme(themeChoice);
+
+    setResolvedTheme((prev) => (prev === nextTheme ? prev : nextTheme));
+    applyThemeToDOM(nextTheme, mountedRef.current);
+  }, [themeChoice, applyThemeToDOM]);
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  SYSTEM THEME LISTENER                                        */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (themeChoice !== "system") return;
+    if (!canUseDOM() || !window.matchMedia) return;
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const listener = (event: MediaQueryListEvent) => {
+      const nextTheme: ResolvedTheme = event.matches ? "dark" : "light";
+
+      setResolvedTheme(nextTheme);
+      applyThemeToDOM(nextTheme, true);
+    };
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", listener);
+      return () => mediaQuery.removeEventListener("change", listener);
+    }
+
+    // Fallback anciens navigateurs
+    const legacyMediaQuery = mediaQuery as MediaQueryList & {
+      addListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+      removeListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+    };
+
+    legacyMediaQuery.addListener?.(listener);
+
     return () => {
-      if (transitionTimerRef.current) {
-        clearTimeout(transitionTimerRef.current);
-      }
+      legacyMediaQuery.removeListener?.(listener);
+    };
+  }, [themeChoice, applyThemeToDOM]);
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  ACCESSIBILITY PREFERENCES                                    */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (!canUseDOM() || !window.matchMedia) return;
+
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const contrastQuery = window.matchMedia("(prefers-contrast: high)");
+
+    const updateMotion = (matches: boolean) => {
+      setPrefersReducedMotion(matches);
+      document.documentElement.classList.toggle("reduce-motion", matches);
+    };
+
+    const updateContrast = (matches: boolean) => {
+      setPrefersHighContrast(matches);
+      document.documentElement.classList.toggle("high-contrast", matches);
+    };
+
+    updateMotion(motionQuery.matches);
+    updateContrast(contrastQuery.matches);
+
+    const motionListener = (event: MediaQueryListEvent) => updateMotion(event.matches);
+    const contrastListener = (event: MediaQueryListEvent) => updateContrast(event.matches);
+
+    if (typeof motionQuery.addEventListener === "function") {
+      motionQuery.addEventListener("change", motionListener);
+      contrastQuery.addEventListener("change", contrastListener);
+    } else {
+      const legacyMotion = motionQuery as MediaQueryList & {
+        addListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+        removeListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+      };
+
+      const legacyContrast = contrastQuery as MediaQueryList & {
+        addListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+        removeListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+      };
+
+      legacyMotion.addListener?.(motionListener);
+      legacyContrast.addListener?.(contrastListener);
+
+      return () => {
+        legacyMotion.removeListener?.(motionListener);
+        legacyContrast.removeListener?.(contrastListener);
+      };
+    }
+
+    return () => {
+      motionQuery.removeEventListener("change", motionListener);
+      contrastQuery.removeEventListener("change", contrastListener);
     };
   }, []);
 
@@ -319,78 +438,108 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   /* ───────────────────────────────────────────────────────────── */
 
   const setThemeChoice = useCallback((choice: ThemeChoice) => {
-    if (!VALID_CHOICES.includes(choice)) {
-      console.warn(`Choix de thème invalide: ${choice}`);
-      return;
-    }
-    setLocalStorageThemeChoice(choice);
+    if (!VALID_CHOICES.has(choice)) return;
+    writeThemeChoice(choice);
   }, []);
 
-  const toggleTheme = useCallback(() => {
-    const currentResolved = resolveTheme(themeChoice);
-    const nextChoice: ThemeChoice = currentResolved === "dark" ? "light" : "dark";
-    setLocalStorageThemeChoice(nextChoice);
-  }, [themeChoice]);
-
-  /* ───────────────────────────────────────────────────────────── */
-  /*  VALEUR DU CONTEXTE                                           */
-  /* ───────────────────────────────────────────────────────────── */
-
-  const value: ThemeContextType = {
-    themeChoice,
-    resolvedTheme,
-    theme: resolvedTheme,
-    setThemeChoice,
-    toggleTheme,
-    isTransitioning,
-    prefersReducedMotion,
-    prefersHighContrast,
-  };
-
-  return (
-    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+  const setThemeMode = useCallback(
+    (mode: ThemeMode) => {
+      setThemeChoice(mode === "auto" ? "system" : mode);
+    },
+    [setThemeChoice]
   );
+
+  const cycleTheme = useCallback(() => {
+    const order: ThemeChoice[] = ["system", "light", "dark"];
+    const currentIndex = order.indexOf(themeChoice);
+    const nextIndex = (currentIndex + 1) % order.length;
+
+    setThemeChoice(order[nextIndex]);
+  }, [setThemeChoice, themeChoice]);
+
+  const toggleTheme = useCallback(() => {
+    setThemeChoice(resolvedTheme === "dark" ? "light" : "dark");
+  }, [resolvedTheme, setThemeChoice]);
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  CONTEXT VALUE                                                */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const themeMode: ThemeMode = themeChoice === "system" ? "auto" : themeChoice;
+
+  const value = useMemo<ThemeContextValue>(
+    () => ({
+      themeChoice,
+      themeMode,
+      resolvedTheme,
+      theme: resolvedTheme,
+      setThemeChoice,
+      setThemeMode,
+      cycleTheme,
+      onThemeCycle: cycleTheme,
+      toggleTheme,
+      isTransitioning,
+      isHydrated,
+      prefersReducedMotion,
+      prefersHighContrast,
+    }),
+    [
+      themeChoice,
+      themeMode,
+      resolvedTheme,
+      setThemeChoice,
+      setThemeMode,
+      cycleTheme,
+      toggleTheme,
+      isTransitioning,
+      isHydrated,
+      prefersReducedMotion,
+      prefersHighContrast,
+    ]
+  );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  HOOKS CONSOMMATEURS                                            */
+/*  HOOKS                                                          */
 /* ═══════════════════════════════════════════════════════════════ */
 
-export function useTheme() {
+export function useTheme(): ThemeContextValue {
   const context = useContext(ThemeContext);
+
   if (!context) {
-    throw new Error("useTheme doit être utilisé dans un <ThemeProvider>");
+    throw new Error("useTheme doit être utilisé dans un <ThemeProvider>.");
   }
+
   return context;
 }
 
-/**
- * Hook plus fin : retourne uniquement le thème résolu.
- */
 export function useResolvedTheme(): ResolvedTheme {
   return useTheme().resolvedTheme;
 }
 
-/**
- * Hook pour la bascule simple.
- */
-export function useToggleTheme() {
-  const { toggleTheme } = useTheme();
-  return toggleTheme;
+export function useThemeMode(): ThemeMode {
+  return useTheme().themeMode;
 }
 
-/**
- * Hook indiquant si le thème est en cours de transition.
- */
-export function useThemeTransition() {
-  const { isTransitioning } = useTheme();
-  return isTransitioning;
+export function useToggleTheme(): () => void {
+  return useTheme().toggleTheme;
 }
 
-/**
- * Hook pour les préférences d'accessibilité.
- */
+export function useCycleTheme(): () => void {
+  return useTheme().cycleTheme;
+}
+
+export function useThemeTransition(): boolean {
+  return useTheme().isTransitioning;
+}
+
 export function useAccessibilityPreferences() {
   const { prefersReducedMotion, prefersHighContrast } = useTheme();
-  return { prefersReducedMotion, prefersHighContrast };
+
+  return {
+    prefersReducedMotion,
+    prefersHighContrast,
+  };
 }

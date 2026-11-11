@@ -2,196 +2,325 @@
 'use client'
 
 import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  forwardRef,
-  useImperativeHandle,
   createContext,
+  forwardRef,
+  useCallback,
   useContext,
-  ReactNode,
+  useEffect,
+  useImperativeHandle,
   useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
 } from 'react'
+
 import { cn } from '@/lib/utils'
-import { motion, AnimatePresence, useScroll, useSpring, useMotionValueEvent } from 'framer-motion'
-import { ArrowUp, ArrowDown, ChevronUp, ChevronDown } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { ArrowDown, ChevronUp } from 'lucide-react'
 import { Tooltip } from './Tooltip'
 
-/* ========================================================================
-   Contexte global du ScrollSpy (partage l'état du scroll)
-   ======================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONTEXTE GLOBAL DU SCROLL                                      */
+/* ═══════════════════════════════════════════════════════════════ */
+
 interface ScrollContextValue {
   scrollY: number
+  scrollX: number
   scrollHeight: number
+  scrollWidth: number
   clientHeight: number
+  clientWidth: number
   progress: number
   isScrolled: boolean
   isAtBottom: boolean
   scrollToTop: (behavior?: ScrollBehavior) => void
   scrollToBottom: (behavior?: ScrollBehavior) => void
-  scrollTo: (options: { top?: number; left?: number; behavior?: ScrollBehavior }) => void
-  scrollX: number
-  scrollWidth: number
-  clientWidth: number
+  scrollTo: (options: {
+    top?: number
+    left?: number
+    behavior?: ScrollBehavior
+  }) => void
 }
 
 const ScrollContext = createContext<ScrollContextValue | null>(null)
 
-export const useScrollSpy = () => {
-  const ctx = useContext(ScrollContext)
-  if (!ctx) throw new Error('useScrollSpy must be used within a ScrollProvider')
-  return ctx
+export function useScrollSpy(): ScrollContextValue {
+  const context = useContext(ScrollContext)
+
+  if (!context) {
+    throw new Error('useScrollSpy must be used within a ScrollProvider')
+  }
+
+  return context
 }
 
-export const ScrollProvider = ({ children }: { children: ReactNode }) => {
-  const [scrollY, setScrollY] = useState(0)
-  const [scrollX, setScrollX] = useState(0)
-  const [scrollHeight, setScrollHeight] = useState(0)
-  const [scrollWidth, setScrollWidth] = useState(0)
-  const [clientHeight, setClientHeight] = useState(0)
-  const [clientWidth, setClientWidth] = useState(0)
+interface ScrollProviderProps {
+  children: ReactNode
+}
+
+export function ScrollProvider({ children }: ScrollProviderProps) {
+  const [state, setState] = useState({
+    scrollY: 0,
+    scrollX: 0,
+    scrollHeight: 0,
+    scrollWidth: 0,
+    clientHeight: 0,
+    clientWidth: 0,
+  })
 
   useEffect(() => {
-    const handleScroll = () => {
-      setScrollY(window.scrollY)
-      setScrollX(window.scrollX)
-      setScrollHeight(document.documentElement.scrollHeight)
-      setScrollWidth(document.documentElement.scrollWidth)
-      setClientHeight(window.innerHeight)
-      setClientWidth(window.innerWidth)
+    if (typeof window === 'undefined') return
+
+    let frame = 0
+
+    const update = () => {
+      const nextState = {
+        scrollY: window.scrollY,
+        scrollX: window.scrollX,
+        scrollHeight: document.documentElement.scrollHeight,
+        scrollWidth: document.documentElement.scrollWidth,
+        clientHeight: window.innerHeight,
+        clientWidth: window.innerWidth,
+      }
+
+      setState((previous) => {
+        const isSame =
+          Math.abs(previous.scrollY - nextState.scrollY) < 1 &&
+          Math.abs(previous.scrollX - nextState.scrollX) < 1 &&
+          previous.scrollHeight === nextState.scrollHeight &&
+          previous.scrollWidth === nextState.scrollWidth &&
+          previous.clientHeight === nextState.clientHeight &&
+          previous.clientWidth === nextState.clientWidth
+
+        return isSame ? previous : nextState
+      })
+
+      frame = 0
     }
 
-    handleScroll()
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    window.addEventListener('resize', handleScroll, { passive: true })
+    const handleScrollOrResize = () => {
+      if (!frame) {
+        frame = requestAnimationFrame(update)
+      }
+    }
+
+    update()
+
+    window.addEventListener('scroll', handleScrollOrResize, { passive: true })
+    window.addEventListener('resize', handleScrollOrResize, { passive: true })
+
     return () => {
-      window.removeEventListener('scroll', handleScroll)
-      window.removeEventListener('resize', handleScroll)
+      window.removeEventListener('scroll', handleScrollOrResize)
+      window.removeEventListener('resize', handleScrollOrResize)
+
+      if (frame) {
+        cancelAnimationFrame(frame)
+      }
     }
   }, [])
 
-  const progress = scrollHeight > clientHeight ? scrollY / (scrollHeight - clientHeight) : 0
-  const isScrolled = scrollY > 300
-  const isAtBottom = Math.ceil(scrollY + clientHeight) >= scrollHeight - 10
+  const maxScrollY = Math.max(0, state.scrollHeight - state.clientHeight)
+
+  const progress = useMemo(() => {
+    if (maxScrollY <= 0) return 0
+    return Math.min(Math.max(state.scrollY / maxScrollY, 0), 1)
+  }, [maxScrollY, state.scrollY])
+
+  const isScrolled = state.scrollY > 300
+
+  const isAtBottom = useMemo(() => {
+    if (maxScrollY <= 0) return true
+    return state.scrollY >= maxScrollY - 10
+  }, [maxScrollY, state.scrollY])
 
   const scrollToTop = useCallback((behavior: ScrollBehavior = 'smooth') => {
     window.scrollTo({ top: 0, behavior })
   }, [])
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    window.scrollTo({ top: document.documentElement.scrollHeight, behavior })
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior,
+    })
   }, [])
 
-  const scrollTo = useCallback((options: { top?: number; left?: number; behavior?: ScrollBehavior }) => {
-    window.scrollTo({ top: options.top, left: options.left, behavior: options.behavior ?? 'smooth' })
-  }, [])
-
-  return (
-    <ScrollContext.Provider
-      value={{
-        scrollY,
-        scrollHeight,
-        clientHeight,
-        progress,
-        isScrolled,
-        isAtBottom,
-        scrollToTop,
-        scrollToBottom,
-        scrollTo,
-        scrollX,
-        scrollWidth,
-        clientWidth,
-      }}
-    >
-      {children}
-    </ScrollContext.Provider>
+  const scrollTo = useCallback(
+    (options: { top?: number; left?: number; behavior?: ScrollBehavior }) => {
+      window.scrollTo({
+        top: options.top,
+        left: options.left,
+        behavior: options.behavior ?? 'smooth',
+      })
+    },
+    []
   )
+
+  const value = useMemo<ScrollContextValue>(
+    () => ({
+      scrollY: state.scrollY,
+      scrollX: state.scrollX,
+      scrollHeight: state.scrollHeight,
+      scrollWidth: state.scrollWidth,
+      clientHeight: state.clientHeight,
+      clientWidth: state.clientWidth,
+      progress,
+      isScrolled,
+      isAtBottom,
+      scrollToTop,
+      scrollToBottom,
+      scrollTo,
+    }),
+    [
+      isAtBottom,
+      isScrolled,
+      progress,
+      scrollTo,
+      scrollToBottom,
+      scrollToTop,
+      state.clientHeight,
+      state.clientWidth,
+      state.scrollHeight,
+      state.scrollWidth,
+      state.scrollX,
+      state.scrollY,
+    ]
+  )
+
+  return <ScrollContext.Provider value={value}>{children}</ScrollContext.Provider>
 }
 
-/* ========================================================================
-   Types du composant ScrollToTop
-   ======================================================================== */
-type ScrollToTopVariant = 'circle' | 'rounded' | 'pill' | 'icon' | 'minimal' | 'discreet'
-type ScrollToTopPosition = 'bottom-right' | 'bottom-left' | 'bottom-center' | 'custom'
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES SCROLL TO TOP                                            */
+/* ═══════════════════════════════════════════════════════════════ */
+
+type ScrollToTopVariant =
+  | 'circle'
+  | 'rounded'
+  | 'pill'
+  | 'icon'
+  | 'minimal'
+  | 'discreet'
+
+type ScrollToTopPosition =
+  | 'bottom-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'custom'
+
 type ScrollToTopSize = 'sm' | 'md' | 'lg'
 
 interface ScrollToTopProps {
-  /** Variante de forme */
+  /** Variante visuelle du bouton */
   variant?: ScrollToTopVariant
-  /** Position à l'écran */
+
+  /** Position à l’écran */
   position?: ScrollToTopPosition
-  /** Position custom (object style) quand position === 'custom' */
-  customPosition?: React.CSSProperties
-  /** Taille */
+
+  /** Style personnalisé quand position === 'custom' */
+  customPosition?: CSSProperties
+
+  /** Taille du bouton */
   size?: ScrollToTopSize
-  /** Seuil de défilement (px) avant apparition */
+
+  /** Seuil de scroll avant affichage */
   threshold?: number
-  /** Affiche la progression circulaire (uniquement pour variant circle) */
+
+  /** Affiche la progression circulaire, uniquement pour variant circle */
   showProgress?: boolean
+
   /** Couleur de la progression */
   progressColor?: string
+
   /** Épaisseur du cercle de progression */
   progressThickness?: number
-  /** Tooltip au survol */
+
+  /** Texte du tooltip */
   tooltip?: string
+
   /** Désactive le tooltip */
   disableTooltip?: boolean
-  /** Masquer le bouton retour en haut */
+
+  /** Force la masquer */
   hide?: boolean
-  /** Animation d'entrée */
+
+  /** Active ou désactive l’animation d’entrée/sortie */
   animate?: boolean
-  /** Fonction de callback avant de défiler */
+
+  /** Callback avant scroll */
   onBeforeScroll?: () => void
-  /** Affiche aussi un bouton "aller en bas" */
+
+  /** Affiche aussi un bouton “aller en bas” */
   showScrollToBottom?: boolean
-  /** Icône personnalisée */
+
+  /** Icône personnalisée pour remonter */
   icon?: ReactNode
-  /** Icône pour aller en bas */
+
+  /** Icône personnalisée pour descendre */
   bottomIcon?: ReactNode
-  /** Classe additionnelle */
+
+  /** Classes additionnelles */
   className?: string
-  /** Offset depuis le bord (px) */
+
+  /** Offset depuis le bas de l’écran */
   offset?: number
+
   /** Z-index */
   zIndex?: number
-  /** Désactiver le lissage (scroll instantané) */
+
+  /** Scroll fluide */
   smooth?: boolean
-  /** Masquer sur mobile (écran < 768px) */
+
+  /** Masque sur mobile */
   hideOnMobile?: boolean
-  /** Masquer sur desktop */
+
+  /** Masque sur desktop */
   hideOnDesktop?: boolean
-  /** Afficher un indicateur de pourcentage dans le bouton (variant circle) */
+
+  /** Affiche le pourcentage dans le bouton circle */
   showPercentage?: boolean
+
   /** Couleur de fond personnalisée */
   bgColor?: string
-  /** Couleur du texte personnalisée */
+
+  /** Couleur de texte personnalisée */
   textColor?: string
-  /** Style de bordure personnalisé */
+
+  /** Bordure personnalisée */
   borderColor?: string
-  /** Ombre portée personnalisée */
+
+  /** Ombre personnalisée */
   shadow?: string
-  /** Durée de l'animation d'entrée/sortie (secondes) */
+
+  /** Durée d’animation */
   animationDuration?: number
-  /** Raccourci clavier pour remonter (ex: 'c' pour Ctrl+C, non implémenté ici) */
+
+  /** Raccourci clavier simple, ex: 't' */
   keyboardShortcut?: string
-  /** Désactiver le bouton pendant le défilement */
+
+  /** Désactive le bouton pendant le scroll */
   disableDuringScroll?: boolean
-  /** Conteneur scrollable (pour les conteneurs overflow) – si fourni, utilise le scroll de ce conteneur */
+
+  /** Conteneur scrollable personnalisé */
   scrollContainerRef?: React.RefObject<HTMLElement>
 }
 
-const positionClasses: Record<ScrollToTopPosition, string> = {
-  'bottom-right': 'bottom-4 right-4',
-  'bottom-left': 'bottom-4 left-4',
-  'bottom-center': 'bottom-4 left-1/2 -translate-x-1/2',
-  custom: '',
-}
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONSTANTES PREMIUM                                             */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const DEFAULT_PROGRESS_COLOR = 'var(--color-accent)'
 
 const sizeMap: Record<ScrollToTopSize, string> = {
   sm: 'h-8 w-8',
   md: 'h-10 w-10',
   lg: 'h-12 w-12',
+}
+
+const pillSizeMap: Record<ScrollToTopSize, string> = {
+  sm: 'h-8 px-3',
+  md: 'h-9 px-3.5',
+  lg: 'h-10 px-4',
 }
 
 const iconSizeMap: Record<ScrollToTopSize, number> = {
@@ -200,9 +329,83 @@ const iconSizeMap: Record<ScrollToTopSize, number> = {
   lg: 24,
 }
 
-/* ========================================================================
-   Composant ScrollToTop
-   ======================================================================== */
+const pxSizeMap: Record<ScrollToTopSize, number> = {
+  sm: 32,
+  md: 40,
+  lg: 48,
+}
+
+const variantClasses: Record<ScrollToTopVariant, string> = {
+  circle:
+    'rounded-full border border-line bg-surface/90 text-fg-muted shadow-card backdrop-blur-md ' +
+    'hover:border-accent/30 hover:text-accent hover:shadow-card-hover',
+
+  rounded:
+    'rounded-xl border border-line bg-surface/90 text-fg-muted shadow-card backdrop-blur-md ' +
+    'hover:border-accent/30 hover:text-accent hover:shadow-card-hover',
+
+  pill:
+    'rounded-full border border-line bg-surface/90 text-fg-muted shadow-card backdrop-blur-md ' +
+    'hover:border-accent/30 hover:text-accent hover:shadow-card-hover',
+
+  icon:
+    'rounded-full bg-transparent text-fg-muted ' +
+    'hover:bg-muted hover:text-accent',
+
+  minimal:
+    'rounded-full bg-transparent text-fg-subtle ' +
+    'hover:text-accent',
+
+  discreet:
+    'rounded-full border border-transparent bg-surface/70 text-fg-subtle opacity-80 shadow-none backdrop-blur-sm ' +
+    'hover:border-line hover:bg-surface hover:text-accent hover:opacity-100 hover:shadow-card',
+}
+
+const baseButtonClasses =
+  'relative inline-flex items-center justify-center overflow-hidden transition-all duration-200 ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ' +
+  'disabled:pointer-events-none disabled:opacity-50'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  HELPERS                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function getPositionStyle(
+  position: ScrollToTopPosition,
+  offset: number,
+  customPosition: CSSProperties | undefined,
+  zIndex: number
+): CSSProperties {
+  const style: CSSProperties = { zIndex }
+
+  if (position === 'custom') {
+    return {
+      ...style,
+      ...customPosition,
+    }
+  }
+
+  style.bottom = offset
+
+  if (position === 'bottom-right') {
+    style.right = offset
+  } else if (position === 'bottom-left') {
+    style.left = offset
+  } else if (position === 'bottom-center') {
+    style.left = 0
+    style.right = 0
+    style.marginInline = 'auto'
+    style.width = 'fit-content'
+  }
+
+  return style
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SCROLL TO TOP                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
+
 const ScrollToTop = forwardRef<HTMLButtonElement, ScrollToTopProps>(
   (
     {
@@ -212,7 +415,7 @@ const ScrollToTop = forwardRef<HTMLButtonElement, ScrollToTopProps>(
       size = 'md',
       threshold = 300,
       showProgress = false,
-      progressColor = 'var(--color-brand-500)',
+      progressColor = DEFAULT_PROGRESS_COLOR,
       progressThickness = 3,
       tooltip = 'Retour en haut',
       disableTooltip = false,
@@ -240,107 +443,221 @@ const ScrollToTop = forwardRef<HTMLButtonElement, ScrollToTopProps>(
     },
     ref
   ) => {
-    const [isVisible, setIsVisible] = useState(false)
-    const [progress, setProgress] = useState(0)
-    const [isMobile, setIsMobile] = useState(false)
-    const [scrolling, setScrolling] = useState(false)
+    const prefersReducedMotion = useReducedMotion()
+    const shouldReduceMotion = Boolean(prefersReducedMotion)
+
+    const scrollContext = useContext(ScrollContext)
+    const useGlobalScroll = Boolean(scrollContext) && !scrollContainerRef
+
     const buttonRef = useRef<HTMLButtonElement>(null)
     const bottomButtonRef = useRef<HTMLButtonElement>(null)
-    const scrollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-    useImperativeHandle(ref, () => buttonRef.current as HTMLButtonElement)
+    const [localProgress, setLocalProgress] = useState(0)
+    const [localVisible, setLocalVisible] = useState(false)
+    const [isScrolling, setIsScrolling] = useState(false)
 
-    // Détection du support mobile
-    useEffect(() => {
-      const mq = window.matchMedia('(max-width: 767px)')
-      setIsMobile(mq.matches)
-      const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-      mq.addEventListener('change', handler)
-      return () => mq.removeEventListener('change', handler)
-    }, [])
+    useImperativeHandle(ref, () => buttonRef.current as HTMLButtonElement, [])
 
-    // Gestion du défilement
-    useEffect(() => {
-      const container = scrollContainerRef?.current ?? window
+    const progress = useGlobalScroll ? scrollContext!.progress : localProgress
 
-      const handleScroll = () => {
-        const scrollY = container instanceof Window ? window.scrollY : container.scrollTop
-        const docHeight =
-          container instanceof Window
-            ? document.documentElement.scrollHeight - window.innerHeight
-            : container.scrollHeight - container.clientHeight
+    const isVisible = useGlobalScroll
+      ? scrollContext!.scrollY > threshold && !hide
+      : localVisible
 
-        const currentProgress = docHeight > 0 ? Math.min(scrollY / docHeight, 1) : 0
-        setProgress(currentProgress)
-        setIsVisible(scrollY > threshold && !hide)
-
-        if (disableDuringScroll) {
-          setScrolling(true)
-          if (scrollTimeout.current) clearTimeout(scrollTimeout.current)
-          scrollTimeout.current = setTimeout(() => setScrolling(false), 150)
-        }
-      }
-
-      handleScroll()
-      container.addEventListener('scroll', handleScroll, { passive: true })
-      window.addEventListener('resize', handleScroll, { passive: true })
-      return () => {
-        container.removeEventListener('scroll', handleScroll)
-        window.removeEventListener('resize', handleScroll)
-        if (scrollTimeout.current) clearTimeout(scrollTimeout.current)
-      }
-    }, [threshold, hide, disableDuringScroll, scrollContainerRef])
-
-    // Raccourci clavier (si fourni)
-    useEffect(() => {
-      if (!keyboardShortcut) return
-      const handler = (e: KeyboardEvent) => {
-        if (e.key === keyboardShortcut && !e.ctrlKey && !e.metaKey && !e.altKey) {
-          scrollToTop()
-        }
-      }
-      window.addEventListener('keydown', handler)
-      return () => window.removeEventListener('keydown', handler)
-    }, [keyboardShortcut])
+    const behavior: ScrollBehavior =
+      smooth && !shouldReduceMotion ? 'smooth' : 'auto'
 
     const scrollToTop = useCallback(() => {
       onBeforeScroll?.()
+
       const container = scrollContainerRef?.current
+
       if (container) {
-        container.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' })
+        container.scrollTo({ top: 0, behavior })
       } else {
-        window.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' })
+        window.scrollTo({ top: 0, behavior })
       }
-    }, [onBeforeScroll, smooth, scrollContainerRef])
+    }, [behavior, onBeforeScroll, scrollContainerRef])
 
     const scrollToBottom = useCallback(() => {
       const container = scrollContainerRef?.current
+
       if (container) {
-        container.scrollTo({ top: container.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior,
+        })
       } else {
-        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+        window.scrollTo({
+          top: document.documentElement.scrollHeight,
+          behavior,
+        })
       }
-    }, [smooth, scrollContainerRef])
+    }, [behavior, scrollContainerRef])
 
-    // Calcul du cercle SVG pour la progression
-    const radius = size === 'sm' ? 12 : size === 'lg' ? 16 : 14
+    /* ─────────────────────────────────────────────────────────── */
+    /*  SCROLL LOCAL                                               */
+    /*                                                             */
+    /*  Désactivé si ScrollProvider est déjà présent et qu’aucun   */
+    /*  conteneur personnalisé n’est fourni.                       */
+    /* ─────────────────────────────────────────────────────────── */
+
+    useEffect(() => {
+      if (useGlobalScroll) return
+
+      const container = scrollContainerRef?.current
+      const isWindow = !container
+
+      let frame = 0
+
+      const update = () => {
+        const currentScrollY = isWindow
+          ? window.scrollY
+          : container!.scrollTop
+
+        const maxScroll = isWindow
+          ? document.documentElement.scrollHeight - window.innerHeight
+          : container!.scrollHeight - container!.clientHeight
+
+        const nextProgress =
+          maxScroll > 0
+            ? Math.min(Math.max(currentScrollY / maxScroll, 0), 1)
+            : 0
+
+        const nextVisible = currentScrollY > threshold && !hide
+
+        setLocalProgress((previous) =>
+          Math.abs(previous - nextProgress) < 0.001 ? previous : nextProgress
+        )
+
+        setLocalVisible((previous) =>
+          previous === nextVisible ? previous : nextVisible
+        )
+
+        if (disableDuringScroll) {
+          setIsScrolling(true)
+
+          if (scrollTimeoutRef.current) {
+            clearTimeout(scrollTimeoutRef.current)
+          }
+
+          scrollTimeoutRef.current = setTimeout(() => {
+            setIsScrolling(false)
+          }, 150)
+        }
+
+        frame = 0
+      }
+
+      const handleScroll = () => {
+        if (!frame) {
+          frame = requestAnimationFrame(update)
+        }
+      }
+
+      const target = (isWindow ? window : container!) as EventTarget
+
+      update()
+
+      target.addEventListener('scroll', handleScroll, { passive: true })
+      window.addEventListener('resize', handleScroll, { passive: true })
+
+      return () => {
+        target.removeEventListener('scroll', handleScroll)
+        window.removeEventListener('resize', handleScroll)
+
+        if (frame) {
+          cancelAnimationFrame(frame)
+        }
+
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current)
+        }
+      }
+    }, [
+      disableDuringScroll,
+      hide,
+      scrollContainerRef,
+      threshold,
+      useGlobalScroll,
+    ])
+
+    /* ─────────────────────────────────────────────────────────── */
+    /*  RACCOURCI CLAVIER                                          */
+    /* ─────────────────────────────────────────────────────────── */
+
+    useEffect(() => {
+      if (!keyboardShortcut) return
+
+      const normalizedShortcut = keyboardShortcut.toLowerCase()
+
+      const handleKeyDown = (event: KeyboardEvent) => {
+        const targetElement = event.target as HTMLElement | null
+
+        const isEditable =
+          targetElement?.tagName === 'INPUT' ||
+          targetElement?.tagName === 'TEXTAREA' ||
+          targetElement?.isContentEditable
+
+        if (isEditable) return
+
+        if (
+          event.key.toLowerCase() === normalizedShortcut &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
+          event.preventDefault()
+          scrollToTop()
+        }
+      }
+
+      window.addEventListener('keydown', handleKeyDown)
+
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown)
+      }
+    }, [keyboardShortcut, scrollToTop])
+
+    /* ─────────────────────────────────────────────────────────── */
+    /*  PROGRESSION CIRCULAIRE                                     */
+    /* ─────────────────────────────────────────────────────────── */
+
+    const sizePx = pxSizeMap[size]
+    const center = sizePx / 2
+    const radius = Math.max(
+      8,
+      (sizePx - progressThickness * 2 - 6) / 2
+    )
     const circumference = 2 * Math.PI * radius
-    const strokeDashoffset = circumference - progress * circumference
+    const strokeDashoffset = circumference * (1 - progress)
 
-    const progressCircle = showProgress && variant === 'circle' && (
-      <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 32 32">
+    const shouldShowProgressCircle =
+      showProgress && variant === 'circle'
+
+    const shouldShowPercentage =
+      showPercentage && variant === 'circle'
+
+    const progressCircle = shouldShowProgressCircle && (
+      <svg
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 h-full w-full -rotate-90"
+        viewBox={`0 0 ${sizePx} ${sizePx}`}
+      >
         <circle
-          cx="16"
-          cy="16"
+          cx={center}
+          cy={center}
           r={radius}
           fill="none"
           stroke="currentColor"
           strokeWidth={progressThickness}
-          className="text-neutral-200 dark:text-neutral-700"
+          className="text-line"
         />
+
         <circle
-          cx="16"
-          cy="16"
+          cx={center}
+          cy={center}
           r={radius}
           fill="none"
           stroke={progressColor}
@@ -348,70 +665,89 @@ const ScrollToTop = forwardRef<HTMLButtonElement, ScrollToTopProps>(
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
-          className="transition-all duration-75"
+          style={{
+            transition: shouldReduceMotion
+              ? undefined
+              : 'stroke-dashoffset 75ms linear',
+          }}
         />
       </svg>
     )
 
-    const percentageDisplay = showPercentage && variant === 'circle' && (
-      <span className="absolute text-[10px] font-bold text-neutral-600 dark:text-neutral-300">
-        {Math.round(progress * 100)}
-      </span>
-    )
+    /* ─────────────────────────────────────────────────────────── */
+    /*  BOUTON HAUT                                                */
+    /* ─────────────────────────────────────────────────────────── */
 
-    const buttonContent = (
+    const buttonSizeClass =
+      variant === 'pill' ? pillSizeMap[size] : sizeMap[size]
+
+    const topButton = (
       <button
         ref={buttonRef}
+        type="button"
         onClick={scrollToTop}
-        disabled={disableDuringScroll && scrolling}
+        disabled={disableDuringScroll && isScrolling}
         className={cn(
-          'relative flex items-center justify-center transition-all duration-300',
-          'bg-white dark:bg-neutral-800 shadow-lg hover:shadow-xl',
-          'border border-neutral-200 dark:border-neutral-700',
-          'text-neutral-700 dark:text-neutral-300 hover:text-brand-600 dark:hover:text-brand-400',
-          'focus-visible:outline-2 focus-visible:outline-brand-500',
-          variant === 'circle' || variant === 'minimal' || variant === 'discreet'
-            ? 'rounded-full'
-            : variant === 'pill'
-              ? 'rounded-full px-4 py-2'
-              : 'rounded-xl',
-          variant === 'discreet' && 'opacity-60 hover:opacity-100',
-          sizeMap[size],
+          baseButtonClasses,
+          variantClasses[variant],
+          buttonSizeClass,
           className
         )}
         style={{
           backgroundColor: bgColor,
           color: textColor,
-          borderColor: borderColor,
+          borderColor,
           boxShadow: shadow,
         }}
-        aria-label="Retour en haut de la page"
+        aria-label={tooltip || 'Retour en haut de la page'}
       >
-        {icon || <ChevronUp size={iconSizeMap[size]} />}
-        {variant === 'pill' && <span className="ml-2 text-sm font-medium">Haut</span>}
+        {shouldShowPercentage ? (
+          <span className="text-[10px] font-bold tabular-nums">
+            {Math.round(progress * 100)}
+          </span>
+        ) : (
+          icon || <ChevronUp size={iconSizeMap[size]} />
+        )}
+
+        {variant === 'pill' && (
+          <span className="ml-2 hidden text-sm font-medium sm:inline">
+            Haut
+          </span>
+        )}
+
         {progressCircle}
-        {percentageDisplay}
       </button>
     )
 
-    const bottomButton = showScrollToBottom && (
+    const wrappedTopButton =
+      disableTooltip || !tooltip ? (
+        topButton
+      ) : (
+        <Tooltip content={tooltip}>{topButton}</Tooltip>
+      )
+
+    /* ─────────────────────────────────────────────────────────── */
+    /*  BOUTON BAS                                                 */
+    /* ─────────────────────────────────────────────────────────── */
+
+    const showBottomButton =
+      showScrollToBottom && progress < 0.99
+
+    const bottomButton = showBottomButton && (
       <button
         ref={bottomButtonRef}
+        type="button"
         onClick={scrollToBottom}
         className={cn(
-          'relative flex items-center justify-center mt-3 transition-all duration-300',
-          'bg-white dark:bg-neutral-800 shadow-lg hover:shadow-xl',
-          'border border-neutral-200 dark:border-neutral-700',
-          'text-neutral-700 dark:text-neutral-300 hover:text-brand-600 dark:hover:text-brand-400',
-          'focus-visible:outline-2 focus-visible:outline-brand-500',
-          'rounded-full',
+          baseButtonClasses,
+          variantClasses.circle,
           sizeMap[size],
-          variant === 'discreet' && 'opacity-60 hover:opacity-100',
+          variant === 'discreet' && 'opacity-80 hover:opacity-100'
         )}
         style={{
           backgroundColor: bgColor,
           color: textColor,
-          borderColor: borderColor,
+          borderColor,
           boxShadow: shadow,
         }}
         aria-label="Aller en bas de la page"
@@ -420,86 +756,116 @@ const ScrollToTop = forwardRef<HTMLButtonElement, ScrollToTopProps>(
       </button>
     )
 
-    const wrapper = (content: ReactNode) =>
-      disableTooltip ? (
-        content
-      ) : (
-        <Tooltip content={tooltip} position="left" delay={300}>
-          {content}
-        </Tooltip>
-      )
+    /* ─────────────────────────────────────────────────────────── */
+    /*  AFFICHAGE RESPONSIVE                                       */
+    /* ─────────────────────────────────────────────────────────── */
 
-    // Visibilité conditionnelle
-    const shouldHide =
-      hide ||
-      (hideOnMobile && isMobile) ||
-      (hideOnDesktop && !isMobile)
+    const displayClass = hideOnMobile
+      ? 'hidden md:flex'
+      : hideOnDesktop
+        ? 'flex md:hidden'
+        : 'flex'
+
+    const shouldAnimate = animate && !shouldReduceMotion
+
+    const positionStyle = getPositionStyle(
+      position,
+      offset,
+      customPosition,
+      zIndex
+    )
 
     return (
       <AnimatePresence>
-        {isVisible && !shouldHide && (
+        {isVisible && !hide && (
           <motion.div
-            initial={animate ? { opacity: 0, scale: 0.8, y: 10 } : false}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={animate ? { opacity: 0, scale: 0.8, y: 10 } : false}
-            transition={{ duration: animationDuration }}
-            className={cn(
-              'fixed flex flex-col items-center',
-              position === 'custom' ? '' : positionClasses[position]
-            )}
-            style={
-              position === 'custom'
-                ? { ...customPosition, zIndex }
-                : { zIndex, bottom: offset }
+            initial={
+              shouldAnimate
+                ? { opacity: 0, scale: 0.85, y: 12 }
+                : undefined
             }
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={
+              shouldAnimate
+                ? { opacity: 0, scale: 0.85, y: 12 }
+                : undefined
+            }
+            transition={{
+              duration: shouldAnimate ? animationDuration : 0,
+              ease: 'easeOut',
+            }}
+            className={cn(
+              'fixed flex flex-col items-center gap-2',
+              displayClass,
+              className
+            )}
+            style={positionStyle}
           >
-            <div className="flex flex-col items-center gap-2">
-              {wrapper(buttonContent)}
-              {bottomButton}
-            </div>
+            {wrappedTopButton}
+            {bottomButton}
           </motion.div>
         )}
       </AnimatePresence>
     )
   }
 )
+
 ScrollToTop.displayName = 'ScrollToTop'
 
-/* ========================================================================
-   Composant ScrollProgressBar (barre horizontale en haut de page)
-   ======================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SCROLL PROGRESS BAR                                            */
+/* ═══════════════════════════════════════════════════════════════ */
+
 interface ScrollProgressBarProps {
   /** Hauteur de la barre */
   height?: number
-  /** Couleur de la barre (classe Tailwind ou CSS) */
+
+  /** Couleur unie */
   color?: string
-  /** Dégradé (ex: 'from-brand-500 to-accent-500') */
+
+  /**
+   * Dégradé CSS personnalisé.
+   * Exemple : 'linear-gradient(to right, #1d3ab8, #172f91)'
+   *
+   * Si une ancienne classe Tailwind type 'from-gold-400...' est passée,
+   * elle est ignorée au profit du dégradé premium par défaut.
+   */
   gradient?: string
-  /** Position (top, bottom) */
+
+  /** Position */
   position?: 'top' | 'bottom'
-  /** Arrondi */
+
+  /** Bord arrondi */
   rounded?: boolean
-  /** Masquer par défaut */
+
+  /** Masque complètement la barre */
   hidden?: boolean
+
   /** Z-index */
   zIndex?: number
-  /** Afficher un indicateur de pourcentage */
+
+  /** Affiche le pourcentage */
   showPercentage?: boolean
-  /** Ombre portée */
+
+  /** Ombre */
   shadow?: boolean
-  /** Animation de pulsation */
+
+  /** Animation pulse */
   pulse?: boolean
-  /** Style de transition */
+
+  /** Durée de transition */
   transitionDuration?: number
-  /** Toujours visible (même sans scroll) */
+
+  /** Toujours visible, même sans scroll */
   alwaysVisible?: boolean
-  /** Conteneur scrollable */
+
+  /** Conteneur scrollable personnalisé */
   scrollContainerRef?: React.RefObject<HTMLElement>
 }
 
-const ScrollProgressBar = ({
-  height = 4,
-  color = 'var(--color-brand-500)',
+export function ScrollProgressBar({
+  height = 3,
+  color,
   gradient,
   position = 'top',
   rounded = false,
@@ -511,64 +877,139 @@ const ScrollProgressBar = ({
   transitionDuration = 0.1,
   alwaysVisible = false,
   scrollContainerRef,
-}: ScrollProgressBarProps) => {
-  const [progress, setProgress] = useState(0)
+}: ScrollProgressBarProps) {
+  const prefersReducedMotion = useReducedMotion()
+  const shouldReduceMotion = Boolean(prefersReducedMotion)
+
+  const scrollContext = useContext(ScrollContext)
+  const useGlobalScroll = Boolean(scrollContext) && !scrollContainerRef
+
+  const [localProgress, setLocalProgress] = useState(0)
+
+  const progress = useGlobalScroll ? scrollContext!.progress : localProgress
 
   useEffect(() => {
-    const container = scrollContainerRef?.current ?? window
+    if (useGlobalScroll) return
+
+    const container = scrollContainerRef?.current
+    const isWindow = !container
+
+    let frame = 0
+
+    const update = () => {
+      const currentScrollY = isWindow
+        ? window.scrollY
+        : container!.scrollTop
+
+      const maxScroll = isWindow
+        ? document.documentElement.scrollHeight - window.innerHeight
+        : container!.scrollHeight - container!.clientHeight
+
+      const nextProgress =
+        maxScroll > 0
+          ? Math.min(Math.max(currentScrollY / maxScroll, 0), 1)
+          : 0
+
+      setLocalProgress((previous) =>
+        Math.abs(previous - nextProgress) < 0.001 ? previous : nextProgress
+      )
+
+      frame = 0
+    }
+
     const handleScroll = () => {
-      const scrollY = container instanceof Window ? window.scrollY : container.scrollTop
-      const docHeight =
-        container instanceof Window
-          ? document.documentElement.scrollHeight - window.innerHeight
-          : container.scrollHeight - container.clientHeight
-      setProgress(docHeight > 0 ? Math.min(scrollY / docHeight, 1) : 0)
+      if (!frame) {
+        frame = requestAnimationFrame(update)
+      }
     }
-    handleScroll()
-    container.addEventListener('scroll', handleScroll, { passive: true })
+
+    const target = (isWindow ? window : container!) as EventTarget
+
+    update()
+
+    target.addEventListener('scroll', handleScroll, { passive: true })
     window.addEventListener('resize', handleScroll, { passive: true })
+
     return () => {
-      container.removeEventListener('scroll', handleScroll)
+      target.removeEventListener('scroll', handleScroll)
       window.removeEventListener('resize', handleScroll)
+
+      if (frame) {
+        cancelAnimationFrame(frame)
+      }
     }
-  }, [scrollContainerRef])
+  }, [scrollContainerRef, useGlobalScroll])
+
+  const backgroundStyle = useMemo<CSSProperties>(() => {
+    if (color) {
+      return { backgroundColor: color }
+    }
+
+    if (gradient) {
+      const trimmed = gradient.trim()
+
+      if (
+        trimmed.startsWith('linear-gradient') ||
+        trimmed.startsWith('radial-gradient') ||
+        trimmed.startsWith('conic-gradient')
+      ) {
+        return { backgroundImage: trimmed }
+      }
+    }
+
+    return {
+      backgroundImage:
+        'linear-gradient(to right, var(--color-accent), var(--color-accent-hover))',
+    }
+  }, [color, gradient])
 
   if (hidden) return null
 
+  const percentage = Math.round(progress * 100)
+
   return (
     <div
+      role="progressbar"
+      aria-label="Progression de lecture"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percentage}
       className={cn(
-        'fixed left-0 right-0',
+        'fixed left-0 right-0 overflow-hidden',
         position === 'top' ? 'top-0' : 'bottom-0',
         rounded && 'rounded-full',
-        shadow && 'shadow-lg'
+        shadow && 'shadow-card'
       )}
       style={{ height, zIndex }}
     >
       <motion.div
         className={cn(
-          'h-full',
-          gradient ? `bg-gradient-to-r ${gradient}` : '',
-          pulse && 'animate-pulse'
+          'h-full origin-left',
+          pulse && !shouldReduceMotion && 'animate-pulse-soft'
         )}
-        style={{
-          width: `${alwaysVisible ? 100 : progress * 100}%`,
-          backgroundColor: gradient ? undefined : color,
+        style={backgroundStyle}
+        initial={false}
+        animate={{
+          width: alwaysVisible ? '100%' : `${progress * 100}%`,
         }}
-        initial={{ width: 0 }}
-        animate={{ width: `${alwaysVisible ? 100 : progress * 100}%` }}
-        transition={{ duration: transitionDuration }}
+        transition={{
+          duration: shouldReduceMotion ? 0 : transitionDuration,
+          ease: 'easeOut',
+        }}
       />
-      {showPercentage && (
+
+      {showPercentage && progress > 0.02 && (
         <div
-          className="absolute top-1/2 -translate-y-1/2 right-2 text-[10px] font-bold text-white drop-shadow"
-          style={{ textShadow: '0 0 4px rgba(0,0,0,0.5)' }}
+          className="absolute inset-y-0 right-2 flex items-center text-[10px] font-bold text-accent-contrast"
+          style={{ textShadow: '0 0 4px rgba(0,0,0,0.35)' }}
+          aria-hidden="true"
         >
-          {Math.round(progress * 100)}%
+          {percentage}%
         </div>
       )}
     </div>
   )
 }
 
-export { ScrollToTop, ScrollProgressBar }
+export { ScrollToTop }
+export default ScrollToTop

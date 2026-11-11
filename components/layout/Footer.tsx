@@ -1,599 +1,862 @@
 // components/layout/Footer.tsx
-"use client";
+'use client'
 
-import React, { useState, useEffect } from "react";
-import Link from "next/link";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import {
-  ShoppingBag,
-  Wallet,
-  Truck,
-  RefreshCw,
-  Shield,
-  Heart,
-  Smartphone,
-  Headset,
-  FileText,
-  Info,
-  HelpCircle,
-  Gem,
-  Facebook,
-  MessageCircle,
-  Instagram,
-  Linkedin,
-  Youtube,
-  ChevronDown,
-  ArrowUp,
-  MapPin,
-  Phone,
-  Mail,
-  Clock,
-  Store,
-  Users,
-  Star,
-  CreditCard,
-  Globe,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
+
+import Link from 'next/link'
+
+import { cn } from '@/lib/utils'
+
+import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  CreditCard,
+  FileText,
+  Headset,
+  Info,
   Loader2,
-  ChevronUp,
-  Sparkles, // <-- ajouté
-} from "lucide-react";
+  MapPin,
+  MessageCircle,
+  Send,
+  Shield,
+  Smartphone,
+  Sparkles,
+  Star,
+  Users,
+} from 'lucide-react'
 
-/* ------------------------------------------------------------------ */
-/*  Données enrichies                                                  */
-/* ------------------------------------------------------------------ */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
 
-// Communauté (enrichi avec lien Recherche IA)
-const communityLinks = [
-  { href: "/blog", label: "Blog", icon: FileText },
-  { href: "/temoignages", label: "Témoignages", icon: Star },
-  { href: "/affiliation", label: "Programme d'affiliation", icon: Users },
-  { href: "/search?mode=hybrid", label: "Recherche IA", icon: Sparkles }, // <-- nouveau
-];
+interface FooterLink {
+  href: string
+  label: string
+  icon: ReactNode
+  external?: boolean
+}
 
-// Liens légaux (inchangés)
-const legalLinks = [
-  { href: "/confidentialite", label: "Confidentialité", icon: Shield },
-  { href: "/conditions", label: "Conditions d'utilisation", icon: FileText },
-  { href: "/cookies", label: "Politique de cookies", icon: Info },
-  { href: "/mentions-legales", label: "Mentions légales", icon: Info },
-];
+interface SocialLink {
+  href: string
+  label: string
+  icon: ReactNode
+}
 
-// Réseaux sociaux (inchangés)
-const socialLinks = [
+interface PaymentMethod {
+  name: string
+  icon: ReactNode
+}
+
+type ContactStatus = 'idle' | 'loading' | 'success' | 'error'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SOCIAL ICONS — INLINE SVG SAFES                                */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function FacebookIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12h2.54V9.8c0-2.5 1.49-3.89 3.78-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56V12h2.78l-.44 2.89h-2.34v6.99A10 10 0 0 0 22 12Z" />
+    </svg>
+  )
+}
+
+function InstagramIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  )
+}
+
+function TikTokIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+    </svg>
+  )
+}
+
+function XIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  )
+}
+
+function LinkedInIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0Z" />
+    </svg>
+  )
+}
+
+function YouTubeIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.3 31.3 0 0 0 0 12a31.3 31.3 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.3 31.3 0 0 0 24 12a31.3 31.3 0 0 0-.5-5.8ZM9.6 15.6V8.4l6.2 3.6-6.2 3.6Z" />
+    </svg>
+  )
+}
+
+function WhatsAppIcon() {
+  return <MessageCircle size={16} aria-hidden="true" />
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  DONNÉES                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const communityLinks: FooterLink[] = [
   {
-    href: "https://www.facebook.com/share/1HkYMGaSuu/",
-    label: "Facebook",
-    icon: Facebook,
+    href: '/blog',
+    label: 'Blog',
+    icon: <FileText size={14} aria-hidden="true" />,
   },
   {
-    href: "https://www.instagram.com/gercie_mp",
-    label: "Instagram",
-    icon: Instagram,
+    href: '/temoignages',
+    label: 'Témoignages',
+    icon: <Star size={14} aria-hidden="true" />,
   },
   {
-    href: "https://tiktok.com/@gercie_mp",
-    label: "TikTok",
-    icon: () => (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+    href: '/affiliation',
+    label: "Programme d'affiliation",
+    icon: <Users size={14} aria-hidden="true" />,
+  },
+  {
+    href: '/search?mode=hybrid',
+    label: 'Recherche IA',
+    icon: <Sparkles size={14} aria-hidden="true" />,
+  },
+]
+
+const legalLinks: FooterLink[] = [
+  {
+    href: '/confidentialite',
+    label: 'Confidentialité',
+    icon: <Shield size={14} aria-hidden="true" />,
+  },
+  {
+    href: '/conditions',
+    label: "Conditions d'utilisation",
+    icon: <FileText size={14} aria-hidden="true" />,
+  },
+  {
+    href: '/cookies',
+    label: 'Politique de cookies',
+    icon: <Info size={14} aria-hidden="true" />,
+  },
+  {
+    href: '/mentions-legales',
+    label: 'Mentions légales',
+    icon: <Info size={14} aria-hidden="true" />,
+  },
+]
+
+const socialLinks: SocialLink[] = [
+  {
+    href: 'https://www.facebook.com/share/1HkYMGaSuu/',
+    label: 'Facebook',
+    icon: <FacebookIcon />,
+  },
+  {
+    href: 'https://www.instagram.com/gercie_mp',
+    label: 'Instagram',
+    icon: <InstagramIcon />,
+  },
+  {
+    href: 'https://tiktok.com/@gercie_mp',
+    label: 'TikTok',
+    icon: <TikTokIcon />,
+  },
+  {
+    href: 'https://x.com/gercie_mp',
+    label: 'X (Twitter)',
+    icon: <XIcon />,
+  },
+  {
+    href: 'https://www.linkedin.com/company/gercie',
+    label: 'LinkedIn',
+    icon: <LinkedInIcon />,
+  },
+  {
+    href: 'https://www.youtube.com/@gercie',
+    label: 'YouTube',
+    icon: <YouTubeIcon />,
+  },
+  {
+    href: 'https://wa.me/243973868195',
+    label: 'WhatsApp',
+    icon: <WhatsAppIcon />,
+  },
+]
+
+const paymentMethods: PaymentMethod[] = [
+  {
+    name: 'Visa',
+    icon: <CreditCard size={14} aria-hidden="true" />,
+  },
+  {
+    name: 'Mastercard',
+    icon: <CreditCard size={14} aria-hidden="true" />,
+  },
+  {
+    name: 'CinetPay',
+    icon: <CreditCard size={14} aria-hidden="true" />,
+  },
+  {
+    name: 'Mobile Money',
+    icon: <Smartphone size={14} aria-hidden="true" />,
+  },
+]
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SMALL UI                                                       */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const linkClasses =
+  'group inline-flex items-center gap-2 rounded-md py-0.5 text-sm text-fg-muted transition-colors duration-200 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+
+const socialButtonClasses =
+  'inline-flex h-9 w-9 items-center justify-center rounded-pill border border-line bg-surface text-fg-muted transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:bg-accent-soft hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+
+function FooterSectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.18em] text-fg-subtle">
+      {children}
+    </h3>
+  )
+}
+
+function FooterLinkItem({
+  link,
+  onNavigate,
+}: {
+  link: FooterLink
+  onNavigate?: () => void
+}) {
+  const content = (
+    <>
+      <span
+        className="text-fg-subtle transition-colors duration-200 group-hover:text-accent"
+        aria-hidden="true"
       >
-        <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
-      </svg>
-    ),
-  },
-  {
-    href: "https://x.com/gercie_mp",
-    label: "X (Twitter)",
-    icon: () => (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="currentColor"
+        {link.icon}
+      </span>
+      <span>{link.label}</span>
+    </>
+  )
+
+  if (link.external) {
+    return (
+      <a
+        href={link.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onNavigate}
+        className={linkClasses}
       >
-        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-      </svg>
-    ),
-  },
-  {
-    href: "https://www.linkedin.com/company/gercie",
-    label: "LinkedIn",
-    icon: Linkedin,
-  },
-  {
-    href: "https://www.youtube.com/@gercie",
-    label: "YouTube",
-    icon: Youtube,
-  },
-  {
-    href: "https://wa.me/243973868195",
-    label: "WhatsApp",
-    icon: MessageCircle,
-  },
-];
+        {content}
+      </a>
+    )
+  }
 
-// Moyens de paiement enrichis (inchangés)
-const paymentMethods = [
-  { name: "Visa", icon: CreditCard, color: "text-blue-400" },
-  { name: "Mastercard", icon: CreditCard, color: "text-orange-400" },
-  { name: "CinetPay", icon: CreditCard, color: "text-green-400" },
-  { name: "Wallet Gercie", icon: Wallet, color: "text-gold-400" },
-  { name: "Mobile Money", icon: Smartphone, color: "text-cyan-400" },
-];
+  return (
+    <Link href={link.href} onClick={onNavigate} className={linkClasses}>
+      {content}
+    </Link>
+  )
+}
 
-// Horaires de support
-const supportHours = "Lun–Sam : 8h–20h (UTC+1)";
-
-/* ------------------------------------------------------------------ */
-/*  Composant FooterAccordion (mobile)                                 */
-/* ------------------------------------------------------------------ */
-const FooterAccordion = ({
+function FooterAccordion({
   title,
   children,
 }: {
-  title: string;
-  children: React.ReactNode;
-}) => {
-  const [open, setOpen] = useState(false);
+  title: string
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const rawId = useId()
+  const id = rawId.replace(/:/g, '')
 
   return (
-    <div className="border-b border-midnight-700/60 py-3">
+    <div className="border-b border-line/70">
       <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center justify-between w-full text-left text-gold-400 font-semibold text-sm uppercase tracking-wider"
+        type="button"
+        onClick={() => setOpen((previous) => !previous)}
         aria-expanded={open}
+        aria-controls={`footer-accordion-${id}`}
+        className="flex w-full items-center justify-between gap-3 py-4 text-left text-sm font-semibold uppercase tracking-[0.14em] text-fg transition-colors duration-200 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
-        {title}
+        <span>{title}</span>
+
         <ChevronDown
           size={16}
-          className={`transition-transform duration-300 ${
-            open ? "rotate-180" : ""
-          }`}
+          className={cn(
+            'shrink-0 text-fg-subtle transition-transform duration-300',
+            open && 'rotate-180 text-accent'
+          )}
+          aria-hidden="true"
         />
       </button>
+
       <div
-        className={`overflow-hidden transition-all duration-300 ${
-          open ? "max-h-96 mt-3" : "max-h-0"
-        }`}
+        id={`footer-accordion-${id}`}
+        className={cn(
+          'grid transition-all duration-300 ease-out',
+          open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        )}
       >
-        {children}
+        <div className="overflow-hidden">
+          <div className="pb-5">{children}</div>
+        </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-/* ------------------------------------------------------------------ */
-/*  Composant principal                                                */
-/* ------------------------------------------------------------------ */
+function FooterBrand({
+  showLogo = true,
+  className,
+}: {
+  showLogo?: boolean
+  className?: string
+}) {
+  return (
+    <div className={cn('space-y-5', className)}>
+      {showLogo && (
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-hover text-accent-contrast shadow-card">
+            <span className="text-base font-bold leading-none">G</span>
+          </div>
+
+          <p className="text-lg font-semibold tracking-tight text-fg">
+            Gercie<span className="text-accent">.</span>
+          </p>
+        </div>
+      )}
+
+      <p className="max-w-sm text-sm leading-relaxed text-fg-muted">
+        Marketplace universelle en RDC. Authenticité, sécurité et élégance à
+        portée de main.
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        {socialLinks.map((social) => (
+          <a
+            key={social.label}
+            href={social.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={social.label}
+            aria-label={social.label}
+            className={socialButtonClasses}
+          >
+            {social.icon}
+          </a>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 text-xs text-fg-subtle">
+        <MapPin size={14} className="text-accent/70" aria-hidden="true" />
+        <span>Kinshasa, RDC</span>
+      </div>
+    </div>
+  )
+}
+
+function PaymentMethods({ className }: { className?: string }) {
+  return (
+    <div className={cn('flex flex-wrap gap-2', className)}>
+      {paymentMethods.map((method) => (
+        <div
+          key={method.name}
+          title={method.name}
+          className="inline-flex items-center gap-1.5 rounded-pill border border-line bg-surface px-3 py-1.5 text-xs font-medium text-fg-muted"
+        >
+          <span className="text-fg-subtle" aria-hidden="true">
+            {method.icon}
+          </span>
+          <span>{method.name}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  MAIN FOOTER                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export default function Footer() {
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const [showContactForm, setShowContactForm] = useState(false);
+  const rawContactId = useId()
+  const contactId = `footer-contact-${rawContactId.replace(/:/g, '')}`
+
+  const [showContactForm, setShowContactForm] = useState(false)
   const [contactForm, setContactForm] = useState({
-    name: "",
-    email: "",
-    message: "",
-  });
-  const [contactStatus, setContactStatus] = useState<
-    "idle" | "loading" | "success" | "error"
-  >("idle");
-  const [currentYear] = useState(new Date().getFullYear());
+    name: '',
+    email: '',
+    message: '',
+  })
+  const [contactStatus, setContactStatus] = useState<ContactStatus>('idle')
 
-  // Détection du scroll pour le bouton "retour en haut"
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const currentYear = new Date().getFullYear()
+
   useEffect(() => {
-    const handleScroll = () => {
-      setShowBackToTop(window.scrollY > 500);
-    };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  // Gestion formulaire de contact
-  const handleContactSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!contactForm.email || !contactForm.message) return;
-    setContactStatus("loading");
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      setContactStatus("success");
-      setContactForm({ name: "", email: "", message: "" });
-      setTimeout(() => {
-        setContactStatus("idle");
-        setShowContactForm(false);
-      }, 3000);
-    } catch (err) {
-      setContactStatus("error");
-      setTimeout(() => setContactStatus("idle"), 4000);
+    return () => {
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current)
+      }
     }
-  };
+  }, [])
+
+  const clearSuccessTimer = () => {
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current)
+      successTimerRef.current = null
+    }
+  }
+
+  const updateContactField =
+    (field: 'name' | 'email' | 'message') =>
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setContactForm((previous) => ({
+        ...previous,
+        [field]: event.target.value,
+      }))
+    }
+
+  const toggleContactForm = () => {
+    clearSuccessTimer()
+    setShowContactForm((previous) => !previous)
+    setContactStatus('idle')
+  }
+
+  const closeContactForm = () => {
+    clearSuccessTimer()
+    setShowContactForm(false)
+    setContactStatus('idle')
+  }
+
+  const handleContactSubmit = async (
+    event: FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault()
+    clearSuccessTimer()
+
+    if (!contactForm.email.trim() || !contactForm.message.trim()) {
+      setContactStatus('error')
+      return
+    }
+
+    setContactStatus('loading')
+
+    try {
+      // ---------------------------------------------------------------------
+      // Simulation locale volontaire.
+      // Remplacez ce bloc par un vrai appel API quand /api/contact est prêt :
+      //
+      // const response = await fetch('/api/contact', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify(contactForm),
+      // })
+      //
+      // if (!response.ok) throw new Error('Contact failed')
+      // ---------------------------------------------------------------------
+      await new Promise((resolve) => setTimeout(resolve, 900))
+
+      setContactStatus('success')
+      setContactForm({ name: '', email: '', message: '' })
+
+      successTimerRef.current = setTimeout(() => {
+        setContactStatus('idle')
+        setShowContactForm(false)
+        successTimerRef.current = null
+      }, 2800)
+    } catch {
+      setContactStatus('error')
+
+      successTimerRef.current = setTimeout(() => {
+        setContactStatus('idle')
+        successTimerRef.current = null
+      }, 4000)
+    }
+  }
 
   return (
     <footer
-      className="relative bg-gradient-to-b from-midnight-900 to-midnight-950 text-white overflow-hidden"
+      className="relative isolate overflow-hidden bg-raised text-fg"
       aria-labelledby="footer-heading"
     >
       <h2 id="footer-heading" className="sr-only">
         Pied de page Gercie
       </h2>
 
-      {/* Motif décoratif */}
-      <div className="absolute inset-0 pattern-dots opacity-[0.03] dark:opacity-[0.05] pointer-events-none" />
-      <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-gold-400 to-transparent opacity-30" />
+      {/* Motif décoratif discret */}
+      <div
+        className="pointer-events-none absolute inset-0 pattern-dots opacity-[0.025]"
+        aria-hidden="true"
+      />
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-20">
-        {/* ---- Colonnes desktop (4 colonnes) ---- */}
-        <div className="hidden md:grid grid-cols-1 md:grid-cols-4 gap-8 max-w-7xl mx-auto">
-          {/* Colonne 1 : Marque + Réseaux */}
-          <div>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-gold-400 to-gold-600 flex items-center justify-center shadow-gold">
-                <span className="text-midnight-900 font-bold text-lg">G</span>
-              </div>
-              <h3 className="text-xl font-semibold text-neutral-100 font-serif">
-                Gercie<span className="text-gold-400">.</span>
-              </h3>
-            </div>
-            <p className="text-sm text-neutral-300 leading-relaxed mb-6">
-              Marketplace universelle en RDC. Authenticité, sécurité et élégance
-              à portée de main.
-            </p>
-            {/* Réseaux sociaux */}
-            <div className="flex flex-wrap gap-2 mb-6">
-              {socialLinks.slice(0, 5).map((social) => (
-                <a
-                  key={social.label}
-                  href={social.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(
-                    "w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300",
-                    "border border-neutral-700 text-neutral-400",
-                    "hover:text-midnight-900 hover:bg-gold-400 hover:border-gold-400",
-                    "hover:shadow-gold hover:-translate-y-0.5"
-                  )}
-                  title={social.label}
-                >
-                  {typeof social.icon === "function"
-                    ? social.icon()
-                    : <social.icon size={16} />}
-                </a>
-              ))}
-            </div>
+      {/* Ligne premium supérieure */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/35 to-transparent"
+        aria-hidden="true"
+      />
+
+      <div className="relative z-10 mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
+        {/* ================================================================ */}
+        {/*  DESKTOP                                                         */}
+        {/* ================================================================ */}
+
+        <div className="hidden gap-10 md:grid md:grid-cols-12">
+          <div className="md:col-span-4 lg:col-span-4">
+            <FooterBrand />
           </div>
 
-          {/* Colonne 2 : Communauté (inclut Recherche IA) */}
-          <div>
-            <h4 className="text-xs font-bold uppercase tracking-widest text-gold-400/80 mb-6">
-              Communauté
-            </h4>
-            <ul className="space-y-3">
-              {communityLinks.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="group flex items-center gap-2 text-sm text-neutral-400 hover:text-gold-400 transition-colors"
-                  >
-                    <link.icon size={14} className="text-neutral-500 group-hover:text-gold-400" />
-                    <span>{link.label}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+          <div className="md:col-span-2 lg:col-span-2">
+            <FooterSectionTitle>Communauté</FooterSectionTitle>
+
+            <nav aria-label="Liens communauté">
+              <ul className="space-y-2.5">
+                {communityLinks.map((link) => (
+                  <li key={link.href}>
+                    <FooterLinkItem link={link} />
+                  </li>
+                ))}
+              </ul>
+            </nav>
           </div>
 
-          {/* Colonne 3 : Support & Légal (inchangée) */}
-          <div>
-            <h4 className="text-xs font-bold uppercase tracking-widest text-gold-400/80 mb-6">
-              Support
-            </h4>
-            <ul className="space-y-3 mb-8">
-              <li>
-                <Link
-                  href="/support"
-                  className="group flex items-center gap-2 text-sm text-neutral-400 hover:text-gold-400 transition-colors"
+          <div className="md:col-span-3 lg:col-span-3">
+            <FooterSectionTitle>Support</FooterSectionTitle>
+
+            <nav aria-label="Liens support" className="space-y-2.5">
+              <FooterLinkItem
+                link={{
+                  href: '/support',
+                  label: "Centre d'aide",
+                  icon: <Headset size={14} aria-hidden="true" />,
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={toggleContactForm}
+                aria-expanded={showContactForm}
+                aria-controls={showContactForm ? contactId : undefined}
+                className={cn(
+                  linkClasses,
+                  'w-full justify-start'
+                )}
+              >
+                <span
+                  className="text-fg-subtle transition-colors duration-200 group-hover:text-accent"
+                  aria-hidden="true"
                 >
-                  <Headset size={14} className="text-neutral-500 group-hover:text-gold-400" />
-                  <span>Centre d&apos;aide</span>
-                </Link>
-              </li>
-              <li>
-                <button
-                  onClick={() => setShowContactForm(!showContactForm)}
-                  className="group flex items-center gap-2 text-sm text-neutral-400 hover:text-gold-400 transition-colors"
-                >
-                  <MessageCircle size={14} className="text-neutral-500 group-hover:text-gold-400" />
-                  <span>Nous contacter</span>
-                </button>
-              </li>
-              <li className="flex items-center gap-2 text-sm text-neutral-400">
-                <Clock size={14} className="text-neutral-500" />
-                <span>{supportHours}</span>
-              </li>
-              <li className="flex items-center gap-2 text-sm text-neutral-400">
-                <Phone size={14} className="text-neutral-500" />
-                <a href="tel:+243973868195" className="hover:text-gold-400">
-                  +243 97 38 68 195
-                </a>
-              </li>
-            </ul>
-            <h4 className="text-xs font-bold uppercase tracking-widest text-gold-400/80 mb-6">
-              Légal
-            </h4>
-            <ul className="space-y-3">
-              {legalLinks.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="group flex items-center gap-2 text-sm text-neutral-400 hover:text-gold-400 transition-colors"
-                  >
-                    <link.icon size={14} className="text-neutral-500 group-hover:text-gold-400" />
-                    <span>{link.label}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+                  <MessageCircle size={14} />
+                </span>
+
+                <span>Nous contacter</span>
+              </button>
+            </nav>
           </div>
 
-          {/* Colonne 4 : Paiements & App (inchangée) */}
-          <div>
-            <h4 className="text-xs font-bold uppercase tracking-widest text-gold-400/80 mb-6">
-              Paiements acceptés
-            </h4>
-            <div className="flex flex-wrap gap-3 mb-6">
-              {paymentMethods.map((method) => (
-                <div
-                  key={method.name}
-                  className="flex items-center gap-1.5 bg-white/10 rounded-lg px-3 py-1.5 text-sm"
-                  title={method.name}
-                >
-                  <method.icon size={16} className={method.color} />
-                  <span className="text-neutral-200 text-xs">{method.name}</span>
-                </div>
-              ))}
-            </div>
-            <div className="text-xs text-neutral-400 mb-6">
-              Paiements sécurisés via SSL et cryptage bancaire.
-            </div>
+          <div className="md:col-span-3 lg:col-span-3">
+            <FooterSectionTitle>Légal</FooterSectionTitle>
 
-            <h4 className="text-xs font-bold uppercase tracking-widest text-gold-400/80 mb-6">
-              Application mobile
-            </h4>
-            <div className="flex flex-col gap-2">
-              <a
-                href="#"
-                className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 transition-colors rounded-lg px-3 py-2 text-sm"
-                aria-label="Télécharger sur l'App Store"
-              >
-                <Smartphone size={16} />
-                Télécharger sur l'App Store
-              </a>
-              <a
-                href="#"
-                className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 transition-colors rounded-lg px-3 py-2 text-sm"
-                aria-label="Télécharger sur Google Play"
-              >
-                <Smartphone size={16} />
-                Télécharger sur Google Play
-              </a>
-              <a
-                href="#"
-                className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 transition-colors rounded-lg px-3 py-2 text-sm"
-                aria-label="Version web progressive"
-              >
-                <Globe size={16} />
-                Accéder via le web
-              </a>
-            </div>
+            <nav aria-label="Liens légaux">
+              <ul className="space-y-2.5">
+                {legalLinks.map((link) => (
+                  <li key={link.href}>
+                    <FooterLinkItem link={link} />
+                  </li>
+                ))}
+              </ul>
+            </nav>
           </div>
         </div>
 
-        {/* ---- Version mobile : accordéons ---- */}
-        <div className="md:hidden space-y-1">
+        {/* ================================================================ */}
+        {/*  MOBILE                                                          */}
+        {/* ================================================================ */}
+
+        <div className="space-y-1 md:hidden">
           <FooterAccordion title="Gercie">
-            <div className="flex flex-col gap-3">
-              <p className="text-sm text-neutral-300">
-                Marketplace universelle en RDC. Authenticité, sécurité et élégance à portée de main.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {socialLinks.slice(0, 5).map((social) => (
-                  <a
-                    key={social.label}
-                    href={social.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-9 h-9 rounded-lg flex items-center justify-center border border-neutral-700 text-neutral-400 hover:text-midnight-900 hover:bg-gold-400 hover:border-gold-400 transition-all"
-                  >
-                    {typeof social.icon === "function"
-                      ? social.icon()
-                      : <social.icon size={16} />}
-                  </a>
-                ))}
-              </div>
-            </div>
+            <FooterBrand showLogo={false} />
           </FooterAccordion>
 
           <FooterAccordion title="Communauté">
-            <ul className="space-y-2">
-              {communityLinks.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className="flex items-center gap-2 text-sm text-neutral-400 hover:text-gold-400">
-                    <link.icon size={14} />
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <nav aria-label="Liens communauté mobile">
+              <ul className="space-y-2.5">
+                {communityLinks.map((link) => (
+                  <li key={link.href}>
+                    <FooterLinkItem link={link} />
+                  </li>
+                ))}
+              </ul>
+            </nav>
           </FooterAccordion>
 
-          <FooterAccordion title="Support & Légal">
-            <ul className="space-y-2">
-              <li>
-                <Link href="/support" className="flex items-center gap-2 text-sm text-neutral-400 hover:text-gold-400">
-                  <Headset size={14} /> Centre d&apos;aide
-                </Link>
-              </li>
-              <li>
-                <button onClick={() => setShowContactForm(!showContactForm)} className="flex items-center gap-2 text-sm text-neutral-400 hover:text-gold-400">
-                  <MessageCircle size={14} /> Nous contacter
-                </button>
-              </li>
-              <li className="flex items-center gap-2 text-sm text-neutral-400">
-                <Clock size={14} /> {supportHours}
-              </li>
-              <li className="flex items-center gap-2 text-sm text-neutral-400">
-                <Phone size={14} /> <a href="tel:+243973868195" className="hover:text-gold-400">+243 97 38 68 195</a>
-              </li>
-              {legalLinks.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className="flex items-center gap-2 text-sm text-neutral-400 hover:text-gold-400">
-                    <link.icon size={14} /> {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </FooterAccordion>
+          <FooterAccordion title="Support">
+            <nav
+              aria-label="Liens support mobile"
+              className="space-y-2.5"
+            >
+              <FooterLinkItem
+                link={{
+                  href: '/support',
+                  label: "Centre d'aide",
+                  icon: <Headset size={14} aria-hidden="true" />,
+                }}
+              />
 
-          <FooterAccordion title="Paiements & App">
-            <div className="flex flex-wrap gap-2 mb-4">
-              {paymentMethods.map((method) => (
-                <div
-                  key={method.name}
-                  className="flex items-center gap-1.5 bg-white/10 rounded-lg px-3 py-1.5 text-sm"
+              <button
+                type="button"
+                onClick={toggleContactForm}
+                aria-expanded={showContactForm}
+                aria-controls={showContactForm ? contactId : undefined}
+                className={cn(
+                  linkClasses,
+                  'w-full justify-start'
+                )}
+              >
+                <span
+                  className="text-fg-subtle transition-colors duration-200 group-hover:text-accent"
+                  aria-hidden="true"
                 >
-                  <method.icon size={16} className={method.color} />
-                  <span className="text-neutral-200 text-xs">{method.name}</span>
-                </div>
-              ))}
-            </div>
-            <div className="text-xs text-neutral-400 mb-4">
-              Paiements sécurisés SSL.
-            </div>
-            <div className="flex flex-col gap-2">
-              <a href="#" className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm text-neutral-200">
-                <Smartphone size={16} /> App Store
-              </a>
-              <a href="#" className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm text-neutral-200">
-                <Smartphone size={16} /> Google Play
-              </a>
-              <a href="#" className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 text-sm text-neutral-200">
-                <Globe size={16} /> Web
-              </a>
-            </div>
+                  <MessageCircle size={14} />
+                </span>
+
+                <span>Nous contacter</span>
+              </button>
+            </nav>
+          </FooterAccordion>
+
+          <FooterAccordion title="Légal & Paiements">
+            <nav aria-label="Liens légaux mobiles" className="mb-5">
+              <ul className="space-y-2.5">
+                {legalLinks.map((link) => (
+                  <li key={link.href}>
+                    <FooterLinkItem link={link} />
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
+            <PaymentMethods />
           </FooterAccordion>
         </div>
 
-        {/* ---- Formulaire de contact rapide ---- */}
+        {/* ================================================================ */}
+        {/*  PAIEMENTS DESKTOP                                               */}
+        {/* ================================================================ */}
+
+        <div className="mt-10 hidden border-t border-line pt-8 md:block">
+          <FooterSectionTitle>Paiements acceptés</FooterSectionTitle>
+          <PaymentMethods />
+        </div>
+
+        {/* ================================================================ */}
+        {/*  FORMULAIRE DE CONTACT                                           */}
+        {/* ================================================================ */}
+
         {showContactForm && (
-          <div className="mt-10 max-w-2xl mx-auto p-6 rounded-2xl bg-midnight-800/60 backdrop-blur-sm border border-midnight-600 animate-fade-in-up">
-            <h3 className="text-lg font-semibold text-gold-400 mb-4">
-              Envoyez-nous un message
-            </h3>
+          <section
+            id={contactId}
+            className="animate-fade-in-up mt-10 rounded-card border border-line bg-surface p-5 shadow-card sm:p-6"
+            aria-label="Formulaire de contact"
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-fg">
+                  Envoyez-nous un message
+                </h3>
+                <p className="mt-1 text-xs text-fg-muted">
+                  Notre équipe vous répond rapidement.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeContactForm}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-line bg-canvas text-fg-muted transition-colors duration-200 hover:border-accent/30 hover:bg-accent-soft hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                aria-label="Fermer le formulaire de contact"
+              >
+                <ChevronDown size={16} className="rotate-180" aria-hidden="true" />
+              </button>
+            </div>
+
             <form onSubmit={handleContactSubmit} className="space-y-4">
-              <Input
-                type="text"
-                placeholder="Votre nom"
-                value={contactForm.name}
-                onChange={(e) =>
-                  setContactForm({ ...contactForm, name: e.target.value })
-                }
-                required
-                variant="glass"
-              />
-              <Input
-                type="email"
-                placeholder="Votre email"
-                value={contactForm.email}
-                onChange={(e) =>
-                  setContactForm({ ...contactForm, email: e.target.value })
-                }
-                required
-                variant="glass"
-              />
-              <textarea
-                className="w-full p-3 rounded-xl bg-white/10 border border-neutral-700 text-neutral-200 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-gold-400 resize-none"
-                rows={3}
-                placeholder="Votre message..."
-                value={contactForm.message}
-                onChange={(e) =>
-                  setContactForm({ ...contactForm, message: e.target.value })
-                }
-                required
-              />
-              <div className="flex items-center gap-3">
-                <Button
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-semibold text-fg-muted">
+                    Votre nom
+                  </span>
+
+                  <input
+                    type="text"
+                    name="name"
+                    autoComplete="name"
+                    value={contactForm.name}
+                    onChange={updateContactField('name')}
+                    placeholder="Ex : Amina K."
+                    className="w-full rounded-control border border-line bg-canvas px-3 py-2.5 text-sm text-fg placeholder:text-fg-subtle transition-colors duration-200 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-semibold text-fg-muted">
+                    Votre email <span className="text-danger">*</span>
+                  </span>
+
+                  <input
+                    type="email"
+                    name="email"
+                    required
+                    autoComplete="email"
+                    value={contactForm.email}
+                    onChange={updateContactField('email')}
+                    placeholder="vous@exemple.com"
+                    className="w-full rounded-control border border-line bg-canvas px-3 py-2.5 text-sm text-fg placeholder:text-fg-subtle transition-colors duration-200 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-fg-muted">
+                  Votre message <span className="text-danger">*</span>
+                </span>
+
+                <textarea
+                  name="message"
+                  required
+                  rows={4}
+                  value={contactForm.message}
+                  onChange={updateContactField('message')}
+                  placeholder="Décrivez votre demande…"
+                  className="w-full resize-none rounded-control border border-line bg-canvas px-3 py-2.5 text-sm text-fg placeholder:text-fg-subtle transition-colors duration-200 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+                />
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
                   type="submit"
-                  variant="luxe"
-                  disabled={contactStatus === "loading"}
+                  disabled={contactStatus === 'loading'}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-pill bg-accent px-4 text-sm font-semibold text-accent-contrast shadow-card transition-colors duration-200 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-60"
                 >
-                  {contactStatus === "loading" ? (
-                    <Loader2 size={16} className="animate-spin" />
+                  {contactStatus === 'loading' ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                      Envoi…
+                    </>
                   ) : (
-                    "Envoyer"
+                    <>
+                      <Send size={16} aria-hidden="true" />
+                      Envoyer
+                    </>
                   )}
-                </Button>
-                {contactStatus === "success" && (
-                  <span className="text-green-400 flex items-center gap-1">
-                    <CheckCircle2 size={14} /> Message envoyé !
-                  </span>
-                )}
-                {contactStatus === "error" && (
-                  <span className="text-red-400 flex items-center gap-1">
-                    <AlertCircle size={14} /> Erreur, réessayez.
-                  </span>
-                )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={closeContactForm}
+                  className="inline-flex h-10 items-center justify-center rounded-pill border border-line bg-transparent px-4 text-sm font-semibold text-fg-muted transition-colors duration-200 hover:border-line-strong hover:bg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  Annuler
+                </button>
+
+                <div
+                  className="min-h-5"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {contactStatus === 'success' && (
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-success">
+                      <CheckCircle2 size={14} aria-hidden="true" />
+                      Message envoyé.
+                    </span>
+                  )}
+
+                  {contactStatus === 'error' && (
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-danger">
+                      <AlertCircle size={14} aria-hidden="true" />
+                      Une erreur est survenue.
+                    </span>
+                  )}
+                </div>
               </div>
             </form>
-          </div>
+          </section>
         )}
 
-        {/* ---- Barre inférieure ---- */}
-        <div className="mt-12 pt-6 border-t border-midnight-700/40 text-center text-xs text-neutral-500">
-          <p>
-            &copy; {currentYear} Gercie. Tous droits réservés. L&apos;excellence à portée de main.
+        {/* ================================================================ */}
+        {/*  BAS DE PAGE                                                     */}
+        {/* ================================================================ */}
+
+        <div className="mt-10 flex flex-col gap-3 border-t border-line pt-6 text-xs text-fg-subtle sm:flex-row sm:items-center sm:justify-between">
+          <p>&copy; {currentYear} Gercie. Tous droits réservés.</p>
+
+          <p className="inline-flex items-center gap-1.5">
+            <MapPin size={12} className="text-accent/60" aria-hidden="true" />
+            Conçu avec soin à Kinshasa, RDC
           </p>
-          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-3">
-            <Link href="/confidentialite" className="hover:text-gold-400 transition-colors">
-              Confidentialité
-            </Link>
-            <Link href="/conditions" className="hover:text-gold-400 transition-colors">
-              Conditions d&apos;utilisation
-            </Link>
-            <Link href="/cookies" className="hover:text-gold-400 transition-colors">
-              Cookies
-            </Link>
-            <span className="flex items-center gap-1 text-gold-400/70">
-              <Gem size={11} /> Kinshasa, RDC
-            </span>
-          </div>
         </div>
       </div>
-
-      {/* Bouton retour en haut */}
-      {showBackToTop && (
-        <button
-          onClick={scrollToTop}
-          className="fixed bottom-6 right-6 z-50 p-3 rounded-full bg-gold-500 text-midnight-900 shadow-lg hover:bg-gold-400 transition-all transform hover:scale-110"
-          aria-label="Retour en haut"
-        >
-          <ArrowUp size={20} />
-        </button>
-      )}
     </footer>
-  );
+  )
 }

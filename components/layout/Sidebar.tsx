@@ -1,276 +1,477 @@
 // components/layout/Sidebar.tsx
 'use client'
 
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  useMemo,
+import {
   createContext,
+  useCallback,
   useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from 'react'
+
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/contexts/ThemeContext'
+
 import {
   ChevronDown,
-  ChevronRight,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  X,
   Search,
-  LayoutDashboard,
-  Store,
-  ShoppingCart,
-  Users,
-  FileText,
-  Settings,
-  HelpCircle,
   Sun,
-  Moon,
-  Bell,
-  AlertCircle,
-  ArrowLeftRight,
-  LogOut,
-  User,
+  X,
 } from 'lucide-react'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export interface SidebarLink {
-  href: string
+  href?: string
   label: string
-  icon?: React.ReactNode
+  icon?: ReactNode
   badge?: string | number
   disabled?: boolean
   onClick?: () => void
-  /** Sous‑liens (menu dépliable) */
   children?: SidebarLink[]
-  /** Si vrai, le groupe sera ouvert par défaut */
   defaultOpen?: boolean
 }
 
 export interface SidebarSection {
   title?: string
   links: SidebarLink[]
-  /** Icône facultative de la section (affichée en collapsed si pas de titre ?) */
-  icon?: React.ReactNode
+  icon?: ReactNode
 }
 
 export interface SidebarFooterAction {
   label: string
-  icon?: React.ReactNode
+  icon?: ReactNode
   onClick: () => void
   badge?: string | number
 }
 
-interface SidebarProps {
+export interface SidebarProps {
   sections?: SidebarSection[]
-  links?: SidebarLink[]           // liens sans sections
+  links?: SidebarLink[]
   footerActions?: SidebarFooterAction[]
-  logo?: React.ReactNode
+  logo?: ReactNode
   className?: string
   collapsible?: boolean
   defaultCollapsed?: boolean
   onToggle?: (collapsed: boolean) => void
   mobileOpen?: boolean
   onMobileClose?: () => void
-  header?: React.ReactNode
-  footer?: React.ReactNode
-  /** Routes sur lesquelles la sidebar est masquée (ex: ['/login', '/register']) */
+  header?: ReactNode
+  footer?: ReactNode
   hideOnRoutes?: string[]
-  /** Affiche une barre de recherche en haut */
   searchable?: boolean
-  /** Placeholder de la recherche */
   searchPlaceholder?: string
-  /** Action exécutée lors de la validation de la recherche */
   onSearch?: (query: string) => void
-  /** Composant utilisateur (avatar, nom) affiché en bas */
-  userSection?: React.ReactNode
+  userSection?: ReactNode
 }
 
-/* ================================================================== */
-/*  Contexte interne pour éviter les props drilling                  */
-/* ================================================================== */
-interface SidebarContextType {
+interface SidebarContextValue {
   collapsed: boolean
-  toggleCollapsed: () => void
   searchQuery: string
-  setSearchQuery: (q: string) => void
-}
-const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
-
-const useSidebarContext = () => {
-  const ctx = useContext(SidebarContext)
-  if (!ctx) throw new Error('SidebarContext missing')
-  return ctx
+  setSearchQuery: (query: string) => void
+  searchPlaceholder: string
+  closeMobile?: () => void
+  openSubmenuFlyout?: (link: SidebarLink, rect: DOMRect) => void
+  closeSubmenuFlyout?: () => void
 }
 
-/* ================================================================== */
-/*  Sous‑composants réutilisables                                     */
-/* ================================================================== */
+interface FlyoutState {
+  link: SidebarLink
+  top: number
+  left: number
+}
 
-/** Élément de lien unique (avec badge, active state, sous‑liens éventuels) */
-const SidebarItem = ({ link }: { link: SidebarLink }) => {
-  const pathname = usePathname()
-  const { collapsed, toggleCollapsed } = useSidebarContext()
-  const [open, setOpen] = useState(link.defaultOpen ?? false)
-  const hasChildren = link.children && link.children.length > 0
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONSTANTS                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
 
-  const isActive = useCallback(
-    (href: string) => {
-      if (href === '/') return pathname === '/'
-      return pathname.startsWith(href)
-    },
-    [pathname]
-  )
+const SIDEBAR_COLLAPSED_KEY = 'gercie-sidebar-collapsed'
 
-  const active = link.href ? isActive(link.href) : false
-  const LinkWrapper = link.onClick ? 'button' : Link
+const sidebarItemBase =
+  'group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
 
-  // Pour les sous‑liens, on utilise un bouton toggle
-  const handleToggleChildren = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setOpen(!open)
+const sidebarBadgeBase =
+  'inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold leading-none text-accent'
+
+const sidebarIconButtonBase =
+  'inline-flex h-8 w-8 items-center justify-center rounded-lg text-fg-subtle transition-colors duration-200 hover:bg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  HELPERS                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function normalizePathname(pathname: string): string {
+  const raw = pathname || '/'
+
+  if (raw.length > 1 && raw.endsWith('/')) {
+    return raw.slice(0, -1)
   }
 
-  const baseClasses = cn(
-    'flex items-center w-full rounded-xl text-sm font-medium transition-all duration-200 group relative',
-    'focus-visible:outline-2 focus-visible:outline-brand-500',
-    active
-      ? 'bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-300 shadow-sm'
-      : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-200',
-    link.disabled && 'opacity-50 cursor-not-allowed',
-    collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5'
+  return raw
+}
+
+function isHrefActive(href: string, pathname: string): boolean {
+  const normalizedHref = normalizePathname(href)
+  const normalizedPath = normalizePathname(pathname)
+
+  if (normalizedHref === '/') {
+    return normalizedPath === '/'
+  }
+
+  return (
+    normalizedPath === normalizedHref ||
+    normalizedPath.startsWith(`${normalizedHref}/`)
   )
+}
+
+function hasActiveDescendant(
+  link: SidebarLink,
+  pathname: string
+): boolean {
+  if (link.href && isHrefActive(link.href, pathname)) {
+    return true
+  }
+
+  if (!link.children || link.children.length === 0) {
+    return false
+  }
+
+  return link.children.some((child) =>
+    hasActiveDescendant(child, pathname)
+  )
+}
+
+function normalizeSearch(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function filterSidebarLink(
+  link: SidebarLink,
+  query: string
+): SidebarLink | null {
+  const q = normalizeSearch(query)
+
+  if (!q) return link
+
+  const labelMatches = normalizeSearch(link.label).includes(q)
+
+  if (labelMatches) {
+    return link
+  }
+
+  const filteredChildren = link.children
+    ?.map((child) => filterSidebarLink(child, q))
+    .filter((child): child is SidebarLink => Boolean(child))
+
+  if (filteredChildren && filteredChildren.length > 0) {
+    return {
+      ...link,
+      children: filteredChildren,
+      defaultOpen: true,
+    }
+  }
+
+  return null
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONTEXT                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const SidebarContext = createContext<SidebarContextValue | undefined>(
+  undefined
+)
+
+function useSidebarContext(): SidebarContextValue {
+  const context = useContext(SidebarContext)
+
+  if (!context) {
+    throw new Error('useSidebarContext must be used inside <Sidebar />')
+  }
+
+  return context
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SIDEBAR ITEM                                                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function SidebarItem({ link }: { link: SidebarLink }) {
+  const pathname = usePathname() ?? '/'
+  const {
+    collapsed,
+    searchQuery,
+    closeMobile,
+    openSubmenuFlyout,
+  } = useSidebarContext()
+
+  const [open, setOpen] = useState(Boolean(link.defaultOpen))
+
+  const hasChildren = Boolean(link.children && link.children.length > 0)
+  const active = hasActiveDescendant(link, pathname)
+  const query = normalizeSearch(searchQuery)
+
+  const visibleChildren = useMemo(() => {
+    if (!link.children || link.children.length === 0) return []
+
+    if (!query) return link.children
+
+    return link.children
+      .map((child) => filterSidebarLink(child, query))
+      .filter((child): child is SidebarLink => Boolean(child))
+  }, [link.children, query])
+
+  useEffect(() => {
+    if (!hasChildren) return
+
+    const shouldOpen = query
+      ? visibleChildren.length > 0
+      : active
+
+    if (shouldOpen) {
+      setOpen(true)
+    }
+  }, [active, hasChildren, query, visibleChildren.length])
+
+  const itemClasses = cn(
+    sidebarItemBase,
+    active
+      ? 'bg-accent-soft text-accent'
+      : 'text-fg-muted hover:bg-muted hover:text-fg',
+    link.disabled && 'pointer-events-none opacity-50',
+    collapsed && 'justify-center px-2'
+  )
+
+  const iconClasses = cn(
+    'flex h-5 w-5 shrink-0 items-center justify-center transition-colors',
+    active
+      ? 'text-accent'
+      : 'text-fg-subtle group-hover:text-fg-muted'
+  )
+
+  const handleToggleChildren = (
+    event: ReactMouseEvent<HTMLButtonElement>
+  ) => {
+    event.preventDefault()
+
+    if (collapsed) {
+      openSubmenuFlyout?.(link, event.currentTarget.getBoundingClientRect())
+      return
+    }
+
+    setOpen((previous) => !previous)
+  }
+
+  const handleCloseNavigation = () => {
+    closeMobile?.()
+  }
 
   const content = (
     <>
-      {link.icon && (
-        <span
-          className={cn(
-            'flex-shrink-0 transition-colors',
-            active
-              ? 'text-brand-600 dark:text-brand-400'
-              : 'text-neutral-400 dark:text-neutral-500 group-hover:text-neutral-600 dark:group-hover:text-neutral-300'
-          )}
-        >
+      {link.icon ? (
+        <span className={iconClasses} aria-hidden="true">
           {link.icon}
         </span>
-      )}
-      {!collapsed && (
-        <>
-          <span className="flex-1 truncate">{link.label}</span>
-          {hasChildren && (
-            <ChevronDown
-              size={16}
-              className={cn(
-                'transition-transform ml-2',
-                open && 'rotate-180'
-              )}
-            />
+      ) : null}
+
+      {!collapsed ? (
+        <span className="min-w-0 flex-1 truncate">{link.label}</span>
+      ) : null}
+
+      {collapsed && link.badge !== undefined ? (
+        <span
+          className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger ring-2 ring-surface"
+          aria-hidden="true"
+        />
+      ) : null}
+
+      {!collapsed && link.badge !== undefined ? (
+        <span
+          className={cn(
+            sidebarBadgeBase,
+            hasChildren ? 'ml-2' : 'ml-auto'
           )}
-          {link.badge !== undefined && !hasChildren && (
-            <span className="ml-auto inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full bg-brand-100 text-brand-700 dark:bg-brand-900 dark:text-brand-300 min-w-[1.25rem] animate-pulse-soft">
-              {link.badge}
-            </span>
-          )}
-          {hasChildren && link.badge !== undefined && (
-            <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full bg-brand-100 text-brand-700 dark:bg-brand-900 dark:text-brand-300 min-w-[1.25rem]">
-              {link.badge}
-            </span>
-          )}
-        </>
-      )}
-      {collapsed && link.badge !== undefined && (
-        <span className="absolute -top-1 -right-1 inline-flex items-center justify-center w-5 h-5 text-[0.625rem] font-bold rounded-full bg-red-500 text-white ring-2 ring-white dark:ring-neutral-900">
+        >
           {link.badge}
         </span>
-      )}
+      ) : null}
+
+      {hasChildren && !collapsed ? (
+        <ChevronDown
+          size={16}
+          className={cn(
+            'shrink-0 text-fg-subtle transition-transform duration-200',
+            open && 'rotate-180 text-accent'
+          )}
+          aria-hidden="true"
+        />
+      ) : null}
     </>
   )
 
   if (hasChildren) {
+    const showInlineChildren =
+      !collapsed && open && visibleChildren.length > 0
+
     return (
-      <div>
+      <li className="relative">
         <button
           type="button"
           onClick={handleToggleChildren}
           disabled={link.disabled}
-          className={baseClasses}
+          className={itemClasses}
           aria-expanded={!collapsed ? open : undefined}
+          aria-haspopup={collapsed ? 'true' : undefined}
+          aria-label={collapsed ? link.label : undefined}
           title={collapsed ? link.label : undefined}
         >
           {content}
         </button>
-        {!collapsed && open && (
-          <ul className="ml-6 mt-1 space-y-1 border-l border-neutral-200 dark:border-neutral-700 pl-3">
-            {link.children!.map((child) => (
-              <SidebarItem key={child.href || child.label} link={child} />
+
+        {showInlineChildren ? (
+          <ul className="ml-4 mt-1 space-y-1 border-l border-line pl-3">
+            {visibleChildren.map((child) => (
+              <SidebarItem
+                key={child.href || child.label}
+                link={child}
+              />
             ))}
           </ul>
-        )}
-        {collapsed && open && (
-          <div className="absolute left-full top-0 ml-2 w-48 bg-white dark:bg-neutral-800 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 p-2 z-50 animate-scale-in">
-            {link.children!.map((child) => (
-              <SidebarItem key={child.href || child.label} link={{ ...child, badge: undefined }} />
-            ))}
-          </div>
-        )}
-      </div>
+        ) : null}
+      </li>
+    )
+  }
+
+  if (link.disabled || !link.href) {
+    return (
+      <li>
+        <span
+          className={itemClasses}
+          aria-label={collapsed ? link.label : undefined}
+          title={collapsed ? link.label : undefined}
+        >
+          {content}
+        </span>
+      </li>
+    )
+  }
+
+  if (link.onClick) {
+    return (
+      <li>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault()
+            link.onClick?.()
+            handleCloseNavigation()
+          }}
+          className={itemClasses}
+          aria-current={active ? 'page' : undefined}
+          aria-label={collapsed ? link.label : undefined}
+          title={collapsed ? link.label : undefined}
+        >
+          {content}
+        </button>
+      </li>
     )
   }
 
   return (
     <li>
-      <LinkWrapper
-        {...(link.onClick
-          ? { onClick: link.onClick }
-          : { href: link.href })}
-        className={baseClasses}
+      <Link
+        href={link.href}
+        onClick={handleCloseNavigation}
+        className={itemClasses}
         aria-current={active ? 'page' : undefined}
+        aria-label={collapsed ? link.label : undefined}
         title={collapsed ? link.label : undefined}
       >
         {content}
-      </LinkWrapper>
+      </Link>
     </li>
   )
 }
 
-/** Barre de recherche intégrée (optionnelle) */
-const SidebarSearch = () => {
-  const { collapsed, searchQuery, setSearchQuery } = useSidebarContext()
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SIDEBAR SEARCH                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function SidebarSearch() {
+  const {
+    collapsed,
+    searchQuery,
+    setSearchQuery,
+    searchPlaceholder,
+  } = useSidebarContext()
+
   if (collapsed) return null
+
   return (
-    <div className="px-4 pb-4">
-      <div className="relative">
+    <div className="px-3 pb-3">
+      <form
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+        className="relative"
+      >
         <Search
           size={16}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle"
+          aria-hidden="true"
         />
+
         <input
-          type="text"
+          type="search"
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Rechercher..."
-          className="w-full h-9 pl-9 pr-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 border border-transparent focus:border-brand-400 focus:outline-none text-sm text-neutral-700 dark:text-neutral-200 placeholder-neutral-400"
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
+          className={cn(
+            'h-10 w-full rounded-control border border-line bg-canvas pl-9 pr-9 text-sm text-fg',
+            'placeholder:text-fg-subtle',
+            'transition-colors duration-200',
+            'hover:border-line-strong',
+            'focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15'
+          )}
         />
-      </div>
+
+        {searchQuery ? (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className={cn(
+              'absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md',
+              'text-fg-subtle transition-colors duration-200',
+              'hover:bg-muted hover:text-fg',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+            )}
+            aria-label="Effacer la recherche"
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        ) : null}
+      </form>
     </div>
   )
 }
 
-/* ================================================================== */
-/*  Composant principal                                                */
-/* ================================================================== */
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SIDEBAR                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
 
-const Sidebar = ({
+export function Sidebar({
   sections,
   links,
   footerActions,
@@ -288,235 +489,613 @@ const Sidebar = ({
   searchPlaceholder = 'Rechercher...',
   onSearch,
   userSection,
-}: SidebarProps) => {
-  const pathname = usePathname()
-  const { resolvedTheme, toggleTheme } = useTheme()
-  const [collapsed, setCollapsedState] = useState(defaultCollapsed)
-  const [searchQuery, setSearchQuery] = useState('')
-  const sidebarRef = useRef<HTMLDivElement>(null)
+}: SidebarProps) {
+  const pathname = usePathname() ?? '/'
+  const normalizedPathname = normalizePathname(pathname)
 
-  // Sauvegarde / restauration de l'état collapsed
+  const theme = useTheme() as {
+    resolvedTheme?: 'light' | 'dark'
+    toggleTheme?: () => void
+  }
+
+  const resolvedTheme = theme.resolvedTheme ?? 'light'
+  const toggleTheme = theme.toggleTheme
+
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isDesktop, setIsDesktop] = useState(false)
+  const [flyout, setFlyout] = useState<FlyoutState | null>(null)
+
+  const onSearchRef = useRef(onSearch)
+
   useEffect(() => {
-    const stored = localStorage.getItem('gercie-sidebar-collapsed')
-    if (stored === 'true' || stored === 'false') {
-      setCollapsedState(stored === 'true')
+    onSearchRef.current = onSearch
+  }, [onSearch])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  DESKTOP DETECTION                                            */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const mediaQuery = window.matchMedia('(min-width: 768px)')
+
+    const update = () => setIsDesktop(mediaQuery.matches)
+    update()
+
+    mediaQuery.addEventListener('change', update)
+
+    return () => mediaQuery.removeEventListener('change', update)
+  }, [])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  PERSIST COLLAPSED STATE                                      */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    try {
+      const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
+
+      if (stored === 'true' || stored === 'false') {
+        setCollapsed(stored === 'true')
+      }
+    } catch {
+      // stockage indisponible
     }
   }, [])
 
-  const toggleCollapsed = useCallback(() => {
-    setCollapsedState((prev) => {
-      const next = !prev
-      localStorage.setItem('gercie-sidebar-collapsed', String(next))
-      return next
-    })
-  }, [])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_COLLAPSED_KEY,
+        String(collapsed)
+      )
+    } catch {
+      // stockage indisponible
+    }
+  }, [collapsed])
 
   useEffect(() => {
     onToggle?.(collapsed)
   }, [collapsed, onToggle])
 
-  // Fermeture mobile automatique au changement de route
-  useEffect(() => {
-    onMobileClose?.()
-  }, [pathname, onMobileClose])
+  const effectiveCollapsed = collapsed && isDesktop
 
-  // Filtrage éventuel des liens (recherche)
-  const filterLinks = useCallback(
-    (link: SidebarLink): boolean => {
-      if (!searchQuery) return true
-      const q = searchQuery.toLowerCase()
-      if (link.label.toLowerCase().includes(q)) return true
-      if (link.children?.some((c) => c.label.toLowerCase().includes(q)))
-        return true
-      return false
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((previous) => !previous)
+  }, [])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  FLYOUT SOUS-MENUS EN MODE COLLAPSED                          */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const closeSubmenuFlyout = useCallback(() => {
+    setFlyout(null)
+  }, [])
+
+  const openSubmenuFlyout = useCallback(
+    (link: SidebarLink, rect: DOMRect) => {
+      if (!effectiveCollapsed) return
+
+      setFlyout({
+        link,
+        top: rect.top,
+        left: rect.right + 8,
+      })
     },
-    [searchQuery]
+    [effectiveCollapsed]
   )
 
-  // Sections filtrées
-  const filteredSections = useMemo(() => {
-    if (!searchQuery) return sections || (links ? [{ links }] : [])
-    if (sections) {
-      return sections
-        .map((section) => ({
-          ...section,
-          links: section.links.filter(filterLinks),
-        }))
-        .filter((section) => section.links.length > 0)
-    }
-    if (links) {
-      return [{ links: links.filter(filterLinks) }]
-    }
-    return []
-  }, [sections, links, filterLinks, searchQuery])
+  useEffect(() => {
+    closeSubmenuFlyout()
+  }, [normalizedPathname, closeSubmenuFlyout])
 
-  // Si la route actuelle est dans hideOnRoutes, on masque complètement la sidebar
-  if (hideOnRoutes.some((route) => pathname.startsWith(route))) {
+  useEffect(() => {
+    if (!flyout) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeSubmenuFlyout()
+      }
+    }
+
+    const handleScroll = () => {
+      closeSubmenuFlyout()
+    }
+
+    const handleResize = () => {
+      closeSubmenuFlyout()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('scroll', handleScroll, true)
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('scroll', handleScroll, true)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [closeSubmenuFlyout, flyout])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  MOBILE DRAWER                                                */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (!mobileOpen) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onMobileClose?.()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [mobileOpen, onMobileClose])
+
+  useEffect(() => {
+    if (!mobileOpen || typeof document === 'undefined') return
+
+    const originalOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = originalOverflow
+    }
+  }, [mobileOpen])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  SEARCH DEBOUNCE                                              */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (!onSearchRef.current) return
+
+    const timer = setTimeout(() => {
+      onSearchRef.current?.(searchQuery)
+    }, 250)
+
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  CONTEXT VALUE                                                */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const contextValue = useMemo<SidebarContextValue>(
+    () => ({
+      collapsed: effectiveCollapsed,
+      searchQuery,
+      setSearchQuery,
+      searchPlaceholder,
+      closeMobile: onMobileClose,
+      openSubmenuFlyout,
+      closeSubmenuFlyout,
+    }),
+    [
+      effectiveCollapsed,
+      onMobileClose,
+      openSubmenuFlyout,
+      closeSubmenuFlyout,
+      searchPlaceholder,
+      searchQuery,
+    ]
+  )
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  FILTER SECTIONS                                              */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const filteredSections = useMemo<SidebarSection[]>(() => {
+    const baseSections: SidebarSection[] =
+      sections ?? (links ? [{ links }] : [])
+
+    const query = normalizeSearch(searchQuery)
+
+    if (!query) return baseSections
+
+    return baseSections
+      .map((section) => ({
+        ...section,
+        links: section.links
+          .map((link) => filterSidebarLink(link, query))
+          .filter((link): link is SidebarLink => Boolean(link)),
+      }))
+      .filter((section) => section.links.length > 0)
+  }, [links, searchQuery, sections])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  HIDE ON ROUTES                                               */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const isHiddenRoute = hideOnRoutes.some((route) => {
+    const normalizedRoute = normalizePathname(route)
+
+    return (
+      normalizedPathname === normalizedRoute ||
+      normalizedPathname.startsWith(`${normalizedRoute}/`)
+    )
+  })
+
+  if (isHiddenRoute) {
     return null
   }
 
+  /* ───────────────────────────────────────────────────────────── */
+  /*  FLYOUT CHILDREN                                              */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const flyoutQuery = normalizeSearch(searchQuery)
+
+  const flyoutChildren = flyout
+    ? (flyout.link.children ?? [])
+        .map((child) => filterSidebarLink(child, flyoutQuery))
+        .filter((child): child is SidebarLink => Boolean(child))
+    : []
+
+  const flyoutStyle = flyout
+    ? {
+        top: Math.max(
+          8,
+          Math.min(
+            flyout.top,
+            typeof window !== 'undefined'
+              ? window.innerHeight - 320
+              : flyout.top
+          )
+        ),
+        left: Math.max(
+          8,
+          Math.min(
+            flyout.left,
+            typeof window !== 'undefined'
+              ? window.innerWidth - 288
+              : flyout.left
+          )
+        ),
+      }
+    : undefined
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  SIDEBAR CONTENT                                              */
+  /* ───────────────────────────────────────────────────────────── */
+
   const sidebarContent = (
-    <SidebarContext.Provider
-      value={{ collapsed, toggleCollapsed, searchQuery, setSearchQuery }}
-    >
+    <SidebarContext.Provider value={contextValue}>
       <div
-        ref={sidebarRef}
-        className={cn('flex flex-col h-full', className)}
+        className={cn(
+          'flex h-full flex-col bg-surface text-fg',
+          className
+        )}
       >
-        {/* En-tête */}
-        <div className="flex items-center justify-between px-4 py-5 border-b border-neutral-200 dark:border-neutral-800">
-          {!collapsed && (
-            <div className="flex-1 overflow-hidden">
-              {logo || (
-                <Link
-                  href="/"
-                  className="text-xl font-bold text-neutral-900 dark:text-neutral-100"
-                >
-                  Gercie
-                </Link>
-              )}
-            </div>
-          )}
-          <div className="flex items-center gap-1">
-            {collapsible && (
-              <button
-                onClick={toggleCollapsed}
-                className="hidden md:flex p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                title={collapsed ? 'Développer' : 'Réduire'}
-                aria-label={collapsed ? 'Développer la barre latérale' : 'Réduire la barre latérale'}
-              >
-                {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-              </button>
+        {/* ====================================================
+            HEADER
+           ==================================================== */}
+        <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-4">
+          <div
+            className={cn(
+              'min-w-0 flex-1 overflow-hidden',
+              effectiveCollapsed && 'flex justify-center'
             )}
+          >
+            {logo ? (
+              logo
+            ) : effectiveCollapsed ? (
+              <Link
+                href="/"
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-sm font-bold text-accent-contrast shadow-card"
+                aria-label="Gercie"
+              >
+                G
+              </Link>
+            ) : (
+              <Link
+                href="/"
+                className="truncate text-lg font-semibold tracking-tight text-fg"
+              >
+                Gercie
+                <span className="text-accent">.</span>
+              </Link>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1">
+            {collapsible ? (
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className={cn(sidebarIconButtonBase, 'hidden md:inline-flex')}
+                aria-label={
+                  effectiveCollapsed
+                    ? 'Développer la barre latérale'
+                    : 'Réduire la barre latérale'
+                }
+                title={
+                  effectiveCollapsed ? 'Développer' : 'Réduire'
+                }
+              >
+                {effectiveCollapsed ? (
+                  <PanelLeftOpen size={18} aria-hidden="true" />
+                ) : (
+                  <PanelLeftClose size={18} aria-hidden="true" />
+                )}
+              </button>
+            ) : null}
+
             <button
+              type="button"
               onClick={onMobileClose}
-              className="md:hidden p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              className={cn(sidebarIconButtonBase, 'md:hidden')}
               aria-label="Fermer la barre latérale"
             >
-              <X size={18} />
+              <X size={18} aria-hidden="true" />
             </button>
           </div>
         </div>
 
-        {/* Header personnalisé */}
-        {header && !collapsed && <div className="px-4 pt-4">{header}</div>}
+        {/* ====================================================
+            CUSTOM HEADER
+           ==================================================== */}
+        {header && !effectiveCollapsed ? (
+          <div className="border-b border-line px-3 py-3">
+            {header}
+          </div>
+        ) : null}
 
-        {/* Barre de recherche */}
-        {searchable && <SidebarSearch />}
+        {/* ====================================================
+            SEARCH
+           ==================================================== */}
+        {searchable ? <SidebarSearch /> : null}
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
-          {filteredSections.map((section, sectionIdx) => (
-            <div key={sectionIdx}>
-              {section.title && !collapsed && (
-                <div className="flex items-center justify-between px-4 mb-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-500">
-                    {section.title}
-                  </h3>
-                  {section.icon && (
-                    <span className="text-neutral-400">{section.icon}</span>
-                  )}
+        {/* ====================================================
+            NAVIGATION
+           ==================================================== */}
+        <nav
+          className="flex-1 overflow-y-auto px-3 py-4"
+          aria-label="Navigation principale"
+        >
+          {filteredSections.length === 0 ? (
+            <p className="px-3 py-8 text-center text-xs text-fg-subtle">
+              {searchQuery
+                ? 'Aucun élément trouvé.'
+                : 'Aucune navigation configurée.'}
+            </p>
+          ) : (
+            <div className="space-y-6">
+              {filteredSections.map((section, sectionIndex) => (
+                <div key={`${section.title || 'section'}-${sectionIndex}`}>
+                  {section.title && !effectiveCollapsed ? (
+                    <div className="mb-2 flex items-center justify-between px-3">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-fg-subtle">
+                        {section.title}
+                      </h3>
+
+                      {section.icon ? (
+                        <span
+                          className="text-fg-subtle"
+                          aria-hidden="true"
+                        >
+                          {section.icon}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <ul className="space-y-1">
+                    {section.links.map((link) => (
+                      <SidebarItem
+                        key={link.href || link.label}
+                        link={link}
+                      />
+                    ))}
+                  </ul>
                 </div>
-              )}
-              <ul className="space-y-1">
-                {section.links.map((link) => (
-                  <SidebarItem key={link.href || link.label} link={link} />
-                ))}
-              </ul>
+              ))}
             </div>
-          ))}
+          )}
         </nav>
 
-        {/* Footer utilisateur */}
-        {userSection && !collapsed && (
-          <div className="px-3 pb-2 border-t border-neutral-200 dark:border-neutral-800 pt-3">
+        {/* ====================================================
+            USER SECTION
+           ==================================================== */}
+        {userSection && !effectiveCollapsed ? (
+          <div className="border-t border-line px-3 py-3">
             {userSection}
           </div>
-        )}
+        ) : null}
 
-        {/* Footer actions */}
-        {(footer || footerActions) && !collapsed && (
-          <div className="border-t border-neutral-200 dark:border-neutral-800 px-3 py-4">
+        {/* ====================================================
+            FOOTER ACTIONS
+           ==================================================== */}
+        {(footer || (footerActions && footerActions.length > 0)) && (
+          <div className="space-y-1 border-t border-line px-3 py-3">
             {footer}
-            {footerActions && (
-              <div className="space-y-1">
-                {footerActions.map((action) => (
-                  <button
-                    key={action.label}
-                    onClick={action.onClick}
-                    className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-200 transition-colors"
-                  >
-                    {action.icon && (
-                      <span className="text-neutral-400 dark:text-neutral-500">
-                        {action.icon}
-                      </span>
-                    )}
-                    <span>{action.label}</span>
-                    {action.badge && (
-                      <span className="ml-auto text-xs bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-full">
-                        {action.badge}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
+
+            {footerActions?.map((action) => {
+              const actionClasses = cn(
+                sidebarItemBase,
+                'text-fg-muted hover:bg-muted hover:text-fg',
+                effectiveCollapsed && 'justify-center px-2'
+              )
+
+              return (
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={() => {
+                    action.onClick()
+                    onMobileClose?.()
+                  }}
+                  className={actionClasses}
+                  aria-label={
+                    effectiveCollapsed ? action.label : undefined
+                  }
+                  title={effectiveCollapsed ? action.label : undefined}
+                >
+                  {action.icon ? (
+                    <span
+                      className="flex h-5 w-5 shrink-0 items-center justify-center text-fg-subtle"
+                      aria-hidden="true"
+                    >
+                      {action.icon}
+                    </span>
+                  ) : null}
+
+                  {!effectiveCollapsed ? (
+                    <span className="min-w-0 flex-1 truncate">
+                      {action.label}
+                    </span>
+                  ) : null}
+
+                  {effectiveCollapsed && action.badge !== undefined ? (
+                    <span
+                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger ring-2 ring-surface"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+
+                  {!effectiveCollapsed && action.badge !== undefined ? (
+                    <span className={cn(sidebarBadgeBase, 'ml-auto')}>
+                      {action.badge}
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
           </div>
         )}
 
-        {/* Bouton de thème (optionnel, toujours présent) */}
-        {!collapsed && (
-          <div className="px-3 pb-4 border-t border-neutral-200 dark:border-neutral-800 pt-3">
+        {/* ====================================================
+            THEME TOGGLE
+           ==================================================== */}
+        {typeof toggleTheme === 'function' ? (
+          <div className="border-t border-line px-3 py-3">
             <button
+              type="button"
               onClick={toggleTheme}
-              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-200 transition-colors"
-            >
-              {resolvedTheme === 'dark' ? (
-                <Sun size={18} className="text-neutral-400 dark:text-neutral-500" />
-              ) : (
-                <Moon size={18} className="text-neutral-400 dark:text-neutral-500" />
+              className={cn(
+                sidebarItemBase,
+                'text-fg-muted hover:bg-muted hover:text-fg',
+                effectiveCollapsed && 'justify-center px-2'
               )}
-              <span>
-                {resolvedTheme === 'dark' ? 'Mode clair' : 'Mode sombre'}
+              aria-label={
+                resolvedTheme === 'dark'
+                  ? 'Activer le mode clair'
+                  : 'Activer le mode sombre'
+              }
+              title={
+                resolvedTheme === 'dark'
+                  ? 'Mode clair'
+                  : 'Mode sombre'
+              }
+            >
+              <span
+                className="flex h-5 w-5 shrink-0 items-center justify-center text-fg-subtle"
+                aria-hidden="true"
+              >
+                {resolvedTheme === 'dark' ? (
+                  <Sun size={18} />
+                ) : (
+                  <Moon size={18} />
+                )}
               </span>
+
+              {!effectiveCollapsed ? (
+                <span className="min-w-0 flex-1 truncate">
+                  {resolvedTheme === 'dark'
+                    ? 'Mode clair'
+                    : 'Mode sombre'}
+                </span>
+              ) : null}
             </button>
           </div>
-        )}
+        ) : null}
       </div>
     </SidebarContext.Provider>
   )
 
+  /* ───────────────────────────────────────────────────────────── */
+  /*  RENDER                                                       */
+  /* ───────────────────────────────────────────────────────────── */
+
   return (
     <>
       {/* Overlay mobile */}
-      {mobileOpen && (
+      {mobileOpen ? (
         <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-overlay/60 backdrop-blur-sm md:hidden"
           onClick={onMobileClose}
+          aria-hidden="true"
         />
-      )}
+      ) : null}
 
-      {/* Sidebar desktop (fixe) */}
+      {/* Sidebar desktop */}
       <aside
         className={cn(
-          'hidden md:flex flex-col fixed top-0 left-0 bottom-0 z-30 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 transition-all duration-300',
-          collapsed ? 'w-[72px]' : 'w-64'
+          'fixed bottom-0 left-0 top-0 z-30 hidden border-r border-line bg-surface transition-[width] duration-300 md:flex md:flex-col',
+          effectiveCollapsed ? 'w-[4.5rem]' : 'w-72'
         )}
       >
         {sidebarContent}
       </aside>
 
-      {/* Sidebar mobile (overlay) */}
+      {/* Sidebar mobile */}
       <aside
         className={cn(
-          'md:hidden fixed top-0 left-0 bottom-0 z-50 w-72 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 shadow-2xl transition-transform duration-300',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          'fixed bottom-0 left-0 top-0 z-50 w-80 max-w-[85vw] border-r border-line bg-surface shadow-card transition-[transform,visibility] duration-300 md:hidden',
+          mobileOpen
+            ? 'visible translate-x-0'
+            : 'invisible -translate-x-full'
         )}
+        aria-hidden={!mobileOpen}
       >
         {sidebarContent}
       </aside>
+
+      {/* Flyout sous-menus en mode collapsed */}
+      {flyout ? (
+        <SidebarContext.Provider
+          value={{
+            ...contextValue,
+            collapsed: false,
+            openSubmenuFlyout: undefined,
+            closeSubmenuFlyout: undefined,
+          }}
+        >
+          <div
+            role="menu"
+            aria-label={flyout.link.label}
+            className="fixed z-[80] w-64 max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface p-2 shadow-card"
+            style={flyoutStyle}
+            onMouseLeave={closeSubmenuFlyout}
+          >
+            <p className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-subtle">
+              {flyout.link.label}
+            </p>
+
+            <ul className="space-y-1">
+              {flyoutChildren.map((child) => (
+                <SidebarItem
+                  key={child.href || child.label}
+                  link={child}
+                />
+              ))}
+            </ul>
+          </div>
+        </SidebarContext.Provider>
+      ) : null}
     </>
   )
 }
 
-export { Sidebar }
+export default Sidebar

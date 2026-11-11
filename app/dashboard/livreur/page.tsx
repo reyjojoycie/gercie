@@ -1,718 +1,1337 @@
+// app/dashboard/livreur/page.tsx
 'use client'
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAuth } from '@/contexts/AuthContext'
-import dynamic from 'next/dynamic'
-
-const MapItineraire = dynamic(() => import('@/components/MapItineraire'), {
-  ssr: false,
-  loading: () => (
-    <div className="h-[400px] w-full flex items-center justify-center bg-neutral-100 dark:bg-midnight-800 rounded-xl animate-pulse">
-      <span className="text-sm text-neutral-500">Chargement de la carte...</span>
-    </div>
-  )
-})
-
 import {
-  MapPin, Package, AlertCircle, Truck, ChevronRight,
-  Filter, X, RefreshCw, User, BarChart3, History,
-  Bell, ToggleLeft, ToggleRight, Navigation, Sparkles,
-  Search, ArrowUpDown, ChevronDown, Calendar, DollarSign,
-  CheckCircle2, Star, TrendingUp, Activity, Zap,
-  Map, Layers, Eye, Smartphone, RotateCcw
-} from 'lucide-react'
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+import Link from 'next/link'
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+} from 'framer-motion'
+
+import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/components/ui/Toast'
 
 import { Container } from '@/components/layout/Container'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { Modal } from '@/components/ui/Modal'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { ScrollToTop } from '@/components/ui/ScrollToTop'
+
 import { cn } from '@/lib/utils'
-import { toast } from '@/components/ui/Toast'
-import { useGeolocation } from '@/hooks/useGeolocation'
 
-interface Course {
-  id: string
-  numero: string
-  total: number
-  type_livraison: string
-  adresse: string
-  point_retrait_nom: string | null
-  commune: string
-  commune_id?: number | null
-  latitude?: number | null
-  longitude?: number | null
-  distance_km?: number | null
-  statut?: string
-}
+import {
+  Activity,
+  AlertCircle,
+  ArrowRight,
+  BarChart3,
+  CheckCircle,
+  Clock,
+  History,
+  MapPin,
+  Package,
+  RefreshCw,
+  Settings,
+  ShieldCheck,
+  Star,
+  Truck,
+  User,
+  WifiOff,
+  XCircle,
+} from 'lucide-react'
 
-interface Commune {
-  id: number
-  nom: string
-}
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
 
 interface LivreurProfile {
   id: string
   nom: string
   prenom: string
-  telephone: string
   email: string
-  est_disponible: boolean
-  est_actif: boolean
-  zone_operation_principale: string | null
+  telephone: string | null
   photo_url: string | null
+  est_actif: boolean
+  est_disponible: boolean
+  zone_operation_principale: string | null
+  moto_modele: string | null
+  moto_plaque: string | null
   total_livraisons: number
   evaluation_moyenne: number
-  latitude?: number | null
-  longitude?: number | null
+  distance_parcourue_km: number
+  derniere_activite: string | null
 }
 
-interface DashboardStats {
-  coursesEnCours: number
-  coursesLivrees: number
-  coursesAnnulees: number
-  totalKmParcourus: number
-  gainDuMois: number
-  tempsMoyenCourse: number
+interface LivreurStats {
+  total_livraisons: number
+  evaluation_moyenne: number
+  total_evaluations: number
+  distance_parcourue_km: number
+  courses_en_cours: {
+    count: number
+    details: any[]
+  }
+  periode: {
+    total_livraisons: number
+  }
 }
+
+interface LivraisonRapide {
+  id: string
+  commande_id: string
+  numero_commande: string
+  statut: string
+  commune: string
+  adresse: string
+  type_livraison: string
+  date_acceptation: string | null
+  date_livraison: string | null
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONSTANTES                                                     */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const AUTO_REFRESH_INTERVAL_MS = 30_000
+
+const STATUS_ALIASES: Record<string, string> = {
+  delivered: 'livree',
+  completed: 'livree',
+  termine: 'livree',
+  terminee: 'livree',
+
+  cancelled: 'annulee',
+  canceled: 'annulee',
+  refusee: 'annulee',
+  echouee: 'annulee',
+  failed: 'annulee',
+
+  assigned: 'acceptee',
+  accepted: 'acceptee',
+  acceptee: 'acceptee',
+
+  picked_up: 'colis_recupere',
+  recupere: 'colis_recupere',
+  collecte: 'colis_recupere',
+
+  in_transit: 'en_route',
+  en_cours: 'en_route',
+  route: 'en_route',
+
+  pending: 'en_attente',
+  en_attente: 'en_attente',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  en_attente: 'En attente',
+  acceptee: 'Acceptée',
+  colis_recupere: 'Colis récupéré',
+  en_route: 'En route',
+  livree: 'Livrée',
+  annulee: 'Annulée',
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  HELPERS                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function notify(
+  toast: any,
+  type: 'success' | 'error' | 'info' | 'warning',
+  message: string
+) {
+  if (typeof toast?.addToast === 'function') {
+    toast.addToast({ type, message })
+    return
+  }
+
+  if (typeof toast?.show === 'function') {
+    toast.show({ type, message })
+  }
+}
+
+function toBool(value: unknown, fallback = false): boolean {
+  if (typeof value === 'boolean') return value
+  if (value === 1 || value === '1') return true
+  if (value === 0 || value === '0') return false
+
+  const str = String(value ?? '').toLowerCase().trim()
+
+  if (['true', 'oui', 'yes', 'on', 'actif', 'active', 'disponible'].includes(str)) {
+    return true
+  }
+
+  if (['false', 'non', 'no', 'off', 'inactif', 'inactive', 'indisponible'].includes(str)) {
+    return false
+  }
+
+  return fallback
+}
+
+function toNum(value: unknown, fallback = 0): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function textOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+
+  const str = String(value).trim()
+  return str ? str : null
+}
+
+function getInitials(prenom?: string | null, nom?: string | null): string {
+  const first = String(prenom || '').trim().charAt(0)
+  const last = String(nom || '').trim().charAt(0)
+
+  return `${first}${last}`.toUpperCase() || 'L'
+}
+
+function formatNumber(value: number | null | undefined): string {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n)) return '0'
+  return n.toLocaleString('fr-FR')
+}
+
+function formatDecimal(
+  value: number | null | undefined,
+  digits = 1
+): string {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n)) return '0'
+
+  return n.toLocaleString('fr-FR', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return '—'
+
+  try {
+    return new Date(value).toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+  } catch {
+    return String(value)
+  }
+}
+
+function formatRelative(value?: string | null): string {
+  if (!value) return '—'
+
+  try {
+    const diff = Date.now() - new Date(value).getTime()
+    const minutes = Math.floor(diff / 60_000)
+    const hours = Math.floor(minutes / 60)
+    const days = Math.floor(hours / 24)
+
+    if (minutes < 1) return "à l'instant"
+    if (minutes < 60) return `il y a ${minutes} min`
+    if (hours < 24) return `il y a ${hours} h`
+    if (days < 30) return `il y a ${days} j`
+
+    return formatDate(value)
+  } catch {
+    return '—'
+  }
+}
+
+function normalizeStatus(value: unknown): string {
+  const raw = String(value || 'en_attente')
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, '_')
+
+  return STATUS_ALIASES[raw] || raw
+}
+
+function statusLabel(value: string): string {
+  const normalized = normalizeStatus(value)
+  return STATUS_LABELS[normalized] || normalized
+}
+
+function statusVariant(
+  value: string
+): 'accent' | 'danger' | 'warm' | 'neutral' | 'gold' {
+  const normalized = normalizeStatus(value)
+
+  if (normalized === 'livree') return 'accent'
+  if (normalized === 'annulee') return 'danger'
+  if (normalized === 'en_route' || normalized === 'colis_recupere') return 'gold'
+  if (normalized === 'acceptee') return 'warm'
+
+  return 'neutral'
+}
+
+function deliveryTypeLabel(type: string): string {
+  const value = String(type || '').toLowerCase()
+
+  if (
+    value.includes('retrait') ||
+    value.includes('pickup') ||
+    value === 'point_retrait'
+  ) {
+    return 'Point retrait'
+  }
+
+  return 'Domicile'
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  NORMALIZATION                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function normalizeProfile(payload: any): LivreurProfile {
+  const src = payload?.data ?? payload?.profile ?? payload ?? {}
+
+  return {
+    id: String(src.id || src.user_id || ''),
+    nom: String(src.nom || src.last_name || '').trim(),
+    prenom: String(src.prenom || src.first_name || '').trim(),
+    email: String(src.email || '').trim(),
+    telephone: textOrNull(src.telephone ?? src.phone),
+    photo_url: textOrNull(src.photo_url ?? src.avatar_url),
+    est_actif: toBool(src.est_actif ?? src.active ?? src.is_active, true),
+    est_disponible: toBool(
+      src.est_disponible ?? src.available ?? src.is_online ?? src.disponible,
+      false
+    ),
+    zone_operation_principale: textOrNull(
+      src.zone_operation_principale ?? src.zone ?? src.main_zone ?? src.commune
+    ),
+    moto_modele: textOrNull(
+      src.moto_modele ?? src.motorcycle_model ?? src.vehicle_model
+    ),
+    moto_plaque: textOrNull(src.moto_plaque ?? src.license_plate ?? src.plate),
+    total_livraisons: toNum(
+      src.total_livraisons ?? src.livraisons ?? src.deliveries ?? src.delivery_count
+    ),
+    evaluation_moyenne: toNum(
+      src.evaluation_moyenne ?? src.note_moyenne ?? src.rating ?? src.average_rating
+    ),
+    distance_parcourue_km: toNum(
+      src.distance_parcourue_km ?? src.distance_km ?? src.km ?? src.distance
+    ),
+    derniere_activite: textOrNull(
+      src.derniere_activite ?? src.last_activity ?? src.last_seen ?? src.updated_at
+    ),
+  }
+}
+
+function normalizeStats(payload: any): LivreurStats {
+  const src = payload?.data ?? payload?.stats ?? payload ?? {}
+
+  const coursesSrc =
+    src.courses_en_cours ?? src.active_courses ?? src.en_cours ?? {}
+
+  const details = Array.isArray(coursesSrc.details)
+    ? coursesSrc.details
+    : Array.isArray(coursesSrc.courses)
+      ? coursesSrc.courses
+      : Array.isArray(coursesSrc)
+        ? coursesSrc
+        : []
+
+  const count = toNum(
+    coursesSrc.count ?? coursesSrc.total ?? details.length,
+    details.length
+  )
+
+  const periodeSrc = src.periode ?? {}
+
+  return {
+    total_livraisons: toNum(
+      src.total_livraisons ?? src.livraisons ?? src.deliveries ?? 0
+    ),
+    evaluation_moyenne: toNum(
+      src.evaluation_moyenne ?? src.note_moyenne ?? src.rating ?? 0
+    ),
+    total_evaluations: toNum(
+      src.total_evaluations ?? src.evaluations ?? src.rating_count ?? 0
+    ),
+    distance_parcourue_km: toNum(
+      src.distance_parcourue_km ?? src.distance_km ?? src.km ?? 0
+    ),
+    courses_en_cours: {
+      count,
+      details,
+    },
+    periode: {
+      total_livraisons: toNum(
+        periodeSrc.total_livraisons ??
+          periodeSrc.livraisons ??
+          src.livraisons_periode ??
+          0
+      ),
+    },
+  }
+}
+
+function normalizeLivraisonRapide(raw: any, index = 0): LivraisonRapide {
+  const id = String(
+    raw?.id || raw?.livraison_id || raw?.commande_id || `livraison-${index}`
+  )
+
+  const commandeId = String(
+    raw?.commande_id || raw?.order_id || raw?.id || id
+  )
+
+  return {
+    id,
+    commande_id: commandeId,
+    numero_commande: String(
+      raw?.numero_commande ||
+        raw?.order_number ||
+        raw?.numero ||
+        commandeId.slice(-8)
+    ),
+    statut: normalizeStatus(raw?.statut || raw?.status),
+    commune: textOrNull(raw?.commune || raw?.ville || raw?.zone) || '',
+    adresse:
+      textOrNull(
+        raw?.adresse ||
+          raw?.adresse_livraison ||
+          raw?.address ||
+          raw?.livraison_adresse
+      ) || '',
+    type_livraison: String(raw?.type_livraison || 'domicile').toLowerCase(),
+    date_acceptation: textOrNull(
+      raw?.date_acceptation || raw?.accepted_at || raw?.assigned_at
+    ),
+    date_livraison: textOrNull(
+      raw?.date_livraison || raw?.delivered_at || raw?.completed_at
+    ),
+  }
+}
+
+function normalizeHistoryResponse(payload: any): LivraisonRapide[] {
+  const arr = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload?.livraisons)
+        ? payload.livraisons
+        : Array.isArray(payload?.items)
+          ? payload.items
+          : []
+
+  return arr.map(normalizeLivraisonRapide)
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SMALL UI                                                       */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function StatCard({
+  label,
+  value,
+  sub,
+  icon,
+  tone = 'default',
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  icon: React.ReactNode
+  tone?: 'default' | 'gold' | 'accent' | 'warm' | 'danger'
+}) {
+  return (
+    <Card
+      className={cn(
+        'border-gold-400/20 bg-card/70 shadow-soft transition hover:shadow-gold',
+        tone === 'accent' && 'border-emerald-400/20',
+        tone === 'warm' && 'border-amber-400/20',
+        tone === 'danger' && 'border-red-400/20'
+      )}
+    >
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              {label}
+            </p>
+
+            <p className="mt-2 truncate text-2xl font-extrabold text-foreground">
+              {value}
+            </p>
+
+            {sub && (
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                {sub}
+              </p>
+            )}
+          </div>
+
+          <div
+            className={cn(
+              'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+              tone === 'gold' && 'bg-gold-500/10 text-gold-600 dark:text-gold-400',
+              tone === 'accent' &&
+                'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+              tone === 'warm' && 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+              tone === 'danger' && 'bg-red-500/10 text-red-600 dark:text-red-400',
+              tone === 'default' && 'bg-muted text-muted-foreground'
+            )}
+          >
+            {icon}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function QuickActionCard({
+  title,
+  description,
+  href,
+  icon,
+  variant = 'outline-gold',
+}: {
+  title: string
+  description: string
+  href: string
+  icon: React.ReactNode
+  variant?: 'luxe' | 'outline-gold' | 'ghost'
+}) {
+  return (
+    <Card className="border-gold-400/20 bg-card/70 shadow-soft transition hover:shadow-gold">
+      <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
+        <div>
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gold-500/10 text-gold-600 dark:text-gold-400">
+            {icon}
+          </div>
+
+          <h3 className="mt-4 text-base font-bold text-foreground">
+            {title}
+          </h3>
+
+          <p className="mt-1 text-sm text-muted-foreground">
+            {description}
+          </p>
+        </div>
+
+        <Link href={href}>
+          <Button variant={variant} size="sm" rightIcon={<ArrowRight size={14} />}>
+            Ouvrir
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  PAGE                                                           */
+/* ═══════════════════════════════════════════════════════════════ */
 
 export default function LivreurDashboardPage() {
-  const { user, loading: authLoading } = useAuth()
-  const router = useRouter()
+  const auth = useAuth() as any
+  const user = auth?.user
+  const authLoading = Boolean(auth?.loading)
+
+  const toast = useToast()
   const queryClient = useQueryClient()
+  const prefersReduced = useReducedMotion()
 
-  const { position: geoPosition, loading: geoLoading, error: geoError, requestPosition } = useGeolocation({
-    continuous: true,
-    enableHighAccuracy: true,
-  })
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [online, setOnline] = useState(true)
 
-  const [showFilters, setShowFilters] = useState(false)
-  const [filters, setFilters] = useState({
-    commune_id: '',
-    type_livraison: '',
-    min_total: '',
-    max_total: '',
-  })
-  const [sortBy, setSortBy] = useState<'distance' | 'total' | 'date'>('distance')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [modeVue, setModeVue] = useState<'liste' | 'carte'>('liste')
-  const [acceptModalOpen, setAcceptModalOpen] = useState<Course | null>(null)
+  /* ---------------------------------------------------------- */
+  /* Title                                                       */
+  /* ---------------------------------------------------------- */
 
-  const [mounted, setMounted] = useState(false)
   useEffect(() => {
-    setMounted(true)
+    if (typeof document !== 'undefined') {
+      document.title = 'Tableau de bord livreur | Gercie'
+    }
   }, [])
 
-  const hasActiveFilters = Object.values(filters).some(v => v !== '')
+  /* ---------------------------------------------------------- */
+  /* Online status                                               */
+  /* ---------------------------------------------------------- */
 
-  const { data: communes = [] } = useQuery<Commune[]>({
-    queryKey: ['communes-all'],
-    queryFn: async () => {
-      const res = await fetch('/api/communes/all')
-      if (!res.ok) throw new Error('Erreur')
-      return res.json()
-    },
-    staleTime: 60 * 60 * 1000,
-  })
+  useEffect(() => {
+    if (typeof window === 'undefined') return
 
-  const { data: profile, isLoading: profileLoading, refetch: refetchProfile } = useQuery<LivreurProfile>({
+    setOnline(navigator.onLine)
+
+    const handleOnline = () => setOnline(true)
+    const handleOffline = () => setOnline(false)
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  /* ---------------------------------------------------------- */
+  /* Queries                                                     */
+  /* ---------------------------------------------------------- */
+
+  const profileQuery = useQuery<LivreurProfile>({
     queryKey: ['livreur-profile', user?.id],
     queryFn: async () => {
-      const res = await fetch('/api/livreur/profile')
-      if (!res.ok) throw new Error('Erreur')
-      return res.json()
+      const res = await fetch('/api/livreur/profile', {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        throw new Error(
+          json?.error || json?.message || 'Impossible de charger le profil.'
+        )
+      }
+
+      return normalizeProfile(json)
     },
-    enabled: !!user,
+    enabled: Boolean(user && !authLoading),
     staleTime: 30_000,
+    retry: 1,
   })
 
-  const { data: alertesData } = useQuery({
-    queryKey: ['livreur-alertes-count', user?.id],
-    queryFn: async () => {
-      const res = await fetch('/api/livreur/alertes?non_lues=true&limit=1')
-      if (!res.ok) return { total: 0 }
-      const data = await res.json()
-      return { total: data.meta?.non_lues || 0 }
-    },
-    enabled: !!user,
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: false,
-  })
-
-  const { data: stats } = useQuery<DashboardStats>({
+  const statsQuery = useQuery<LivreurStats>({
     queryKey: ['livreur-dashboard-stats', user?.id],
     queryFn: async () => {
-      const res = await fetch('/api/livreur/stats/dashboard')
-      if (!res.ok) throw new Error('Erreur')
-      return res.json()
+      const res = await fetch('/api/livreur/stats?periode=week', {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        throw new Error(
+          json?.error || json?.message || 'Impossible de charger les statistiques.'
+        )
+      }
+
+      return normalizeStats(json)
     },
-    enabled: !!user,
-    staleTime: 60_000,
+    enabled: Boolean(user && !authLoading),
+    staleTime: 30_000,
+    retry: 1,
   })
 
-  const { data: courses = [], isLoading: coursesLoading, isFetching, refetch: refetchCourses } = useQuery<Course[]>({
-    queryKey: ['livreur-courses', filters, sortBy],
+  const historyQuery = useQuery<LivraisonRapide[]>({
+    queryKey: ['livreur-dashboard-history', user?.id],
     queryFn: async () => {
-      const params = new URLSearchParams()
-      if (filters.commune_id) params.append('commune_id', filters.commune_id)
-      if (filters.type_livraison) params.append('type_livraison', filters.type_livraison)
-      if (filters.min_total) params.append('min_total', filters.min_total)
-      if (filters.max_total) params.append('max_total', filters.max_total)
-      const url = `/api/livreur/courses${params.toString() ? '?' + params.toString() : ''}`
-      const res = await fetch(url)
-      if (!res.ok) throw new Error('Erreur')
-      const data = await res.json()
-      return Array.isArray(data) ? data : []
+      const params = new URLSearchParams({
+        limit: '5',
+        page: '1',
+        sort_by: 'date',
+        sort_order: 'desc',
+      })
+
+      const res = await fetch(`/api/livreur/historique?${params.toString()}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        throw new Error(
+          json?.error || json?.message || 'Impossible de charger l’historique.'
+        )
+      }
+
+      return normalizeHistoryResponse(json)
     },
-    enabled: !!user,
-    staleTime: 20_000,
+    enabled: Boolean(user && !authLoading),
+    staleTime: 30_000,
+    retry: 1,
   })
 
-  const coursesWithDistance = useMemo(() => {
-    if (!geoPosition) return courses.map(c => ({ ...c, distance_km: null }))
-    return courses.map(c => {
-      if (!c.latitude || !c.longitude) return { ...c, distance_km: null }
-      const dist = calculateDistance(geoPosition.latitude, geoPosition.longitude, c.latitude, c.longitude)
-      return { ...c, distance_km: dist }
-    })
-  }, [courses, geoPosition])
+  /* ---------------------------------------------------------- */
+  /* Auto refresh                                                */
+  /* ---------------------------------------------------------- */
 
-  const sortedCourses = useMemo(() => {
-    const arr = [...coursesWithDistance]
-    if (sortBy === 'distance' && geoPosition) {
-      arr.sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity))
-    } else if (sortBy === 'total') {
-      arr.sort((a, b) => b.total - a.total)
-    }
-    return arr
-  }, [coursesWithDistance, sortBy, geoPosition])
+  useEffect(() => {
+    if (!autoRefresh) return
 
-  const filteredCourses = useMemo(() => {
-    if (!searchQuery.trim()) return sortedCourses
-    const q = searchQuery.toLowerCase()
-    return sortedCourses.filter(c =>
-      c.numero.toLowerCase().includes(q) ||
-      c.commune.toLowerCase().includes(q) ||
-      (c.adresse && c.adresse.toLowerCase().includes(q))
-    )
-  }, [sortedCourses, searchQuery])
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ['livreur-profile'] })
+      queryClient.invalidateQueries({ queryKey: ['livreur-dashboard-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['livreur-dashboard-history'] })
+    }, AUTO_REFRESH_INTERVAL_MS)
 
-  const toggleMutation = useMutation({
-    mutationFn: async () => {
+    return () => clearInterval(interval)
+  }, [autoRefresh, queryClient])
+
+  /* ---------------------------------------------------------- */
+  /* Mutation disponibilité                                      */
+  /* ---------------------------------------------------------- */
+
+  const availabilityMutation = useMutation({
+    mutationFn: async (est_disponible: boolean) => {
       const res = await fetch('/api/livreur/profile', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ est_disponible: !profile?.est_disponible }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ est_disponible }),
       })
-      if (!res.ok) throw new Error('Erreur')
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['livreur-profile'] })
-      toast({ type: 'success', message: profile?.est_disponible ? 'Vous êtes maintenant indisponible' : 'Vous êtes maintenant disponible' })
-    },
-    onError: () => toast({ type: 'error', message: 'Erreur lors du changement de statut' }),
-  })
 
-  const acceptMutation = useMutation({
-    mutationFn: async (courseId: string) => {
-      const res = await fetch('/api/livreur/courses/accept', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ course_id: courseId }),
-      })
-      if (!res.ok) throw new Error((await res.json()).error || 'Erreur')
-      return res.json()
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        throw new Error(
+          json?.error || json?.message || 'Impossible de mettre à jour la disponibilité.'
+        )
+      }
+
+      return normalizeProfile(json)
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['livreur-courses'] })
-      toast({ type: 'success', message: 'Course acceptée !' })
-      setAcceptModalOpen(null)
+    onSuccess: (data, variables) => {
+      queryClient.setQueryData(['livreur-profile', user?.id], data)
+      queryClient.invalidateQueries({ queryKey: ['livreur-dashboard-stats'] })
+
+      notify(
+        toast,
+        'success',
+        variables
+          ? 'Tu es maintenant disponible.'
+          : 'Tu es maintenant indisponible.'
+      )
     },
     onError: (err: any) => {
-      toast({ type: 'error', message: err.message })
+      notify(
+        toast,
+        'error',
+        err?.message || 'Erreur lors de la mise à jour de la disponibilité.'
+      )
     },
   })
 
-  const handleAccept = (course: Course) => {
-    setAcceptModalOpen(course)
-  }
+  /* ---------------------------------------------------------- */
+  /* Derived data                                                */
+  /* ---------------------------------------------------------- */
 
-  const confirmAccept = () => {
-    if (acceptModalOpen) {
-      acceptMutation.mutate(acceptModalOpen.id)
+  const profile = profileQuery.data
+  const stats = statsQuery.data
+  const recentDeliveries = historyQuery.data ?? []
+
+  const isFetching =
+    profileQuery.isFetching ||
+    statsQuery.isFetching ||
+    historyQuery.isFetching
+
+  const displayName = useMemo(() => {
+    if (profile?.prenom || profile?.nom) {
+      return [profile.prenom, profile.nom].filter(Boolean).join(' ')
     }
-  }
 
-  const resetFilters = () => {
-    setFilters({ commune_id: '', type_livraison: '', min_total: '', max_total: '' })
-    setShowFilters(false)
-    setSearchQuery('')
-  }
+    return user?.email?.split('@')[0] || 'Livreur'
+  }, [profile?.nom, profile?.prenom, user?.email])
 
-  const mapWaypoints = useMemo(() => {
-    return filteredCourses
-      .filter(c => c.latitude && c.longitude)
-      .map(c => ({
-        label: `#${c.numero}`,
-        latitude: c.latitude!,
-        longitude: c.longitude!,
-        type: 'waypoint' as const,
-        id: c.id,
-      }))
-  }, [filteredCourses])
+  const initials = useMemo(
+    () => getInitials(profile?.prenom, profile?.nom),
+    [profile?.nom, profile?.prenom]
+  )
 
-  if (authLoading || profileLoading) {
+  const totalLivraisons =
+    stats?.total_livraisons ?? profile?.total_livraisons ?? 0
+
+  const evaluationMoyenne =
+    stats?.evaluation_moyenne ?? profile?.evaluation_moyenne ?? 0
+
+  const distanceParcourue =
+    stats?.distance_parcourue_km ?? profile?.distance_parcourue_km ?? 0
+
+  const coursesEnCoursCount = stats?.courses_en_cours?.count ?? 0
+
+  const activeCourses = useMemo(() => {
+    const details = stats?.courses_en_cours?.details ?? []
+
+    return details
+      .map((item, index) => normalizeLivraisonRapide(item, index))
+      .filter(
+        (course) =>
+          ['acceptee', 'en_route', 'colis_recupere'].includes(course.statut)
+      )
+      .slice(0, 3)
+  }, [stats?.courses_en_cours?.details])
+
+  const handleToggleAvailability = useCallback(() => {
+    if (!profile) return
+
+    if (!profile.est_actif) {
+      notify(
+        toast,
+        'warning',
+        'Ton compte est inactif. Contacte l’administration Gercie.'
+      )
+      return
+    }
+
+    availabilityMutation.mutate(!profile.est_disponible)
+  }, [availabilityMutation, profile, toast])
+
+  const handleManualRefresh = useCallback(() => {
+    profileQuery.refetch()
+    statsQuery.refetch()
+    historyQuery.refetch()
+  }, [historyQuery, profileQuery, statsQuery])
+
+  /* ---------------------------------------------------------- */
+  /* Render guards                                               */
+  /* ---------------------------------------------------------- */
+
+  if (authLoading) {
     return (
-      <div className="min-h-screen bg-neutral-50 dark:bg-midnight-950 flex items-center justify-center">
-        <Spinner size="xl" variant="premium" label="Chargement..." />
-      </div>
-    )
-  }
-
-  if (!user) {
-    window.location.href = '/login'
-    return null
-  }
-
-  if (profile && !profile.est_actif) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-midnight-950">
-        <div className="text-center space-y-4 p-8 max-w-md">
-          <h1 className="text-2xl font-bold text-red-600 dark:text-red-400">Compte désactivé</h1>
-          <p className="text-neutral-600 dark:text-neutral-300">
-            Votre compte livreur est actuellement désactivé. Veuillez contacter le support.
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 dark:bg-midnight-950">
+        <div className="flex flex-col items-center gap-4">
+          <Spinner size="xl" variant="premium" label="Chargement..." />
+          <p className="text-sm text-muted-foreground">
+            Préparation de ton tableau de bord...
           </p>
-          <button
-            onClick={() => window.location.href = '/'}
-            className="text-sm text-gold-500 underline hover:text-gold-600"
-          >
-            Retour à l’accueil
-          </button>
         </div>
       </div>
     )
   }
 
-  return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-midnight-950 pb-16 relative overflow-hidden">
-      <div className="absolute inset-0 pattern-dots opacity-5 dark:opacity-10 pointer-events-none" />
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-6 dark:bg-midnight-950">
+        <Card className="w-full max-w-md border-border bg-card/70">
+          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+            <User size={40} className="text-muted-foreground" />
 
-      <div className="relative z-20 bg-midnight-900 border-b border-gold-400/20">
-        <Container className="py-3 flex items-center justify-between gap-4 text-xs uppercase tracking-[0.2em] font-bold text-gold-200 overflow-hidden">
-          <div className="flex items-center gap-6">
-            <span className="flex items-center gap-2 whitespace-nowrap">
-              <Truck size={14} className="text-gold-400" />
-              Espace Livreur
-            </span>
-            <div className="w-px h-4 bg-gold-400/30" />
-            <span className="flex items-center gap-2 whitespace-nowrap">
-              <Package size={14} className="text-gold-400" />
-              Gercie Express
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => toggleMutation.mutate()}
-              disabled={toggleMutation.isPending}
-              className="flex items-center gap-1 text-xs disabled:opacity-50"
+            <div>
+              <h1 className="text-xl font-bold text-foreground">
+                Connexion requise
+              </h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Tu dois être connecté pour accéder à ton espace livreur.
+              </p>
+            </div>
+
+            <Link
+              href={`/login?redirect=${encodeURIComponent('/dashboard/livreur')}`}
             >
-              {profile.est_disponible ? (
-                <ToggleRight size={18} className="text-green-400" />
-              ) : (
-                <ToggleLeft size={18} className="text-red-400" />
-              )}
-              <span>{profile.est_disponible ? 'Disponible' : 'Indisponible'}</span>
-            </button>
-            <Link href="/dashboard/livreur/alertes" className="relative">
-              <Bell size={16} />
-              {alertesData && alertesData.total > 0 && (
-                <span className="absolute -top-1 -right-2 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center">
-                  {alertesData.total > 9 ? '9+' : alertesData.total}
-                </span>
-              )}
+              <Button variant="luxe">Se connecter</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (profileQuery.isLoading && !profile) {
+    return (
+      <div className="min-h-screen bg-neutral-50 pb-16 dark:bg-midnight-950">
+        <div className="sticky top-0 z-20 border-b border-gold-400/20 bg-white/70 shadow-soft backdrop-blur-xl dark:bg-midnight-900/70">
+          <Container className="flex items-center gap-4 py-4">
+            <div className="h-12 w-12 animate-pulse rounded-2xl bg-muted" />
+            <div className="space-y-2">
+              <div className="h-6 w-52 animate-pulse rounded bg-muted" />
+              <div className="h-4 w-36 animate-pulse rounded bg-muted" />
+            </div>
+          </Container>
+        </div>
+
+        <Container className="relative z-10 py-8">
+          <div className="grid gap-6 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-32 animate-pulse rounded-3xl bg-muted" />
+            ))}
+          </div>
+
+          <div className="mt-8 grid gap-6 lg:grid-cols-3">
+            <div className="h-72 animate-pulse rounded-3xl bg-muted lg:col-span-2" />
+            <div className="h-72 animate-pulse rounded-3xl bg-muted" />
+          </div>
+        </Container>
+      </div>
+    )
+  }
+
+  /* ---------------------------------------------------------- */
+  /* Render                                                      */
+  /* ---------------------------------------------------------- */
+
+  return (
+    <div className="relative min-h-screen bg-neutral-50 pb-16 dark:bg-midnight-950">
+      <div className="pattern-dots pointer-events-none absolute inset-0 opacity-5 dark:opacity-10" />
+
+      {/* Header */}
+      <div className="sticky top-0 z-20 border-b border-gold-400/20 bg-white/70 shadow-soft backdrop-blur-xl dark:bg-midnight-900/70">
+        <Container className="flex flex-wrap items-center gap-4 py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            {profile?.photo_url ? (
+              <img
+                src={profile.photo_url}
+                alt=""
+                className="h-12 w-12 rounded-2xl border border-gold-400/20 object-cover"
+              />
+            ) : (
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gold-500/10 text-lg font-bold text-gold-600 dark:text-gold-400">
+                {initials}
+              </div>
+            )}
+
+            <div className="min-w-0">
+              <h1 className="truncate font-serif text-2xl font-bold text-neutral-900 dark:text-neutral-100">
+                Bonjour {displayName}
+              </h1>
+
+              <p className="mt-1 flex items-center gap-2 truncate text-sm text-neutral-500 dark:text-neutral-400">
+                <MapPin size={14} className="text-gold-500" />
+                {profile?.zone_operation_principale || 'Zone non définie'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={profile?.est_actif ? 'gold' : 'danger'}
+              size="sm"
+            >
+              {profile?.est_actif ? 'Compte actif' : 'Compte inactif'}
+            </Badge>
+
+            <Badge
+              variant={profile?.est_disponible ? 'accent' : 'neutral'}
+              size="sm"
+            >
+              {profile?.est_disponible ? 'Disponible' : 'Indisponible'}
+            </Badge>
+
+            <Tooltip
+              content={
+                autoRefresh
+                  ? 'Désactiver l’actualisation automatique'
+                  : 'Activer l’actualisation automatique'
+              }
+            >
+              <button
+                type="button"
+                onClick={() => setAutoRefresh((prev) => !prev)}
+                className={cn(
+                  'rounded-xl border p-2 transition',
+                  autoRefresh
+                    ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'border-border text-muted-foreground hover:text-foreground'
+                )}
+                aria-pressed={autoRefresh}
+                aria-label="Actualisation automatique"
+              >
+                <RefreshCw
+                  size={16}
+                  className={autoRefresh ? 'animate-spin' : ''}
+                />
+              </button>
+            </Tooltip>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleManualRefresh}
+              loading={isFetching}
+              leftIcon={<RefreshCw size={14} />}
+            >
+              Actualiser
+            </Button>
+
+            <Link href="/dashboard/livreur/profile">
+              <Button variant="outline-gold" size="sm" leftIcon={<Settings size={14} />}>
+                Profil
+              </Button>
             </Link>
           </div>
         </Container>
       </div>
 
-      <div className="sticky top-0 z-10 backdrop-blur-xl bg-white/70 dark:bg-midnight-900/70 border-b border-gold-400/20 shadow-soft">
-        <Container className="py-4 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-serif">
-              Tableau de bord livreur
-            </h1>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
-              Gérez vos livraisons en temps réel
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Tooltip content="Statistiques">
-              <Link href="/dashboard/livreur/stats">
-                <Button variant="ghost" size="icon" className="text-neutral-500 hover:text-gold-500">
-                  <BarChart3 size={20} />
-                </Button>
-              </Link>
-            </Tooltip>
-            <Tooltip content="Historique">
-              <Link href="/dashboard/livreur/historique">
-                <Button variant="ghost" size="icon" className="text-neutral-500 hover:text-gold-500">
-                  <History size={20} />
-                </Button>
-              </Link>
-            </Tooltip>
-            <Tooltip content="Mon profil">
-              <Link href="/dashboard/livreur/profile">
-                <Button variant="ghost" size="icon" className="text-neutral-500 hover:text-gold-500">
-                  <User size={20} />
-                </Button>
-              </Link>
-            </Tooltip>
-            <Tooltip content="Actualiser">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => refetchCourses()}
-                className="text-neutral-500 hover:text-gold-500"
-              >
-                <RefreshCw size={20} className={cn(isFetching && 'animate-spin')} />
-              </Button>
-            </Tooltip>
-            <div className="flex items-center rounded-full bg-neutral-100 dark:bg-midnight-700/40 p-1 border border-gold-400/20">
-              <button
-                onClick={() => setModeVue('liste')}
-                className={cn('p-1.5 rounded-full transition', modeVue === 'liste' ? 'bg-gold-500 text-white' : 'text-neutral-400')}
-              >
-                <Eye size={16} />
-              </button>
-              <button
-                onClick={() => setModeVue('carte')}
-                className={cn('p-1.5 rounded-full transition', modeVue === 'carte' ? 'bg-gold-500 text-white' : 'text-neutral-400')}
-              >
-                <Map size={16} />
-              </button>
-            </div>
-            <Button
-              variant={showFilters ? 'luxe' : 'outline-gold'}
-              size="sm"
-              onClick={() => setShowFilters(!showFilters)}
-              leftIcon={<Filter size={16} />}
-            >
-              Filtres
-            </Button>
-          </div>
-        </Container>
-      </div>
-
-      <AnimatePresence>
-        {showFilters && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden bg-white/80 dark:bg-midnight-800/80 backdrop-blur-md border-b border-gold-400/20"
-          >
-            <Container className="py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">Commune</label>
-                  <select
-                    value={filters.commune_id}
-                    onChange={e => setFilters({ ...filters, commune_id: e.target.value })}
-                    className="w-full border border-gold-400/30 rounded-xl p-2 text-sm bg-white/50 dark:bg-midnight-700/50 backdrop-blur-sm"
-                  >
-                    <option value="">Toutes</option>
-                    {communes.map(c => (
-                      <option key={c.id} value={c.id}>{c.nom}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">Type</label>
-                  <select
-                    value={filters.type_livraison}
-                    onChange={e => setFilters({ ...filters, type_livraison: e.target.value })}
-                    className="w-full border border-gold-400/30 rounded-xl p-2 text-sm bg-white/50 dark:bg-midnight-700/50 backdrop-blur-sm"
-                  >
-                    <option value="">Tous</option>
-                    <option value="domicile">Domicile</option>
-                    <option value="point_retrait">Point retrait</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">Min (FC)</label>
-                  <Input
-                    type="number"
-                    variant="glass"
-                    placeholder="0"
-                    value={filters.min_total}
-                    onChange={e => setFilters({ ...filters, min_total: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">Max (FC)</label>
-                  <Input
-                    type="number"
-                    variant="glass"
-                    placeholder="Illimité"
-                    value={filters.max_total}
-                    onChange={e => setFilters({ ...filters, max_total: e.target.value })}
-                  />
-                </div>
-              </div>
-              {hasActiveFilters && (
-                <div className="mt-4 flex justify-end">
-                  <Button variant="ghost" size="sm" onClick={resetFilters} leftIcon={<X size={14} />}>
-                    Effacer les filtres
-                  </Button>
-                </div>
-              )}
-            </Container>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <Container className="py-8 relative z-10">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}>
-          {stats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-              {[
-                { label: 'En cours', value: stats.coursesEnCours, icon: <Activity size={20} className="text-amber-500" /> },
-                { label: 'Livrées', value: stats.coursesLivrees, icon: <CheckCircle2 size={20} className="text-green-500" /> },
-                { label: 'Km parcourus', value: `${stats.totalKmParcourus?.toFixed(0) || 0} km`, icon: <TrendingUp size={20} className="text-blue-500" /> },
-                { label: 'Gain du mois', value: `${stats.gainDuMois?.toLocaleString() || 0} FC`, icon: <DollarSign size={20} className="text-gold-500" /> },
-              ].map((stat, idx) => (
-                <Card key={idx} variant="glass" className="border-gold-400/20">
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-muted">{stat.icon}</div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">{stat.label}</p>
-                      <p className="font-bold text-foreground">{stat.value}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-
-          {mounted && modeVue === 'carte' && mapWaypoints.length > 0 && (
-            <Card variant="glass" className="mb-8 border-gold-400/20 shadow-gold">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-neutral-800 dark:text-neutral-200">
-                  <Navigation size={18} className="text-gold-500" />
-                  Vue d'ensemble
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <MapItineraire
-                  origin={{
-                    label: 'Ma position',
-                    latitude: geoPosition?.latitude ?? profile?.latitude ?? -4.4419,
-                    longitude: geoPosition?.longitude ?? profile?.longitude ?? 15.2663,
-                  }}
-                  waypoints={mapWaypoints}
-                  height="400px"
-                  optimize={false}
-                />
-              </CardContent>
-            </Card>
-          )}
-
-          <div className="flex flex-col sm:flex-row gap-4 mb-6 items-start sm:items-center">
-            <div className="relative flex-1 max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={18} />
-              <Input
-                variant="glass"
-                placeholder="Rechercher par numéro, commune..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="pl-10"
-                allowClear
-                onClear={() => setSearchQuery('')}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-neutral-500">Trier :</span>
-              {[
-                { key: 'distance', label: 'Distance' },
-                { key: 'total', label: 'Montant' },
-                { key: 'date', label: 'Date' },
-              ].map(opt => (
-                <button
-                  key={opt.key}
-                  onClick={() => setSortBy(opt.key as typeof sortBy)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-full text-xs font-medium transition border',
-                    sortBy === opt.key
-                      ? 'bg-gold-400/20 border-gold-400/60 text-gold-600 shadow-sm'
-                      : 'bg-card border-border text-muted-foreground hover:border-gold-400'
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <div className="ml-auto text-xs text-neutral-500">
-              {filteredCourses.length} course{filteredCourses.length > 1 ? 's' : ''}
-            </div>
-          </div>
-
-          {coursesLoading ? (
-            <div className="space-y-4">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="bg-white dark:bg-midnight-800/40 rounded-2xl p-5 border border-gold-400/10">
-                  <div className="flex justify-between mb-3">
-                    <Skeleton variant="text" className="w-48 h-6" shimmer shimmerVariant="gold" />
-                    <Skeleton variant="rounded" className="w-24 h-6 rounded-full" shimmer shimmerVariant="gold" />
-                  </div>
-                  <Skeleton variant="text" className="w-2/3 h-4 mb-2" shimmer shimmerVariant="gold" />
-                  <div className="flex justify-between pt-4 border-t border-neutral-200 dark:border-neutral-700">
-                    <Skeleton variant="text" className="w-32 h-6" shimmer shimmerVariant="gold" />
-                    <Skeleton variant="rounded" className="w-24 h-8 rounded-xl" shimmer shimmerVariant="gold" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : filteredCourses.length === 0 ? (
+      <Container className="relative z-10 py-8">
+        {/* Offline banner */}
+        <AnimatePresence>
+          {!online && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-center py-12 bg-white/50 dark:bg-midnight-800/40 backdrop-blur rounded-2xl border border-gold-400/20"
+              exit={{ opacity: 0, y: -8 }}
+              className="mb-6 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300"
             >
-              <Package size={48} className="mx-auto text-neutral-300 dark:text-neutral-600 mb-4" />
-              <p className="text-neutral-500 dark:text-neutral-400">Aucune course disponible.</p>
-              <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-2">
-                Revenez plus tard ou ajustez vos filtres.
+              <WifiOff size={18} className="shrink-0" />
+              <p>
+                Vous êtes hors ligne. Certaines données peuvent être obsolètes.
               </p>
             </motion.div>
-          ) : (
-            <div className="grid gap-4">
-              <AnimatePresence>
-                {filteredCourses.map((course, idx) => (
-                  <motion.div
-                    key={course.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ delay: idx * 0.05 }}
-                    whileHover={{ y: -2 }}
+          )}
+        </AnimatePresence>
+
+        {/* Inactive account banner */}
+        {profile && !profile.est_actif && (
+          <Card className="mb-8 border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/20">
+            <CardContent className="flex items-start gap-3 p-4 text-sm text-red-800 dark:text-red-300">
+              <AlertCircle size={18} className="mt-0.5 shrink-0" />
+              <p>
+                Ton compte livreur est inactif. Tu ne peux pas recevoir de
+                nouvelles affectations tant que l’administration n’a pas
+                réactivé ton profil.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Availability card */}
+        <motion.div
+          initial={prefersReduced ? false : { opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
+          className="mb-8"
+        >
+          <Card className="overflow-hidden border-gold-400/20 bg-card/70 shadow-gold">
+            <CardContent className="p-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-start gap-4">
+                  <div
+                    className={cn(
+                      'flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl',
+                      profile?.est_disponible
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-muted text-muted-foreground'
+                    )}
                   >
-                    <Card className="overflow-hidden border-gold-400/10 hover:shadow-gold transition-shadow bg-white/70 dark:bg-midnight-800/60 backdrop-blur-sm">
-                      <CardContent className="p-5">
-                        <div className="flex flex-wrap justify-between items-start gap-4">
-                          <div>
-                            <h3 className="font-bold text-neutral-900 dark:text-neutral-100 text-lg flex items-center gap-2">
-                              Commande #{course.numero}
-                              {course.distance_km != null && (
-                                <Badge variant="neutral" size="sm">
-                                  <MapPin size={12} className="mr-1" /> {course.distance_km.toFixed(1)} km
-                                </Badge>
-                              )}
-                            </h3>
-                            <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500">
-                              <MapPin size={14} className="text-gold-500" />
-                              <span>{course.commune}</span>
-                            </div>
-                            <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2">
+                    <ShieldCheck size={28} />
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl font-bold text-foreground">
+                      Disponibilité
+                    </h2>
+
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Active cette option pour recevoir de nouvelles courses.
+                    </p>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant={profile?.est_disponible ? 'accent' : 'neutral'}
+                        size="sm"
+                      >
+                        {profile?.est_disponible ? 'En ligne' : 'Hors ligne'}
+                      </Badge>
+
+                      {profile?.derniere_activite && (
+                        <span className="text-xs text-muted-foreground">
+                          Dernière activité :{' '}
+                          {formatRelative(profile.derniere_activite)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  variant={profile?.est_disponible ? 'danger' : 'luxe'}
+                  size="lg"
+                  onClick={handleToggleAvailability}
+                  loading={availabilityMutation.isPending}
+                  disabled={!profile?.est_actif || availabilityMutation.isPending}
+                  leftIcon={
+                    profile?.est_disponible ? (
+                      <XCircle size={18} />
+                    ) : (
+                      <CheckCircle size={18} />
+                    )
+                  }
+                >
+                  {profile?.est_disponible
+                    ? 'Me mettre hors ligne'
+                    : 'Me mettre en ligne'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Stats */}
+        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Livraisons"
+            value={formatNumber(totalLivraisons)}
+            sub={
+              stats?.periode.total_livraisons
+                ? `${formatNumber(stats.periode.total_livraisons)} cette semaine`
+                : 'Total cumulé'
+            }
+            icon={<Package size={20} />}
+            tone="gold"
+          />
+
+          <StatCard
+            label="Évaluation"
+            value={`${formatDecimal(evaluationMoyenne, 1)} / 5`}
+            sub={
+              stats?.total_evaluations
+                ? `${formatNumber(stats.total_evaluations)} évaluation(s)`
+                : 'Note moyenne'
+            }
+            icon={<Star size={20} />}
+            tone="warm"
+          />
+
+          <StatCard
+            label="Distance"
+            value={`${formatDecimal(distanceParcourue, 0)} km`}
+            sub="Distance parcourue"
+            icon={<MapPin size={20} />}
+            tone="accent"
+          />
+
+          <StatCard
+            label="En cours"
+            value={formatNumber(coursesEnCoursCount)}
+            sub="Courses actives"
+            icon={<Activity size={20} />}
+            tone={coursesEnCoursCount > 0 ? 'danger' : 'default'}
+          />
+        </div>
+
+        {/* Quick actions */}
+        <div className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <QuickActionCard
+            title="Historique"
+            description="Consultez vos livraisons passées."
+            href="/dashboard/livreur/historique"
+            icon={<History size={20} />}
+          />
+
+          <QuickActionCard
+            title="Statistiques"
+            description="Analysez votre performance."
+            href="/dashboard/livreur/stats"
+            icon={<BarChart3 size={20} />}
+          />
+
+          <QuickActionCard
+            title="Profil"
+            description="Mettez à jour vos informations."
+            href="/dashboard/livreur/profile"
+            icon={<User size={20} />}
+          />
+
+          <QuickActionCard
+            title="Courses"
+            description="Accédez au détail de vos courses."
+            href="/dashboard/livreur/historique"
+            icon={<Truck size={20} />}
+            variant="luxe"
+          />
+        </div>
+
+        <div className="grid gap-8 lg:grid-cols-3">
+          {/* Active courses */}
+          <div className="lg:col-span-2">
+            <Card className="border-gold-400/20 bg-card/70">
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Activity size={18} className="text-gold-500" />
+                    Courses en cours
+                  </CardTitle>
+                  <CardDescription>
+                    Affectations actives à traiter.
+                  </CardDescription>
+                </div>
+
+                <Badge variant="warm" size="sm">
+                  {formatNumber(coursesEnCoursCount)} active(s)
+                </Badge>
+              </CardHeader>
+
+              <CardContent>
+                {activeCourses.length > 0 ? (
+                  <div className="space-y-3">
+                    {activeCourses.map((course) => (
+                      <div
+                        key={course.id}
+                        className="flex flex-col gap-3 rounded-2xl border border-border bg-background/50 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-mono text-sm font-semibold text-foreground">
+                            #{course.numero_commande}
+                          </p>
+
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant={statusVariant(course.statut)}
+                              size="sm"
+                            >
+                              {statusLabel(course.statut)}
+                            </Badge>
+
+                            {course.commune && (
+                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                <MapPin size={12} />
+                                {course.commune}
+                              </span>
+                            )}
+
+                            <span className="text-xs text-muted-foreground">
+                              {deliveryTypeLabel(course.type_livraison)}
+                            </span>
+                          </div>
+
+                          {course.adresse && (
+                            <p className="mt-1 truncate text-xs text-muted-foreground">
                               {course.adresse}
                             </p>
-                          </div>
-                          <div className="flex gap-2">
-                            <Link href={`/dashboard/livreur/courses/${course.id}`}>
-                              <Button variant="outline-gold" size="sm" rightIcon={<ChevronRight size={16} />}>
-                                Détails
-                              </Button>
-                            </Link>
-                            <Button
-                              variant="luxe"
-                              size="sm"
-                              onClick={() => handleAccept(course)}
-                              leftIcon={<CheckCircle2 size={14} />}
-                            >
-                              Accepter
-                            </Button>
-                          </div>
+                          )}
                         </div>
-                        <div className="mt-4 pt-4 border-t border-gold-400/10 flex justify-between items-center">
-                          <Badge variant="neutral" size="sm">
-                            {course.type_livraison === 'domicile' ? '🏠 Domicile' : '📍 Point retrait'}
+
+                        <Link
+                          href={`/dashboard/livreur/courses/${course.commande_id || course.id}`}
+                          className="shrink-0"
+                        >
+                          <Button
+                            variant="outline-gold"
+                            size="sm"
+                            rightIcon={<ArrowRight size={14} />}
+                          >
+                            Ouvrir
+                          </Button>
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gold-500/10 text-gold-600 dark:text-gold-400">
+                      <Truck size={28} />
+                    </div>
+
+                    <p className="text-sm text-muted-foreground">
+                      Aucune course en cours pour le moment.
+                    </p>
+
+                    {profile?.est_disponible ? (
+                      <p className="text-xs text-muted-foreground">
+                        Reste disponible, une nouvelle affectation arrivera bientôt.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Mets-toi en ligne pour recevoir des courses.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Recent deliveries */}
+          <div>
+            <Card className="border-gold-400/20 bg-card/70">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Clock size={18} className="text-gold-500" />
+                  Dernières livraisons
+                </CardTitle>
+                <CardDescription>
+                  Aperçu rapide de ton activité récente.
+                </CardDescription>
+              </CardHeader>
+
+              <CardContent className="space-y-3">
+                {historyQuery.isLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-20 animate-pulse rounded-2xl bg-muted"
+                    />
+                  ))
+                ) : recentDeliveries.length > 0 ? (
+                  recentDeliveries.map((delivery) => (
+                    <Link
+                      key={delivery.id}
+                      href={`/dashboard/livreur/courses/${delivery.commande_id || delivery.id}`}
+                      className="block"
+                    >
+                      <div className="rounded-2xl border border-border bg-background/50 p-3 transition hover:border-gold-400/40">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate font-mono text-sm font-semibold text-foreground">
+                              #{delivery.numero_commande}
+                            </p>
+
+                            <p className="mt-1 truncate text-xs text-muted-foreground">
+                              {delivery.commune || 'Commune inconnue'}
+                            </p>
+                          </div>
+
+                          <Badge
+                            variant={statusVariant(delivery.statut)}
+                            size="sm"
+                          >
+                            {statusLabel(delivery.statut)}
                           </Badge>
-                          <span className="text-xl font-bold text-gold-600">
-                            {course.total.toLocaleString()} FC
-                          </span>
                         </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
-        </motion.div>
+
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {formatRelative(
+                            delivery.date_livraison || delivery.date_acceptation
+                          )}
+                        </p>
+                      </div>
+                    </Link>
+                  ))
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                    <Package size={32} className="text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      Aucune livraison récente.
+                    </p>
+                  </div>
+                )}
+
+                <Link href="/dashboard/livreur/historique">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    fullWidth
+                    rightIcon={<ArrowRight size={14} />}
+                  >
+                    Voir tout l’historique
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </Container>
 
-      <Modal
-        isOpen={!!acceptModalOpen}
-        onClose={() => setAcceptModalOpen(null)}
-        title="Accepter la course ?"
-        size="sm"
-        accent="gold"
-      >
-        {acceptModalOpen && (
-          <div className="space-y-4">
-            <div className="bg-neutral-50 dark:bg-midnight-700/40 rounded-xl p-4 text-sm space-y-2 border border-gold-400/10">
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-500">Commande</span>
-                <span className="font-bold">#{acceptModalOpen.numero}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-500">Total</span>
-                <span className="font-bold text-gold-600">{acceptModalOpen.total.toLocaleString()} FC</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-neutral-500">Adresse</span>
-                <span className="text-right text-xs max-w-[150px] truncate">{acceptModalOpen.adresse}</span>
-              </div>
-              {acceptModalOpen.distance_km && (
-                <div className="flex items-center justify-between">
-                  <span className="text-neutral-500">Distance</span>
-                  <span>{acceptModalOpen.distance_km.toFixed(1)} km</span>
-                </div>
-              )}
-            </div>
-            <div className="flex gap-3">
-              <Button variant="luxe" fullWidth onClick={confirmAccept} loading={acceptMutation.isPending} leftIcon={<CheckCircle2 size={16} />}>
-                Accepter
-              </Button>
-              <Button variant="outline-gold" fullWidth onClick={() => setAcceptModalOpen(null)}>
-                Annuler
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      <ScrollToTop variant="circle" showProgress />
     </div>
   )
-}
-
-function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLng = ((lng2 - lng1) * Math.PI) / 180
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
 }

@@ -1,8 +1,15 @@
 // components/ui/Input.tsx
 'use client'
 
-import React, { forwardRef, useState, useCallback, useRef } from 'react'
-import { cn } from '@/lib/utils'
+import React, {
+  forwardRef,
+  useState,
+  useCallback,
+  useRef,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from 'react'
+
 import {
   Eye,
   EyeOff,
@@ -12,31 +19,106 @@ import {
   Loader2,
 } from 'lucide-react'
 
+import { cn } from '@/lib/utils'
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export interface InputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
+  /** Label affiché au-dessus ou en floating */
   label?: string
+  /** Active le mode floating label (Material-style) */
   floatingLabel?: boolean
+  /** Message d'erreur */
   error?: string
+  /** Message de succès */
   success?: string
+  /** Texte d'aide contextuel */
   helperText?: string
+  /** Affiche le compteur de caractères */
   showCharCount?: boolean
-  leftIcon?: React.ReactNode
-  rightIcon?: React.ReactNode
+  /** Icône à gauche */
+  leftIcon?: ReactNode
+  /** Icône à droite */
+  rightIcon?: ReactNode
+  /** Label accessible pour l'icône droite */
   rightIconLabel?: string
+  /** Callback au clic sur l'icône droite */
   onRightIconClick?: () => void
+  /** Classe sur le wrapper externe */
   wrapperClassName?: string
+  /** Variante visuelle */
   variant?: 'outline' | 'filled' | 'glass' | 'premium'
+  /** Taille du champ */
   inputSize?: 'sm' | 'md' | 'lg'
+  /** Texte préfixe (ex: "$", "€", "https://") */
   prefix?: string
+  /** Texte suffixe (ex: "kg", "FC", "@gmail.com") */
   suffix?: string
+  /** Masque les flèches des inputs number */
   hideNumberArrows?: boolean
+  /** Affiche un bouton pour effacer le contenu */
   allowClear?: boolean
+  /** Callback quand le champ est effacé */
   onClear?: () => void
+  /** État de chargement */
   loading?: boolean
+  /** Texte affiché pendant le chargement */
   loadingText?: string
+  /** Active l'animation shake en cas d'erreur */
   shakeOnError?: boolean
+  /** Durée de l'animation shake (ms) */
   shakeDuration?: number
 }
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  STYLE MAPS                                                     */
+/* ═══════════════════════════════════════════════════════════════ */
+
+const baseInputStyles = cn(
+  'block w-full rounded-xl border',
+  'bg-canvas text-fg',
+  'placeholder:text-fg-subtle',
+  'transition-all duration-200 ease-out',
+  'focus:outline-none focus:ring-2 focus:ring-offset-0',
+  'disabled:cursor-not-allowed disabled:opacity-50',
+  'motion-reduce:transition-none'
+)
+
+const variantStyles: Record<string, string> = {
+  outline: cn(
+    'border-line',
+    'hover:border-line-strong',
+    'focus:border-accent focus:ring-accent/20'
+  ),
+  filled: cn(
+    'border-transparent bg-muted',
+    'hover:bg-muted/80',
+    'focus:bg-canvas focus:border-accent focus:ring-accent/20'
+  ),
+  glass: cn(
+    'border-line/50 bg-surface/50 backdrop-blur-md',
+    'text-fg placeholder:text-fg-subtle',
+    'focus:border-accent/60 focus:bg-surface/70 focus:ring-accent/20'
+  ),
+  premium: cn(
+    'border-2 border-line bg-canvas shadow-card',
+    'hover:shadow-card-hover',
+    'focus:border-transparent focus:ring-2 focus:ring-accent/30'
+  ),
+}
+
+const sizeStyles: Record<string, string> = {
+  sm: 'px-3 py-1.5 text-sm',
+  md: 'px-4 py-2.5 text-sm',
+  lg: 'px-5 py-3 text-base',
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  COMPONENT                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
 
 const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
   const {
@@ -75,6 +157,10 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
     ...rest
   } = props
 
+  /* ───────────────────────────────────────────────────────────── */
+  /*  IDs & ARIA                                                   */
+  /* ───────────────────────────────────────────────────────────── */
+
   const inputId =
     id || label?.toLowerCase().replace(/\s+/g, '-') || undefined
 
@@ -92,6 +178,10 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
 
   const ariaInvalid = error ? true : ariaInvalidProp
 
+  /* ───────────────────────────────────────────────────────────── */
+  /*  STATE                                                        */
+  /* ───────────────────────────────────────────────────────────── */
+
   const [focused, setFocused] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -101,6 +191,10 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
     if (typeof rest.defaultValue === 'string') return rest.defaultValue
     return ''
   })
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  REFS                                                         */
+  /* ───────────────────────────────────────────────────────────── */
 
   const setRefs = useCallback(
     (node: HTMLInputElement | null) => {
@@ -115,6 +209,10 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
     [ref]
   )
 
+  /* ───────────────────────────────────────────────────────────── */
+  /*  DERIVED                                                      */
+  /* ───────────────────────────────────────────────────────────── */
+
   const isPassword = initialType === 'password'
   const currentType = isPassword && showPassword ? 'text' : initialType
 
@@ -128,6 +226,10 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
   const charCount = currentValue.length
   const hasValue = currentValue.length > 0
   const isLabelFloating = floatingLabel && label && (focused || hasValue)
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  HANDLERS                                                     */
+  /* ───────────────────────────────────────────────────────────── */
 
   const handleChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,12 +274,16 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
     []
   )
 
-  const renderRightIcon = () => {
+  /* ───────────────────────────────────────────────────────────── */
+  /*  RIGHT ICON RENDERER                                          */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const renderRightIcon = (): ReactNode => {
     if (loading) {
       return (
         <Loader2
           size={16}
-          className="animate-spin text-brand-500"
+          className="animate-spin text-accent"
           aria-hidden="true"
         />
       )
@@ -194,7 +300,13 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
             showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'
           }
           aria-pressed={showPassword}
-          className="rounded p-1 text-neutral-400 transition-colors hover:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-neutral-500 dark:hover:text-neutral-300"
+          className={cn(
+            'rounded p-1 text-fg-subtle',
+            'transition-colors duration-200',
+            'hover:text-fg',
+            'focus:outline-none focus:ring-2 focus:ring-accent',
+            'motion-reduce:transition-none'
+          )}
         >
           {showPassword ? (
             <EyeOff size={16} aria-hidden="true" />
@@ -209,7 +321,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
       return (
         <AlertCircle
           size={16}
-          className="text-red-500"
+          className="text-danger"
           aria-hidden="true"
         />
       )
@@ -219,7 +331,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
       return (
         <CheckCircle
           size={16}
-          className="text-accent-500"
+          className="text-success"
           aria-hidden="true"
         />
       )
@@ -233,7 +345,13 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
           onMouseDown={(event) => event.preventDefault()}
           disabled={disabled}
           aria-label="Effacer le champ"
-          className="rounded p-1 text-neutral-400 transition-colors hover:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-neutral-500 dark:hover:text-neutral-300"
+          className={cn(
+            'rounded p-1 text-fg-subtle',
+            'transition-colors duration-200',
+            'hover:text-fg',
+            'focus:outline-none focus:ring-2 focus:ring-accent',
+            'motion-reduce:transition-none'
+          )}
         >
           <X size={16} aria-hidden="true" />
         </button>
@@ -253,7 +371,13 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
             onMouseDown={(event) => event.preventDefault()}
             disabled={disabled}
             aria-label={rightIconLabel || 'Action du champ'}
-            className="rounded p-1 text-neutral-400 transition-colors hover:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-neutral-500 dark:hover:text-neutral-300"
+            className={cn(
+              'rounded p-1 text-fg-subtle',
+              'transition-colors duration-200',
+              'hover:text-fg',
+              'focus:outline-none focus:ring-2 focus:ring-accent',
+              'motion-reduce:transition-none'
+            )}
           >
             {rightIcon}
           </button>
@@ -261,10 +385,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
       }
 
       return (
-        <span
-          className="text-neutral-400 dark:text-neutral-500"
-          aria-hidden="true"
-        >
+        <span className="text-fg-subtle" aria-hidden="true">
           {rightIcon}
         </span>
       )
@@ -275,36 +396,20 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
 
   const rightIconContent = renderRightIcon()
 
-  const baseStyles =
-    'block w-full rounded-xl border bg-white text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-300 ease-out dark:bg-midnight-800 dark:text-neutral-100 dark:placeholder:text-neutral-500'
-
-  const variantStyles: Record<string, string> = {
-    outline:
-      'border-neutral-300 focus:border-brand-500 focus:ring-brand-500/30 hover:border-neutral-400 dark:border-neutral-600 dark:hover:border-neutral-500',
-    filled:
-      'border-transparent bg-neutral-100 focus:bg-white focus:border-brand-500 focus:ring-brand-500/30 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 dark:focus:bg-midnight-900',
-    glass:
-      'border-white/20 bg-white/5 text-white placeholder:text-white/50 shadow-soft backdrop-blur-md focus:border-white/40 focus:bg-white/10 focus:ring-brand-500/30 dark:border-midnight-500/30 dark:text-neutral-100',
-    premium:
-      'border-2 border-neutral-200 bg-white shadow-soft hover:shadow-medium focus:border-transparent focus:ring-2 focus:ring-brand-500/50 dark:border-neutral-700 dark:bg-midnight-800',
-  }
+  /* ───────────────────────────────────────────────────────────── */
+  /*  CONDITIONAL STYLES                                           */
+  /* ───────────────────────────────────────────────────────────── */
 
   const errorStyles = error
-    ? '!border-red-500 focus:!ring-red-500/30 dark:!border-red-400'
+    ? '!border-danger focus:!ring-danger/20'
     : ''
 
   const successStyles = success
-    ? '!border-accent-500 focus:!ring-accent-500/30 dark:!border-accent-400'
+    ? '!border-success focus:!ring-success/20'
     : ''
 
-  const sizeStyles: Record<string, string> = {
-    sm: 'px-3 py-1.5 text-sm',
-    md: 'px-4 py-2.5 text-sm',
-    lg: 'px-5 py-3 text-base',
-  }
-
-  const iconPaddingLeft = leftIcon ? 'pl-10' : ''
-  const iconPaddingRight = rightIconContent ? 'pr-10' : ''
+  const iconPaddingLeft = leftIcon || prefix ? 'pl-10' : ''
+  const iconPaddingRight = rightIconContent || suffix ? 'pr-10' : ''
 
   const hasFooter = Boolean(
     error ||
@@ -313,6 +418,10 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
       (helperText && !error && !success && !loading) ||
       (showCharCount && maxLength)
   )
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  RENDER                                                       */
+  /* ───────────────────────────────────────────────────────────── */
 
   return (
     <div
@@ -331,15 +440,13 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
             maxLength={maxLength}
             placeholder=" "
             className={cn(
-              baseStyles,
+              baseInputStyles,
               variantStyles[variant],
               sizeStyles[inputSize],
               iconPaddingLeft,
               iconPaddingRight,
               errorStyles,
               successStyles,
-              prefix && 'pl-10',
-              suffix && 'pr-10',
               hideNumberArrows &&
                 '[&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
               'pb-1 pt-5',
@@ -364,29 +471,30 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
             htmlFor={inputId}
             className={cn(
               'pointer-events-none absolute left-3 transition-all duration-200',
+              'motion-reduce:transition-none',
               isLabelFloating
-                ? '-top-0.5 rounded bg-white px-1 text-xs text-brand-600 dark:bg-midnight-800 dark:text-brand-400'
-                : 'top-1/2 -translate-y-1/2 text-sm text-neutral-400 dark:text-neutral-500',
-              leftIcon ? 'left-10' : 'left-3'
+                ? '-top-0.5 rounded bg-canvas px-1 text-xs text-accent'
+                : 'top-1/2 -translate-y-1/2 text-sm text-fg-muted',
+              leftIcon || prefix ? 'left-10' : 'left-3'
             )}
           >
             {label}
           </label>
 
           {leftIcon && (
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-neutral-400 dark:text-neutral-500">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-fg-subtle">
               {leftIcon}
             </div>
           )}
 
           {prefix && (
-            <div className="absolute inset-y-0 left-3.5 flex items-center text-sm text-neutral-400 dark:text-neutral-500">
+            <div className="absolute inset-y-0 left-3.5 flex items-center text-sm text-fg-muted">
               <span>{prefix}</span>
             </div>
           )}
 
           {suffix && (
-            <div className="absolute inset-y-0 right-12 flex items-center text-sm text-neutral-400 dark:text-neutral-500">
+            <div className="absolute inset-y-0 right-12 flex items-center text-sm text-fg-muted">
               <span>{suffix}</span>
             </div>
           )}
@@ -402,7 +510,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
           {label && (
             <label
               htmlFor={inputId}
-              className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+              className="mb-1.5 block text-sm font-medium text-fg"
             >
               {label}
             </label>
@@ -410,13 +518,13 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
 
           <div className="relative">
             {leftIcon && (
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-neutral-400 dark:text-neutral-500">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-fg-subtle">
                 {leftIcon}
               </div>
             )}
 
             {prefix && (
-              <div className="absolute inset-y-0 left-3.5 flex items-center text-sm text-neutral-400 dark:text-neutral-500">
+              <div className="absolute inset-y-0 left-3.5 flex items-center text-sm text-fg-muted">
                 <span>{prefix}</span>
               </div>
             )}
@@ -427,15 +535,13 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
               disabled={disabled}
               maxLength={maxLength}
               className={cn(
-                baseStyles,
+                baseInputStyles,
                 variantStyles[variant],
                 sizeStyles[inputSize],
                 iconPaddingLeft,
                 iconPaddingRight,
                 errorStyles,
                 successStyles,
-                prefix && 'pl-10',
-                suffix && 'pr-10',
                 hideNumberArrows &&
                   '[&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
                 className
@@ -456,7 +562,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
             />
 
             {suffix && (
-              <div className="absolute inset-y-0 right-3.5 flex items-center text-sm text-neutral-400 dark:text-neutral-500">
+              <div className="absolute inset-y-0 right-3.5 flex items-center text-sm text-fg-muted">
                 <span>{suffix}</span>
               </div>
             )}
@@ -477,7 +583,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
               <p
                 id={errorId}
                 role="alert"
-                className="flex items-center gap-1 text-sm text-red-500 dark:text-red-400"
+                className="flex items-center gap-1 text-sm text-danger"
               >
                 <AlertCircle size={14} aria-hidden="true" />
                 {error}
@@ -487,7 +593,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
             {success && (
               <p
                 id={successId}
-                className="flex items-center gap-1 text-sm text-accent-600 dark:text-accent-400"
+                className="flex items-center gap-1 text-sm text-success"
               >
                 <CheckCircle size={14} aria-hidden="true" />
                 {success}
@@ -495,7 +601,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
             )}
 
             {loading && loadingText && (
-              <p className="flex items-center gap-1 text-sm text-neutral-400 dark:text-neutral-500">
+              <p className="flex items-center gap-1 text-sm text-fg-muted">
                 <Loader2 size={14} className="animate-spin" aria-hidden="true" />
                 {loadingText}
               </p>
@@ -504,7 +610,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
             {helperText && !error && !success && !loading && (
               <p
                 id={helperId}
-                className="text-sm text-neutral-400 dark:text-neutral-500"
+                className="text-sm text-fg-muted"
               >
                 {helperText}
               </p>
@@ -513,14 +619,14 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
 
           {showCharCount && maxLength && (
             <div className="flex items-center gap-2">
-              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
+              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-brand-500 transition-all duration-300"
+                  className="h-full rounded-full bg-accent transition-all duration-300 motion-reduce:transition-none"
                   style={{ width: `${(charCount / maxLength) * 100}%` }}
                 />
               </div>
 
-              <p className="text-xs tabular-nums text-neutral-400 dark:text-neutral-500">
+              <p className="text-xs tabular-nums text-fg-muted">
                 {charCount}/{maxLength}
               </p>
             </div>
@@ -568,3 +674,4 @@ const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
 Input.displayName = 'Input'
 
 export { Input }
+export default Input

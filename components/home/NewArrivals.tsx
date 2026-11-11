@@ -1,417 +1,1697 @@
 // components/home/NewArrivals.tsx
 'use client'
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+
 import Link from 'next/link'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
+
 import { motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
+
 import { Container } from '@/components/layout/Container'
 import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Tooltip } from '@/components/ui/Tooltip'
+
+import { useAuth } from '@/contexts/AuthContext'
 import { useCart } from '@/contexts/CartContext'
 import { useToast } from '@/components/ui/Toast'
 import { useAccessibilityPreferences } from '@/contexts/ThemeContext'
 import { useOnlineStatus } from '@/contexts/OnlineStatusContext'
+
+import { useExchangeRate } from '@/hooks/useExchangeRate'
+
 import {
-  Sparkles, Star, ShoppingCart, Eye, ChevronRight,
-  Package, RefreshCw, AlertTriangle, Clock,
-  Heart, Share2, Maximize2, Minimize2, Zap,
-  ArrowRight, WifiOff, TrendingUp
+  formatCdf,
+  formatUsd,
+  roundCdf,
+  roundUsd,
+  toCdf,
+  toUsd,
+} from '@/lib/currency'
+
+import {
+  AlertTriangle,
+  ArrowRight,
+  ChevronRight,
+  Clock,
+  Gauge,
+  Grid3X3,
+  List,
+  Medal,
+  Package,
+  RefreshCw,
+  Share2,
+  ShoppingCart,
+  Sparkles,
+  Star,
+  TrendingUp,
+  WifiOff,
+  Zap,
 } from 'lucide-react'
+
 import { cn } from '@/lib/utils'
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  TYPES                                                          */
 /* ═══════════════════════════════════════════════════════════════ */
 
-interface Product {
+type Currency = 'USD' | 'CDF'
+
+interface NewArrivalProduct {
   id: string
   nom: string
-  prix: number
-  prix_promo?: number | null
+  slug?: string | null
+  href: string
+
   images: string[]
-  categorie?: string
-  total_ventes?: number
-  note_moyenne?: number
-  stock?: number
-  created_at?: string
-  remise_percent?: number
-  est_actif?: boolean
-  slug?: string
+  image_url?: string | null
+
+  /**
+   * Legacy : prix CDF courant.
+   * USD reste la source principale via priceUsd.
+   */
+  prix: number
+  effective_price: number
+
+  /**
+   * USD = source principale.
+   */
+  priceUsd: number
+  priceCdf: number
+
+  originalPriceUsd: number
+  originalPriceCdf: number
+
+  prix_promo?: number | null
+  prix_promo_usd?: number | null
+
+  discount: number
+
+  categorie?: string | null
+  total_ventes: number
+  note_moyenne?: number | null
+  stock?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  days_since_created?: number
+
+  score: number
+  rank: number
+  reasons: string[]
+  recent_ventes_7j: number
+  recent_ventes_periode: number
+
+  is_recent: boolean
+  is_hot_start: boolean
+  is_promo: boolean
+  stock_faible: boolean
+  rupture: boolean
+
+  freshness_label: string
+
+  delivery_config?: any
+  poids_kg?: number | null
+
+  [key: string]: any
 }
+
+interface NewArrivalsMeta {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+  hasMore: boolean
+  categories: string[]
+  generated_at: string
+  warning?: string
+}
+
+interface NewArrivalsQueryResult {
+  products: NewArrivalProduct[]
+  meta: NewArrivalsMeta
+}
+
+interface CacheEntry {
+  products: NewArrivalProduct[]
+  meta: NewArrivalsMeta
+  timestamp: number
+}
+
+type PillTone =
+  | 'accent'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
+  | 'neutral'
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  CONSTANTS                                                      */
 /* ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_KEY = 'gercie-new-arrivals-cache'
-const CACHE_TTL = 10 * 60 * 1000 // 10 minutes
-const REQUEST_TIMEOUT = 10000 // 10 secondes
-const MAX_RETRIES = 2
-const RETRY_DELAY = 1000 // 1 seconde
-const PRELOAD_NEXT_PAGE = true
-const NEW_PRODUCT_DAYS = 7 // jours pour considérer comme "nouveau"
-const SWIPE_THRESHOLD = 50 // pixels
+const CACHE_PREFIX = 'gercie-new-arrivals-intelligent:v3:'
+const CACHE_TTL = 10 * 60 * 1000
+const REQUEST_TIMEOUT = 10_000
+const PRELOAD_DELAY = 2500
+const SWIPE_THRESHOLD = 50
+const FRESHNESS_DAYS = 14
+const LOW_STOCK_THRESHOLD = 5
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  CACHE HELPERS                                                  */
+/*  DESIGN TOKENS                                                  */
 /* ═══════════════════════════════════════════════════════════════ */
 
-interface CacheEntry {
-  data: Record<number, Product[]> // page -> products
-  timestamp: number
+const pillTones: Record<PillTone, string> = {
+  accent: 'border-accent/20 bg-accent-soft text-accent',
+  success: 'border-success/20 bg-success-soft text-success',
+  warning: 'border-warning/20 bg-warning-soft text-warning',
+  danger: 'border-danger/20 bg-danger-soft text-danger',
+  info: 'border-info/20 bg-info-soft text-info',
+  neutral: 'border-line bg-muted text-fg-muted',
 }
 
-function getCache(): CacheEntry | null {
+/* ═══════════════════════════════════════════════════════════════ */
+/*  HELPERS                                                        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function toNum(value: unknown, fallback = 0): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function positiveNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+
+  const n = Number(value)
+
+  if (!Number.isFinite(n) || n <= 0) return null
+
+  return n
+}
+
+function nonNegativeNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+
+  const n = Number(value)
+
+  if (!Number.isFinite(n) || n < 0) return null
+
+  return n
+}
+
+function textOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+
+  const str = String(value).trim()
+  return str ? str : null
+}
+
+function clampPercent(value: unknown): number {
+  const n = Number(value)
+
+  if (!Number.isFinite(n)) return 0
+
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
+function formatNumber(value: number | null | undefined): string {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n)) return '0'
+
+  return n.toLocaleString('fr-FR')
+}
+
+function formatDecimal(
+  value: number | null | undefined,
+  digits = 1
+): string {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n)) return '0'
+
+  return n.toLocaleString('fr-FR', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })
+}
+
+function formatVentes(ventes: number | null | undefined): string {
+  const n = Number(ventes || 0)
+
+  if (!Number.isFinite(n)) return '0'
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+
+  return String(n)
+}
+
+function formatProductAmount(
+  value: number | null | undefined,
+  currency: Currency
+): string {
+  const n = Number(value || 0)
+
+  if (!Number.isFinite(n) || n <= 0) return '—'
+
+  return currency === 'USD' ? formatUsd(n) : formatCdf(n)
+}
+
+function stringifyImage(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = stringifyImage(item)
+      if (url) return url
+    }
+
+    return null
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+
+    return (
+      stringifyImage(record.url) ??
+      stringifyImage(record.src) ??
+      stringifyImage(record.path) ??
+      stringifyImage(record.secure_url) ??
+      stringifyImage(record.image_url) ??
+      null
+    )
+  }
+
+  return null
+}
+
+function normalizeImages(value: unknown): string[] {
+  const output: string[] = []
+  const seen = new Set<string>()
+
+  const push = (candidate: unknown) => {
+    const url = stringifyImage(candidate)
+
+    if (!url || seen.has(url)) return
+
+    seen.add(url)
+    output.push(url)
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach(push)
+  } else {
+    push(value)
+  }
+
+  return output
+}
+
+function getCurrentPath(fallback = '/'): string {
+  if (typeof window === 'undefined') return fallback
+
+  const path = `${window.location.pathname}${window.location.search}`
+
+  if (path.startsWith('/login')) return '/'
+
+  return path
+}
+
+function computeDaysSince(dateString?: string | null): number | null {
+  if (!dateString) return null
+
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return null
+
+  return (Date.now() - date.getTime()) / 86_400_000
+}
+
+function computeFreshnessLabel(days?: number | null): string {
+  if (days === null || days === undefined) return 'récemment ajouté'
+  if (days < 1) return "aujourd'hui"
+  if (days < 2) return 'hier'
+  if (days < 7) return `il y a ${Math.floor(days)} j`
+  return `il y a ${Math.floor(days / 7)} sem.`
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CACHE                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function makeCacheKey(category: string, page: number, limit: number): string {
+  return `${CACHE_PREFIX}${category || 'all'}:${page}:${limit}`
+}
+
+function readCache(
+  key: string,
+  allowExpired = false
+): CacheEntry | null {
   if (typeof window === 'undefined') return null
-  
+
   try {
-    const raw = localStorage.getItem(CACHE_KEY)
+    const raw = window.localStorage.getItem(key)
     if (!raw) return null
-    
+
     const entry = JSON.parse(raw) as CacheEntry
-    
-    if (!entry.data || !entry.timestamp) {
+
+    if (!entry || !Array.isArray(entry.products) || !entry.meta) {
       return null
     }
-    
+
+    if (!allowExpired && Date.now() - entry.timestamp > CACHE_TTL) {
+      return null
+    }
+
     return entry
-  } catch (err) {
-    console.warn('Erreur lecture cache nouveautés:', err)
+  } catch {
     return null
   }
 }
 
-function setCache(page: number, products: Product[]): void {
+function writeCache(
+  key: string,
+  products: NewArrivalProduct[],
+  meta: NewArrivalsMeta
+): void {
   if (typeof window === 'undefined') return
-  
+
   try {
-    const existing = getCache() || { data: {}, timestamp: Date.now() }
-    existing.data[page] = products
-    existing.timestamp = Date.now()
-    localStorage.setItem(CACHE_KEY, JSON.stringify(existing))
-  } catch (err) {
-    console.warn('Erreur écriture cache nouveautés:', err)
+    const entry: CacheEntry = {
+      products,
+      meta,
+      timestamp: Date.now(),
+    }
+
+    window.localStorage.setItem(key, JSON.stringify(entry))
+  } catch {
+    // stockage plein ou indisponible : silencieux
   }
 }
 
-function getCachedPage(page: number): Product[] | null {
-  const cache = getCache()
-  if (!cache) return null
-  
-  if (Date.now() - cache.timestamp > CACHE_TTL) {
+function clearCategoryCache(category: string): void {
+  if (typeof window === 'undefined') return
+
+  try {
+    const prefix = `${CACHE_PREFIX}${category || 'all'}:`
+    const keysToRemove: string[] = []
+
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index)
+
+      if (key && key.startsWith(prefix)) {
+        keysToRemove.push(key)
+      }
+    }
+
+    keysToRemove.forEach((key) => {
+      window.localStorage.removeItem(key)
+    })
+  } catch {
+    // silencieux
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  NORMALISATION BASE                                             */
+/*  Ne dépend pas du taux : le CDF est recalculé à l’affichage.    */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function normalizeProduct(
+  raw: unknown,
+  fallbackRank: number
+): NewArrivalProduct {
+  const data = (raw || {}) as Record<string, unknown>
+
+  const id = String(data.id ?? data._id ?? '').trim()
+  const nom = String(data.nom ?? data.name ?? '').trim()
+
+  const slug = textOrNull(data.slug)
+  const href = textOrNull(data.href) ?? `/produits/${slug || id}`
+
+  const images = normalizeImages(
+    data.images ?? data.image ?? data.thumbnail ?? data.image_url
+  )
+
+  const image_url =
+    images[0] ??
+    textOrNull(data.image_url ?? data.thumbnail ?? data.photo) ??
+    null
+
+  /* ---------------------------------------------------------- */
+  /* Prix courant / promo / original                             */
+  /* ---------------------------------------------------------- */
+
+  const currentUsdRaw = positiveNumber(
+    data.prix_usd ??
+      data.price_usd ??
+      data.unit_price_usd ??
+      data.priceUsd
+  )
+
+  const currentCdfRaw = positiveNumber(
+    data.prix ??
+      data.price ??
+      data.prix_cdf ??
+      data.price_cdf ??
+      data.priceCdf
+  )
+
+  const promoUsd = positiveNumber(
+    data.prix_promo_usd ??
+      data.promo_price_usd
+  )
+
+  const promoCdf = positiveNumber(
+    data.prix_promo ??
+      data.promo_price
+  )
+
+  const explicitOriginalUsd = positiveNumber(
+    data.prix_usd_original ??
+      data.original_price_usd ??
+      data.prix_initial_usd ??
+      data.originalPriceUsd
+  )
+
+  const explicitOriginalCdf = positiveNumber(
+    data.prix_original ??
+      data.original_price ??
+      data.prix_comparatif ??
+      data.prix_initial ??
+      data.originalPriceCdf
+  )
+
+  let priceUsd = 0
+  let priceCdf = 0
+  let originalPriceUsd = 0
+  let originalPriceCdf = 0
+
+  const hasPromo = promoUsd != null || promoCdf != null
+
+  if (hasPromo) {
+    priceUsd = promoUsd ?? 0
+    priceCdf = promoCdf ?? 0
+
+    originalPriceUsd = explicitOriginalUsd ?? currentUsdRaw ?? 0
+    originalPriceCdf = explicitOriginalCdf ?? currentCdfRaw ?? 0
+  } else {
+    priceUsd = currentUsdRaw ?? 0
+    priceCdf = currentCdfRaw ?? 0
+
+    originalPriceUsd = explicitOriginalUsd ?? 0
+    originalPriceCdf = explicitOriginalCdf ?? 0
+  }
+
+  /* ---------------------------------------------------------- */
+  /* Remise                                                     */
+  /* ---------------------------------------------------------- */
+
+  let discount = clampPercent(
+    data.discount ??
+      data.remise_percent ??
+      data.discount_percent
+  )
+
+  if (discount === 0) {
+    if (
+      originalPriceUsd > 0 &&
+      priceUsd > 0 &&
+      originalPriceUsd > priceUsd
+    ) {
+      discount = Math.round((1 - priceUsd / originalPriceUsd) * 100)
+    } else if (
+      originalPriceCdf > 0 &&
+      priceCdf > 0 &&
+      originalPriceCdf > priceCdf
+    ) {
+      discount = Math.round((1 - priceCdf / originalPriceCdf) * 100)
+    }
+  }
+
+  if (discount > 0) {
+    const divisor = 1 - discount / 100
+
+    if (divisor > 0) {
+      if (originalPriceUsd <= 0 && priceUsd > 0) {
+        originalPriceUsd = roundUsd(priceUsd / divisor)
+      }
+
+      if (originalPriceCdf <= 0 && priceCdf > 0) {
+        originalPriceCdf = roundCdf(priceCdf / divisor)
+      }
+    }
+  }
+
+  if (originalPriceUsd > 0 && originalPriceUsd < priceUsd) {
+    originalPriceUsd = priceUsd
+  }
+
+  if (originalPriceCdf > 0 && originalPriceCdf < priceCdf) {
+    originalPriceCdf = priceCdf
+  }
+
+  /* ---------------------------------------------------------- */
+  /* Fraîcheur / stock                                          */
+  /* ---------------------------------------------------------- */
+
+  const createdAt = textOrNull(data.created_at ?? data.createdAt)
+  const updatedAt = textOrNull(data.updated_at ?? data.updatedAt)
+
+  const daysFromApi = nonNegativeNumber(data.days_since_created)
+  const computedDays = computeDaysSince(createdAt || updatedAt)
+  const days = daysFromApi ?? computedDays ?? 999
+
+  const stock = nonNegativeNumber(data.stock)
+
+  const rupture =
+    Boolean(data.rupture) ||
+    (stock !== null && stock <= 0) ||
+    data.est_actif === false
+
+  const stockFaible =
+    Boolean(data.stock_faible) ||
+    (stock !== null && stock > 0 && stock <= LOW_STOCK_THRESHOLD)
+
+  const reasons = Array.isArray(data.reasons)
+    ? data.reasons.map((reason) => String(reason)).filter(Boolean)
+    : []
+
+  const isRecent =
+    Boolean(data.is_recent) ||
+    days <= 7 ||
+    reasons.some(
+      (reason) =>
+        reason.toLowerCase().includes('nouveau') ||
+        reason.toLowerCase().includes('aujourd') ||
+        reason.toLowerCase().includes('semaine')
+    )
+
+  const isHotStart =
+    Boolean(data.is_hot_start) ||
+    toNum(data.recent_ventes_7j, 0) > 0 ||
+    reasons.some((reason) => reason.toLowerCase().includes('démarrage'))
+
+  const rawScore = toNum(data.score, 0)
+  const score =
+    rawScore > 0 && rawScore <= 1
+      ? Math.round(rawScore * 100)
+      : Math.round(rawScore)
+
+  const rank = toNum(data.rank, fallbackRank)
+
+  return {
+    ...data,
+
+    id,
+    nom,
+    slug,
+    href,
+
+    images,
+    image_url,
+
+    prix: roundCdf(priceCdf),
+    effective_price: roundCdf(priceCdf),
+
+    priceUsd: roundUsd(priceUsd),
+    priceCdf: roundCdf(priceCdf),
+
+    originalPriceUsd: roundUsd(originalPriceUsd),
+    originalPriceCdf: roundCdf(originalPriceCdf),
+
+    prix_promo: promoCdf ?? null,
+    prix_promo_usd: promoUsd ?? null,
+
+    discount,
+
+    categorie: textOrNull(data.categorie ?? data.category),
+    total_ventes: toNum(data.total_ventes ?? data.ventes, 0),
+    note_moyenne: nonNegativeNumber(
+      data.note_moyenne ?? data.rating ?? data.average_rating
+    ),
+    stock,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    days_since_created: days,
+
+    score,
+    rank,
+    reasons,
+    recent_ventes_7j: toNum(data.recent_ventes_7j, 0),
+    recent_ventes_periode: toNum(data.recent_ventes_periode, 0),
+
+    is_recent: isRecent,
+    is_hot_start: isHotStart,
+    is_promo: discount > 0,
+    stock_faible: stockFaible,
+    rupture,
+
+    freshness_label:
+      textOrNull(data.freshness_label) || computeFreshnessLabel(days),
+
+    delivery_config: data.delivery_config ?? null,
+    poids_kg: nonNegativeNumber(data.poids_kg ?? data.weight_kg),
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  APPLICATION DU TAUX USD → CDF À L’AFFICHAGE                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function applyExchangeRateToProduct(
+  product: NewArrivalProduct,
+  rate: number | null
+): NewArrivalProduct {
+  const r = positiveNumber(rate)
+
+  let priceUsd = positiveNumber(product.priceUsd) ?? 0
+  let priceCdf = positiveNumber(product.priceCdf) ?? 0
+
+  if (priceUsd <= 0 && priceCdf > 0 && r != null) {
+    priceUsd = toUsd(priceCdf, r)
+  }
+
+  if (priceUsd > 0 && r != null) {
+    priceCdf = toCdf(priceUsd, r)
+  }
+
+  let originalPriceUsd = positiveNumber(product.originalPriceUsd) ?? 0
+  let originalPriceCdf = positiveNumber(product.originalPriceCdf) ?? 0
+
+  if (originalPriceUsd <= 0 && originalPriceCdf > 0 && r != null) {
+    originalPriceUsd = toUsd(originalPriceCdf, r)
+  }
+
+  if (originalPriceUsd > 0 && r != null) {
+    originalPriceCdf = toCdf(originalPriceUsd, r)
+  }
+
+  let discount = clampPercent(product.discount)
+
+  if (discount === 0) {
+    if (
+      originalPriceUsd > 0 &&
+      priceUsd > 0 &&
+      originalPriceUsd > priceUsd
+    ) {
+      discount = Math.round((1 - priceUsd / originalPriceUsd) * 100)
+    } else if (
+      originalPriceCdf > 0 &&
+      priceCdf > 0 &&
+      originalPriceCdf > priceCdf
+    ) {
+      discount = Math.round((1 - priceCdf / originalPriceCdf) * 100)
+    }
+  }
+
+  if (discount > 0) {
+    const divisor = 1 - discount / 100
+
+    if (divisor > 0) {
+      if (originalPriceUsd <= 0 && priceUsd > 0) {
+        originalPriceUsd = roundUsd(priceUsd / divisor)
+      }
+
+      if (originalPriceCdf <= 0 && priceCdf > 0) {
+        originalPriceCdf =
+          r != null && originalPriceUsd > 0
+            ? toCdf(originalPriceUsd, r)
+            : roundCdf(priceCdf / divisor)
+      }
+    }
+  }
+
+  if (originalPriceUsd > 0 && originalPriceUsd < priceUsd) {
+    originalPriceUsd = priceUsd
+  }
+
+  if (originalPriceCdf > 0 && originalPriceCdf < priceCdf) {
+    originalPriceCdf = priceCdf
+  }
+
+  return {
+    ...product,
+
+    prix: roundCdf(priceCdf),
+    effective_price: roundCdf(priceCdf),
+
+    priceUsd: roundUsd(priceUsd),
+    priceCdf: roundCdf(priceCdf),
+
+    originalPriceUsd: roundUsd(originalPriceUsd),
+    originalPriceCdf: roundCdf(originalPriceCdf),
+
+    discount,
+    is_promo: discount > 0,
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  META                                                           */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function normalizeMeta(
+  raw: unknown,
+  page: number,
+  limit: number,
+  productsLength: number
+): NewArrivalsMeta {
+  const data = (raw || {}) as Record<string, unknown>
+
+  const total = toNum(data.total, productsLength)
+  const totalPages = Math.max(
+    1,
+    toNum(
+      data.totalPages ?? data.total_pages,
+      Math.ceil(total / Math.max(1, limit))
+    )
+  )
+
+  return {
+    page: toNum(data.page, page),
+    limit: toNum(data.limit, limit),
+    total,
+    totalPages,
+    hasMore:
+      data.hasMore !== undefined
+        ? Boolean(data.hasMore)
+        : data.has_more !== undefined
+          ? Boolean(data.has_more)
+          : page < totalPages,
+    categories: Array.isArray(data.categories)
+      ? data.categories
+          .map((category) => String(category).trim())
+          .filter(Boolean)
+      : [],
+    generated_at:
+      textOrNull(data.generated_at) || new Date().toISOString(),
+    warning: textOrNull(data.warning) || undefined,
+  }
+}
+
+async function fetchNewArrivalsPage(
+  category: string,
+  page: number,
+  limit: number,
+  signal?: AbortSignal
+): Promise<NewArrivalsQueryResult> {
+  const params = new URLSearchParams()
+
+  params.set('page', String(page))
+  params.set('limit', String(limit))
+  params.set('freshness_days', String(FRESHNESS_DAYS))
+  params.set('include_out_of_stock', 'false')
+  params.set('candidate_limit', '200')
+  params.set('sort', 'score')
+
+  if (category) {
+    params.set('categorie', category)
+  }
+
+  const response = await fetch(
+    `/api/produits/nouveautes?${params.toString()}`,
+    {
+      signal,
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json',
+      },
+    }
+  )
+
+  const json = (await response.json().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >
+
+  if (!response.ok) {
+    throw new Error(
+      typeof json.error === 'string'
+        ? json.error
+        : 'Impossible de charger les nouveautés.'
+    )
+  }
+
+  const rawProducts = Array.isArray(json.data) ? json.data : []
+
+  const products = rawProducts.map((product, index) =>
+    normalizeProduct(product, (page - 1) * limit + index + 1)
+  )
+
+  const meta = normalizeMeta(json.meta, page, limit, products.length)
+
+  return {
+    products,
+    meta,
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SMALL UI                                                       */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function Pill({
+  tone = 'neutral',
+  icon,
+  children,
+  className,
+}: {
+  tone?: PillTone
+  icon?: React.ReactNode
+  children?: React.ReactNode
+  className?: string
+}) {
+  if (children === null || children === undefined || children === '') {
     return null
   }
-  
-  return cache.data[page] || null
-}
 
-/* ═══════════════════════════════════════════════════════════════ */
-/*  VALIDATION HELPERS                                             */
-/* ═══════════════════════════════════════════════════════════════ */
-
-function isValidProduct(prod: any): prod is Product {
   return (
-    prod &&
-    typeof prod.id === 'string' &&
-    typeof prod.nom === 'string' &&
-    typeof prod.prix === 'number' &&
-    prod.prix > 0 &&
-    Array.isArray(prod.images)
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5',
+        'text-[10px] font-bold leading-none shadow-sm',
+        pillTones[tone],
+        className
+      )}
+    >
+      {icon}
+      {children}
+    </span>
   )
 }
 
-function validateProducts(data: any[]): Product[] {
-  if (!Array.isArray(data)) {
-    console.warn('Données produits invalides: pas un tableau')
-    return []
+function RankBadge({ rank }: { rank: number }) {
+  if (rank > 3) return null
+
+  const classes =
+    rank === 1
+      ? 'border-accent/30 bg-accent text-accent-contrast'
+      : rank === 2
+        ? 'border-line bg-muted text-fg'
+        : 'border-warning/20 bg-warning-soft text-warning'
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5',
+        'text-[10px] font-bold leading-none shadow-card',
+        classes
+      )}
+      aria-label={`Top ${rank} des nouveautés`}
+    >
+      <Medal size={12} aria-hidden="true" />
+      Top {rank}
+    </span>
+  )
+}
+
+function ScorePill({
+  score,
+  reasons,
+}: {
+  score: number
+  reasons: string[]
+}) {
+  if (!score || score <= 0) return null
+
+  const tooltip =
+    reasons.length > 0
+      ? `Score nouveauté ${score}/100 • ${reasons.join(' • ')}`
+      : `Score nouveauté ${score}/100`
+
+  return (
+    <Tooltip content={tooltip}>
+      <Pill tone="info" icon={<Gauge size={11} aria-hidden="true" />}>
+        {score}
+      </Pill>
+    </Tooltip>
+  )
+}
+
+function FreshnessPill({ label }: { label: string }) {
+  return (
+    <Pill tone="info" icon={<Clock size={11} aria-hidden="true" />}>
+      {label}
+    </Pill>
+  )
+}
+
+function HotStartPill() {
+  return (
+    <Pill tone="success" icon={<TrendingUp size={11} aria-hidden="true" />}>
+      Bon démarrage
+    </Pill>
+  )
+}
+
+function StockPill({
+  stock,
+  rupture,
+}: {
+  stock: number | null
+  rupture: boolean
+}) {
+  if (rupture) {
+    return <Pill tone="danger">Rupture</Pill>
   }
 
-  return data.filter(isValidProduct)
+  if (stock !== null && stock > 0 && stock <= LOW_STOCK_THRESHOLD) {
+    return <Pill tone="warning">Stock limité</Pill>
+  }
+
+  return null
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  COMPOSANT PRINCIPAL                                            */
+/*  PRODUCT TILE                                                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface ProductTileProps {
+  product: NewArrivalProduct
+  index: number
+  isMobile: boolean
+  hasImageError: boolean
+  onImageError: (productId: string) => void
+  onQuickAdd: (
+    product: NewArrivalProduct,
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => void
+  onShare: (
+    product: NewArrivalProduct,
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => void
+}
+
+function ProductTile({
+  product,
+  index,
+  isMobile,
+  hasImageError,
+  onImageError,
+  onQuickAdd,
+  onShare,
+}: ProductTileProps) {
+  const image = product.images[0] || product.image_url
+  const href = product.href || `/produits/${product.slug || product.id}`
+
+  const hasUsd = product.priceUsd > 0
+  const hasCdf = product.priceCdf > 0
+  const hasPrice = hasUsd || hasCdf
+
+  /**
+   * Le panier legacy attend encore un prix CDF exploitable.
+   * On désactive l’ajout rapide tant que le CDF n’est pas prêt.
+   */
+  const canAdd = !product.rupture && hasCdf
+
+  const primaryCurrency: Currency = hasUsd ? 'USD' : 'CDF'
+  const secondaryCurrency: Currency = hasUsd ? 'CDF' : 'USD'
+
+  const primaryAmount = hasUsd ? product.priceUsd : product.priceCdf
+  const secondaryAmount = hasUsd ? product.priceCdf : product.priceUsd
+
+  const originalPrimaryAmount =
+    primaryCurrency === 'USD'
+      ? product.originalPriceUsd
+      : product.originalPriceCdf
+
+  const showOriginal =
+    originalPrimaryAmount > primaryAmount &&
+    originalPrimaryAmount > 0
+
+  const primaryText = hasPrice
+    ? formatProductAmount(primaryAmount, primaryCurrency)
+    : 'Prix sur demande'
+
+  const secondaryText =
+    hasPrice && secondaryAmount > 0
+      ? `≈ ${formatProductAmount(secondaryAmount, secondaryCurrency)}`
+      : null
+
+  const originalText = showOriginal
+    ? formatProductAmount(originalPrimaryAmount, primaryCurrency)
+    : null
+
+  return (
+    <div
+      className={cn(
+        'group relative flex h-full flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card',
+        'transition-all duration-200 ease-out',
+        'hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card-hover',
+        'focus-within:ring-2 focus-within:ring-accent focus-within:ring-offset-2 focus-within:ring-offset-surface'
+      )}
+    >
+      <Link
+        href={href}
+        className="flex flex-1 flex-col outline-none"
+        aria-label={`${product.nom} — ${primaryText}${
+          product.is_recent ? ' — Nouveauté' : ''
+        }`}
+      >
+        <div className="relative aspect-square w-full overflow-hidden bg-muted">
+          {image && !hasImageError ? (
+            <Image
+              src={image}
+              alt={product.nom}
+              fill
+              className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+              sizes={
+                isMobile
+                  ? '(max-width: 640px) 50vw'
+                  : '(max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw'
+              }
+              priority={index < 4}
+              quality={isMobile ? 75 : 85}
+              onError={() => onImageError(product.id)}
+            />
+          ) : (
+            <div
+              className="flex h-full w-full items-center justify-center text-fg-subtle"
+              aria-hidden="true"
+            >
+              <Package size={36} strokeWidth={1.5} />
+            </div>
+          )}
+
+          {product.rupture && (
+            <div
+              className="absolute inset-0 flex items-center justify-center bg-black/45 backdrop-blur-[1px]"
+              aria-hidden="true"
+            >
+              <Pill tone="danger">Indisponible</Pill>
+            </div>
+          )}
+
+          <div className="absolute left-2 top-2 flex max-w-[calc(100%-1rem)] flex-col items-start gap-1">
+            <RankBadge rank={product.rank} />
+
+            {product.is_recent && (
+              <Pill
+                tone="accent"
+                icon={<Sparkles size={10} aria-hidden="true" />}
+              >
+                Nouveau
+              </Pill>
+            )}
+
+            {product.discount > 0 && (
+              <Pill tone="danger">-{product.discount}%</Pill>
+            )}
+          </div>
+
+          <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
+            <ScorePill score={product.score} reasons={product.reasons} />
+            <FreshnessPill label={product.freshness_label} />
+            {product.is_hot_start && <HotStartPill />}
+            <StockPill stock={product.stock ?? null} rupture={product.rupture} />
+          </div>
+        </div>
+
+        <div className="flex flex-1 flex-col gap-1.5 p-3">
+          <h3 className="line-clamp-2 min-h-[2.25rem] text-sm font-semibold leading-snug text-fg transition-colors duration-200 group-hover:text-accent">
+            {product.nom}
+          </h3>
+
+          {product.categorie && (
+            <p className="line-clamp-1 text-[11px] font-medium text-fg-subtle">
+              {product.categorie}
+            </p>
+          )}
+
+          <div className="mt-auto space-y-1.5 pt-1">
+            <div className="flex flex-wrap items-baseline gap-1.5">
+              <span className="text-base font-bold tracking-tight text-fg">
+                {primaryText}
+              </span>
+
+              {secondaryText && (
+                <span className="text-[11px] font-medium text-fg-muted">
+                  {secondaryText}
+                </span>
+              )}
+
+              {originalText && (
+                <span className="text-[11px] text-fg-subtle line-through">
+                  {originalText}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 text-[11px] text-fg-muted">
+              <div className="flex items-center gap-1">
+                {product.note_moyenne != null && product.note_moyenne > 0 ? (
+                  <>
+                    <Star
+                      size={12}
+                      className="fill-accent text-accent"
+                      aria-hidden="true"
+                    />
+                    <span className="font-semibold text-fg">
+                      {formatDecimal(product.note_moyenne, 1)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-fg-subtle">Nouveau</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1">
+                <Clock size={12} aria-hidden="true" />
+                <span>{product.freshness_label}</span>
+              </div>
+            </div>
+
+            {product.total_ventes > 0 && (
+              <div className="flex items-center gap-1 text-[11px] text-fg-muted">
+                <TrendingUp size={12} aria-hidden="true" />
+                <span>{formatVentes(product.total_ventes)} vendus</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </Link>
+
+      <div className="flex items-center gap-2 border-t border-line p-2">
+        <Button
+          type="button"
+          variant={product.rupture || !canAdd ? 'secondary' : 'primary'}
+          size="sm"
+          className="flex-1"
+          disabled={!canAdd}
+          onClick={(event) => onQuickAdd(product, event)}
+          leftIcon={
+            product.rupture ? (
+              <AlertTriangle size={15} aria-hidden="true" />
+            ) : (
+              <ShoppingCart size={15} aria-hidden="true" />
+            )
+          }
+        >
+          {product.rupture
+            ? 'Indisponible'
+            : !hasPrice
+              ? 'Sur demande'
+              : !canAdd
+                ? 'Patientez…'
+                : 'Ajouter'}
+        </Button>
+
+        <Tooltip content="Partager cette nouveauté">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-9 w-9 shrink-0 p-0 text-fg-muted hover:text-accent"
+            onClick={(event) => onShare(product, event)}
+            aria-label={`Partager ${product.nom}`}
+          >
+            <Share2 size={15} aria-hidden="true" />
+          </Button>
+        </Tooltip>
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  MAIN COMPONENT                                                 */
 /* ═══════════════════════════════════════════════════════════════ */
 
 export default function NewArrivals() {
+  const router = useRouter()
+
   const { prefersReducedMotion } = useAccessibilityPreferences()
-  const isOnline = useOnlineStatus()
-  
-  // États
+  const { user, loading: authLoading } = useAuth()
+
+  const onlineStatus = useOnlineStatus() as unknown
+  const isOnline =
+    typeof onlineStatus === 'boolean'
+      ? onlineStatus
+      : Boolean((onlineStatus as { isOnline?: boolean })?.isOnline ?? true)
+
+  const cart = useCart() as any
+  const addItem = cart?.addItem
+
+  const toast = useToast() as any
+  const addToast = toast?.addToast
+
+  const exchange = useExchangeRate() as any
+
+  const rawRate = positiveNumber(
+    exchange?.rate ??
+      exchange?.usdRate ??
+      exchange?.data?.rate ??
+      exchange?.data?.current?.rate
+  )
+
+  const sectionRef = useRef<HTMLElement | null>(null)
+  const carouselRef = useRef<HTMLDivElement | null>(null)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  const [mounted, setMounted] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'carousel'>('grid')
+  const [category, setCategory] = useState('')
   const [page, setPage] = useState(1)
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set())
   const [isMobile, setIsMobile] = useState(false)
   const [isInView, setIsInView] = useState(true)
-  
-  // Refs
-  const { addItem } = useCart()
-  const { addToast } = useToast()
-  const sectionRef = useRef<HTMLElement>(null)
-  const carouselRef = useRef<HTMLDivElement>(null)
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
-  
-  const itemsPerPage = viewMode === 'grid' ? 6 : 8
+  const [accumulatedBase, setAccumulatedBase] = useState<NewArrivalProduct[]>([])
 
-  // Détection mobile
+  const itemsPerPage = viewMode === 'grid' ? 8 : 10
+
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768)
-    }
-    checkMobile()
-    window.addEventListener('resize', checkMobile)
-    return () => window.removeEventListener('resize', checkMobile)
+    setMounted(true)
   }, [])
 
-  // Intersection Observer pour lazy loading
+  /**
+   * FIX HYDRATION :
+   * Le taux peut être chargé côté client seulement.
+   * On évite donc d’utiliser le taux avant hydratation.
+   */
+  const safeRate = mounted ? rawRate : null
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  MOBILE DETECTION                                             */
+  /* ───────────────────────────────────────────────────────────── */
+
   useEffect(() => {
-    if (!sectionRef.current) return
+    if (typeof window === 'undefined') return
+
+    const mediaQuery = window.matchMedia('(max-width: 767px)')
+
+    const update = () => setIsMobile(mediaQuery.matches)
+    update()
+
+    mediaQuery.addEventListener('change', update)
+
+    return () => mediaQuery.removeEventListener('change', update)
+  }, [])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  INTERSECTION OBSERVER                                        */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    const element = sectionRef.current
+
+    if (!element || typeof IntersectionObserver === 'undefined') {
+      setIsInView(true)
+      return
+    }
 
     const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          setIsInView(entry.isIntersecting)
-        })
+      ([entry]) => {
+        setIsInView(entry.isIntersecting)
       },
       { threshold: 0.1 }
     )
 
-    observer.observe(sectionRef.current)
+    observer.observe(element)
+
     return () => observer.disconnect()
   }, [])
 
-  // Récupération des nouveautés avec cache et retry
-  const {
-    data: products = [],
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-  } = useQuery<Product[]>({
-    queryKey: ['new-arrivals-home', page, itemsPerPage],
+  /* ───────────────────────────────────────────────────────────── */
+  /*  QUERY                                                        */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const cacheKey = useMemo(
+    () => makeCacheKey(category, page, itemsPerPage),
+    [category, itemsPerPage, page]
+  )
+
+  const newArrivalsQuery = useQuery<NewArrivalsQueryResult, Error>({
+    queryKey: [
+      'new-arrivals-intelligent',
+      category,
+      page,
+      itemsPerPage,
+      isOnline,
+    ],
     queryFn: async () => {
-      // Vérifier le cache d'abord
-      const cached = getCachedPage(page)
+      const cached = readCache(cacheKey)
+
       if (cached) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('✨ New arrivals from cache:', cached.length)
+        return {
+          products: cached.products.map((product, index) =>
+            normalizeProduct(product, index + 1)
+          ),
+          meta: cached.meta,
         }
-        return cached
+      }
+
+      if (!isOnline) {
+        const expired = readCache(cacheKey, true)
+
+        if (expired) {
+          return {
+            products: expired.products.map((product, index) =>
+              normalizeProduct(product, index + 1)
+            ),
+            meta: expired.meta,
+          }
+        }
+
+        throw new Error(
+          'Hors ligne : aucune donnée en cache pour les nouveautés.'
+        )
       }
 
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
-
-      let lastError: Error | null = null
-
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          const res = await fetch(
-            `/api/produits?recent=14&limit=${itemsPerPage}&page=${page}&est_actif=true&sort_by=created_at&sort_order=desc`,
-            { signal: controller.signal }
-          )
-          
-          clearTimeout(timeoutId)
-
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`)
-          }
-
-          const json = await res.json()
-          
-          if (!json.data || !Array.isArray(json.data)) {
-            console.warn('Données invalides reçues')
-            return []
-          }
-
-          const validated = validateProducts(json.data)
-          
-          // Mettre en cache
-          setCache(page, validated)
-          
-          if (process.env.NODE_ENV === 'development') {
-            console.log('✨ New arrivals loaded:', {
-              count: validated.length,
-              page,
-              fromCache: false,
-              attempt: attempt + 1,
-            })
-          }
-          
-          return validated
-        } catch (err: any) {
-          clearTimeout(timeoutId)
-          lastError = err
-          
-          if (err.name === 'AbortError') {
-            console.warn('⏱️ Timeout fetch new arrivals')
-            break
-          }
-
-          if (attempt < MAX_RETRIES) {
-            console.warn(`⚠️ Tentative ${attempt + 1}/${MAX_RETRIES + 1} échouée:`, err.message)
-            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * Math.pow(2, attempt)))
-          }
-        }
-      }
-
-      // Essayer d'utiliser le cache même expiré
-      const expiredCache = getCachedPage(page)
-      if (expiredCache) {
-        console.warn('🔄 Utilisation du cache expiré pour new arrivals')
-        return expiredCache
-      }
-
-      throw lastError || new Error('Erreur chargement des nouveautés')
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: false,
-    enabled: isInView && (isOnline || !getCachedPage(page)),
-  })
-
-  // Préchargement de la page suivante
-  useEffect(() => {
-    if (!PRELOAD_NEXT_PAGE || !isInView || products.length === 0) return
-
-    const preloadNextPage = async () => {
-      const nextPage = page + 1
-      const cached = getCachedPage(nextPage)
-      if (cached) return
+      const timeoutId = setTimeout(() => {
+        controller.abort()
+      }, REQUEST_TIMEOUT)
 
       try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
-
-        const res = await fetch(
-          `/api/produits?recent=14&limit=${itemsPerPage}&page=${nextPage}&est_actif=true&sort_by=created_at&sort_order=desc`,
-          { signal: controller.signal }
+        const result = await fetchNewArrivalsPage(
+          category,
+          page,
+          itemsPerPage,
+          controller.signal
         )
 
+        writeCache(cacheKey, result.products, result.meta)
+
+        return result
+      } finally {
         clearTimeout(timeoutId)
-
-        if (res.ok) {
-          const json = await res.json()
-          if (json.data && Array.isArray(json.data)) {
-            const validated = validateProducts(json.data)
-            setCache(nextPage, validated)
-          }
-        }
-      } catch (err) {
-        console.warn('Erreur préchargement page suivante:', err)
       }
-    }
-
-    const timer = setTimeout(preloadNextPage, 2000)
-    return () => clearTimeout(timer)
-  }, [page, products.length, itemsPerPage, isInView])
-
-  // Ajout rapide au panier
-  const handleQuickAdd = useCallback(
-    (prod: Product, e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      
-      addItem({
-        id: prod.id,
-        nom: prod.nom,
-        prix: prod.prix_promo ?? prod.prix,
-        quantite: 1,
-        image: prod.images?.[0] || '/placeholder.jpg',
-      })
-      
-      addToast({ 
-        type: 'success', 
-        message: `${prod.nom} ajouté au panier` 
-      })
     },
-    [addItem, addToast]
+    enabled: isInView,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+    placeholderData: (previous) => previous,
+  })
+
+  const baseCurrentProducts = useMemo(
+    () => newArrivalsQuery.data?.products ?? [],
+    [newArrivalsQuery.data?.products]
   )
 
-  // Partage
-  const handleShare = useCallback(async (prod: Product, e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    
-    const url = `${window.location.origin}/produits/${prod.slug || prod.id}`
-    
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: prod.nom,
-          text: `Nouveauté sur Gercie : ${prod.nom}`,
-          url,
-        })
-      } else {
-        await navigator.clipboard.writeText(url)
-        addToast({ type: 'success', message: 'Lien copié !' })
-      }
-    } catch (err) {
-      console.warn('Erreur partage:', err)
-    }
-  }, [addToast])
+  const meta = newArrivalsQuery.data?.meta
 
-  // Calcul du pourcentage de remise
-  const getDiscount = useCallback((prod: Product) => {
-    if (prod.remise_percent && prod.remise_percent > 0) {
-      return prod.remise_percent
-    }
-    if (prod.prix_promo && prod.prix > 0) {
-      return Math.round(((prod.prix - prod.prix_promo) / prod.prix) * 100)
-    }
-    return 0
-  }, [])
+  /* ───────────────────────────────────────────────────────────── */
+  /*  ACCUMULATE PAGES (BASE, SANS CDF FIGÉ)                       */
+  /* ───────────────────────────────────────────────────────────── */
 
-  // Détection de véritable nouveauté (moins de 7 jours)
-  const isRecent = useCallback((prod: Product) => {
-    if (!prod.created_at) return false
-    const diff = Date.now() - new Date(prod.created_at).getTime()
-    return diff < NEW_PRODUCT_DAYS * 24 * 60 * 60 * 1000
-  }, [])
+  useEffect(() => {
+    if (page === 1) {
+      setAccumulatedBase(baseCurrentProducts)
+      return
+    }
 
-  // Formater la date
-  const formatDate = useCallback((dateStr: string) => {
-    try {
-      return new Date(dateStr).toLocaleDateString('fr-FR', { 
-        month: 'short', 
-        day: 'numeric' 
+    setAccumulatedBase((previous) => {
+      const map = new Map(previous.map((product) => [product.id, product]))
+
+      baseCurrentProducts.forEach((product) => {
+        map.set(product.id, product)
       })
-    } catch {
-      return ''
-    }
-  }, [])
 
-  // Gestion erreurs images
+      return Array.from(map.values())
+    })
+  }, [baseCurrentProducts, page])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  PRODUITS AFFICHÉS AVEC TAUX COURANT                          */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const displayedProducts = useMemo(
+    () =>
+      accumulatedBase.map((product) =>
+        applyExchangeRateToProduct(product, safeRate)
+      ),
+    [accumulatedBase, safeRate]
+  )
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  PRELOAD NEXT PAGE                                            */
+  /* ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (!isOnline) return
+    if (!meta?.hasMore) return
+    if (baseCurrentProducts.length === 0) return
+
+    const nextPage = page + 1
+    const nextKey = makeCacheKey(category, nextPage, itemsPerPage)
+
+    if (readCache(nextKey)) return
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await fetchNewArrivalsPage(
+          category,
+          nextPage,
+          itemsPerPage
+        )
+
+        writeCache(nextKey, result.products, result.meta)
+      } catch {
+        // préchargement non critique
+      }
+    }, PRELOAD_DELAY)
+
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [
+    baseCurrentProducts.length,
+    category,
+    isOnline,
+    itemsPerPage,
+    meta?.hasMore,
+    page,
+  ])
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  AUTH GUARD                                                   */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const requireAuth = useCallback(
+    (message: string) => {
+      if (authLoading) {
+        addToast?.({
+          type: 'info',
+          message: 'Connexion en cours, veuillez patienter…',
+        })
+        return false
+      }
+
+      if (user) return true
+
+      addToast?.({
+        type: 'warning',
+        message,
+      })
+
+      router.push(
+        `/login?redirect=${encodeURIComponent(getCurrentPath('/'))}`
+      )
+
+      return false
+    },
+    [addToast, authLoading, router, user]
+  )
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  HANDLERS                                                     */
+  /* ───────────────────────────────────────────────────────────── */
+
+  const handleQuickAdd = useCallback(
+    (
+      product: NewArrivalProduct,
+      event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const hasPrice = product.priceUsd > 0 || product.priceCdf > 0
+
+      if (product.rupture) {
+        addToast?.({
+          type: 'warning',
+          message: `${product.nom} est en rupture de stock.`,
+        })
+        return
+      }
+
+      if (!hasPrice) {
+        addToast?.({
+          type: 'warning',
+          message: `${product.nom} est sur demande.`,
+        })
+        return
+      }
+
+      if (product.priceCdf <= 0) {
+        addToast?.({
+          type: 'info',
+          message: 'Conversion CDF en cours, réessayez dans quelques secondes.',
+        })
+        return
+      }
+
+      if (!requireAuth('Veuillez vous connecter pour ajouter au panier.')) {
+        return
+      }
+
+      try {
+        addItem?.(
+          {
+            id: product.id,
+            product_id: product.id,
+            nom: product.nom,
+
+            prix: product.priceCdf,
+            prix_usd: product.priceUsd > 0 ? product.priceUsd : undefined,
+            unit_price_usd:
+              product.priceUsd > 0 ? product.priceUsd : undefined,
+
+            quantite: 1,
+
+            image: product.images[0] ?? product.image_url ?? undefined,
+
+            delivery_config: product.delivery_config ?? null,
+            poids_kg: product.poids_kg ?? null,
+
+            variante: undefined,
+          },
+          1
+        )
+
+        addToast?.({
+          type: 'success',
+          message: `${product.nom} ajouté au panier.`,
+        })
+      } catch {
+        addToast?.({
+          type: 'error',
+          message: 'Impossible d’ajouter ce produit au panier.',
+        })
+      }
+    },
+    [addItem, addToast, requireAuth]
+  )
+
+  const handleShare = useCallback(
+    async (
+      product: NewArrivalProduct,
+      event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (typeof window === 'undefined') return
+
+      const url = `${window.location.origin}${product.href}`
+
+      try {
+        if (typeof navigator !== 'undefined' && navigator.share) {
+          await navigator.share({
+            title: product.nom,
+            text: `Nouveauté sur Gercie : ${product.nom}`,
+            url,
+          })
+        } else if (
+          typeof navigator !== 'undefined' &&
+          navigator.clipboard
+        ) {
+          await navigator.clipboard.writeText(url)
+          addToast?.({
+            type: 'success',
+            message: 'Lien de la nouveauté copié.',
+          })
+        }
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          console.warn('Erreur partage nouveauté:', err)
+        }
+      }
+    },
+    [addToast]
+  )
+
   const handleImageError = useCallback((productId: string) => {
-    setImageErrors(prev => new Set(prev).add(productId))
+    setImageErrors((previous) => {
+      const next = new Set(previous)
+      next.add(productId)
+      return next
+    })
   }, [])
 
-  // Touch gestures pour carousel
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (viewMode !== 'carousel') return
-    touchStartRef.current = {
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY,
-    }
-  }, [viewMode])
+  const handleCategoryChange = useCallback((nextCategory: string) => {
+    setCategory(nextCategory)
+    setPage(1)
+    setAccumulatedBase([])
+  }, [])
+
+  const handleLoadMore = useCallback(() => {
+    setPage((previous) => previous + 1)
+  }, [])
+
+  const handleToggleView = useCallback(() => {
+    setViewMode((previous) => (previous === 'grid' ? 'carousel' : 'grid'))
+    setPage(1)
+    setAccumulatedBase([])
+  }, [])
+
+  const handleRefresh = useCallback(async () => {
+    clearCategoryCache(category)
+
+    await newArrivalsQuery.refetch()
+
+    addToast?.({
+      type: 'info',
+      message: 'Nouveautés actualisées.',
+    })
+  }, [addToast, category, newArrivalsQuery])
+
+  const handleTouchStart = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (viewMode !== 'carousel') return
+
+      touchStartRef.current = {
+        x: event.touches[0].clientX,
+        y: event.touches[0].clientY,
+      }
+    },
+    [viewMode]
+  )
 
   const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (viewMode !== 'carousel' || !touchStartRef.current || !carouselRef.current) return
-
-      const touchEnd = {
-        x: e.changedTouches[0].clientX,
-        y: e.changedTouches[0].clientY,
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (
+        viewMode !== 'carousel' ||
+        !touchStartRef.current ||
+        !carouselRef.current
+      ) {
+        return
       }
 
-      const deltaX = touchEnd.x - touchStartRef.current.x
+      const startX = touchStartRef.current.x
+      const startY = touchStartRef.current.y
 
-      if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
-        const scrollAmount = deltaX > 0 ? -200 : 200
+      const endX = event.changedTouches[0].clientX
+      const endY = event.changedTouches[0].clientY
+
+      const deltaX = endX - startX
+      const deltaY = endY - startY
+
+      if (
+        Math.abs(deltaX) > SWIPE_THRESHOLD &&
+        Math.abs(deltaX) > Math.abs(deltaY)
+      ) {
+        const scrollAmount = deltaX > 0 ? -220 : 220
+
         carouselRef.current.scrollBy({
           left: scrollAmount,
           behavior: prefersReducedMotion ? 'auto' : 'smooth',
@@ -420,73 +1700,102 @@ export default function NewArrivals() {
 
       touchStartRef.current = null
     },
-    [viewMode, prefersReducedMotion]
+    [prefersReducedMotion, viewMode]
   )
 
-  // Toggle view mode
-  const toggleViewMode = useCallback(() => {
-    setViewMode(prev => prev === 'grid' ? 'carousel' : 'grid')
-  }, [])
+  /* ───────────────────────────────────────────────────────────── */
+  /*  DERIVED                                                      */
+  /* ───────────────────────────────────────────────────────────── */
 
-  // Load more
-  const handleLoadMore = useCallback(() => {
-    setPage(p => p + 1)
-  }, [])
+  const categories = meta?.categories ?? []
 
-  // Memoization des produits avec calculs
-  const productsWithMeta = useMemo(() => {
-    return products.map((prod) => ({
-      ...prod,
-      discount: getDiscount(prod),
-      recent: isRecent(prod),
-      hasImageError: imageErrors.has(prod.id),
-      formattedDate: prod.created_at ? formatDate(prod.created_at) : '',
-    }))
-  }, [products, getDiscount, isRecent, imageErrors, formatDate])
+  const isLoadingFirstPage =
+    newArrivalsQuery.isLoading && page === 1 && accumulatedBase.length === 0
 
-  // États de chargement
-  if (isLoading && !isFetching) {
+  const isErrorFirstPage =
+    newArrivalsQuery.isError && accumulatedBase.length === 0
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  RENDER: LOADING                                              */
+  /* ───────────────────────────────────────────────────────────── */
+
+  if (isLoadingFirstPage) {
     return (
-      <section 
-        className="py-8 sm:py-12 md:py-16 bg-gradient-to-r from-blue-500/5 to-purple-500/5"
+      <section
+        className="relative overflow-hidden bg-canvas py-8 sm:py-12 md:py-16"
         aria-busy="true"
         aria-label="Chargement des nouveautés"
       >
         <Container>
-          <div className="flex items-center justify-between mb-4 sm:mb-6">
-            <Skeleton variant="text" className="w-40 sm:w-48 h-7 sm:h-8" />
-            <Skeleton variant="text" className="w-20 sm:w-24 h-5" />
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <div className="space-y-2">
+              <Skeleton variant="text" className="h-7 w-48 rounded-full" />
+              <Skeleton variant="text" className="h-4 w-64 rounded-full" />
+            </div>
+
+            <Skeleton variant="text" className="h-8 w-24 rounded-pill" />
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-card rounded-xl p-2 sm:p-3 space-y-2">
-                <Skeleton variant="rectangular" className="aspect-square rounded-xl" />
-                <Skeleton variant="text" className="w-3/4 h-4" />
-                <Skeleton variant="text" className="w-1/2 h-4" />
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div
+                key={`new-arrival-skeleton-${index}`}
+                className="space-y-3 rounded-card border border-line bg-surface p-3 shadow-card"
+              >
+                <Skeleton
+                  variant="rectangular"
+                  className="aspect-square w-full rounded-control"
+                />
+                <Skeleton variant="text" className="h-4 w-3/4 rounded-full" />
+                <Skeleton variant="text" className="h-3 w-1/2 rounded-full" />
+                <Skeleton
+                  variant="rectangular"
+                  className="h-9 w-full rounded-control"
+                />
               </div>
             ))}
           </div>
-          <span className="sr-only">Chargement...</span>
+
+          <span className="sr-only">Chargement des nouveautés…</span>
         </Container>
       </section>
     )
   }
 
-  if (isError) {
+  /* ───────────────────────────────────────────────────────────── */
+  /*  RENDER: ERROR                                                */
+  /* ───────────────────────────────────────────────────────────── */
+
+  if (isErrorFirstPage) {
     return (
-      <section className="py-8 sm:py-12 md:py-16 bg-gradient-to-r from-blue-500/5 to-purple-500/5" role="alert">
+      <section className="relative overflow-hidden bg-canvas py-8 sm:py-12 md:py-16">
         <Container>
-          <div className="text-center py-8 sm:py-12 bg-card rounded-2xl border border-red-200/30">
-            <AlertTriangle 
-              size={40} 
-              className="mx-auto text-red-500 mb-3 sm:mb-4" 
+          <div
+            className="flex flex-col items-center justify-center gap-3 rounded-card border border-danger/20 bg-danger-soft px-6 py-12 text-center"
+            role="alert"
+          >
+            <AlertTriangle
+              size={32}
+              className="text-danger"
               aria-hidden="true"
             />
-            <p className="text-sm sm:text-base text-muted-foreground mb-3 sm:mb-4 px-4">
-              {(error as Error)?.message || 'Impossible de charger les nouveautés.'}
+
+            <p className="text-sm font-semibold text-danger">
+              {newArrivalsQuery.error?.message ??
+                'Impossible de charger les nouveautés.'}
             </p>
-            <Button variant="outline-gold" onClick={() => refetch()} size="sm">
-              <RefreshCw size={14} className="mr-1" aria-hidden="true" /> 
+
+            <p className="max-w-sm text-xs text-fg-muted">
+              Une erreur est survenue lors de la récupération des nouveautés.
+            </p>
+
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => newArrivalsQuery.refetch()}
+              leftIcon={<RefreshCw size={14} aria-hidden="true" />}
+            >
               Réessayer
             </Button>
           </div>
@@ -495,76 +1804,150 @@ export default function NewArrivals() {
     )
   }
 
-  if (!products || products.length === 0) return null
+  if (displayedProducts.length === 0) {
+    return null
+  }
+
+  /* ───────────────────────────────────────────────────────────── */
+  /*  RENDER: MAIN                                                 */
+  /* ───────────────────────────────────────────────────────────── */
 
   return (
-    <section 
+    <section
       ref={sectionRef}
-      className="py-8 sm:py-12 md:py-16 bg-gradient-to-r from-blue-500/5 to-purple-500/5 relative overflow-hidden"
+      className="relative overflow-hidden bg-canvas py-8 sm:py-12 md:py-16"
       aria-labelledby="new-arrivals-heading"
     >
-      {/* Décoration */}
-      <div 
-        className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400/30 via-purple-400/30 to-pink-400/30" 
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/25 to-transparent"
         aria-hidden="true"
       />
 
       <Container>
-        {/* En-tête enrichi */}
+        {/* ====================================================
+            HEADER
+           ==================================================== */}
         <motion.div
-          initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
-          whileInView={prefersReducedMotion ? {} : { opacity: 1, y: 0 }}
+          initial={
+            prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }
+          }
+          whileInView={
+            prefersReducedMotion ? {} : { opacity: 1, y: 0 }
+          }
           viewport={{ once: true }}
-          transition={{ duration: prefersReducedMotion ? 0 : 0.5 }}
-          className="flex flex-col sm:flex-row sm:items-end justify-between mb-4 sm:mb-6 gap-2"
+          transition={{
+            duration: prefersReducedMotion ? 0 : 0.45,
+            ease: 'easeOut',
+          }}
+          className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between"
         >
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                <Sparkles size={20} className="text-blue-500" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <span
+                className={cn(
+                  'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+                  'border border-accent/20 bg-accent-soft text-accent shadow-card'
+                )}
+                aria-hidden="true"
+              >
+                <Sparkles size={20} strokeWidth={2} />
+              </span>
+
+              <div className="min-w-0">
+                <h2
+                  id="new-arrivals-heading"
+                  className="text-balance text-xl font-bold tracking-tight text-fg sm:text-2xl md:text-3xl"
+                >
+                  Nouveautés
+                </h2>
+
+                <p className="mt-1 hidden text-xs text-fg-muted sm:block sm:text-sm">
+                  Les produits récemment ajoutés, classés par fraîcheur,
+                  démarrage, notes et promotions.
+                </p>
               </div>
-              <h2 
-                id="new-arrivals-heading"
-                className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground font-serif"
-              >
-                Nouveautés
-              </h2>
-              <Badge 
-                variant="accent" 
-                size="sm" 
-                className={cn(!prefersReducedMotion && "animate-pulse")}
-              >
-                <Zap size={12} className="mr-1" aria-hidden="true" /> 
-                <span className="hidden sm:inline">Fraîchement ajouté</span>
-                <span className="sm:hidden">Nouveau</span>
-              </Badge>
+
+              <Pill tone="accent" icon={<Zap size={10} aria-hidden="true" />}>
+                Intelligent
+              </Pill>
             </div>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1 hidden sm:block">
-              Découvrez les derniers produits ajoutés sur Gercie
-            </p>
+
             {!isOnline && (
-              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1">
-                <WifiOff size={12} aria-hidden="true" />
-                Mode hors ligne - données en cache
-              </p>
+              <div className="mt-3">
+                <Pill
+                  tone="info"
+                  icon={<WifiOff size={11} aria-hidden="true" />}
+                >
+                  Mode hors ligne — données en cache
+                </Pill>
+              </div>
             )}
           </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={toggleViewMode}
-              className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-gold-500 hover:border-gold-400/50 transition-colors focus:outline-none focus:ring-2 focus:ring-gold-500"
-              aria-label={viewMode === 'grid' ? 'Passer en vue carrousel' : 'Passer en vue grille'}
-              title={viewMode === 'grid' ? 'Vue carrousel' : 'Vue grille'}
+
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Tooltip content="Actualiser les nouveautés">
+              <button
+                type="button"
+                onClick={() => void handleRefresh()}
+                className={cn(
+                  'inline-flex h-9 w-9 items-center justify-center rounded-full',
+                  'border border-line bg-surface text-fg-muted shadow-card',
+                  'transition-colors duration-200',
+                  'hover:border-line-strong hover:bg-muted hover:text-fg',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                  'focus-visible:ring-offset-2 focus-visible:ring-offset-canvas'
+                )}
+                aria-label="Actualiser les nouveautés"
+              >
+                <RefreshCw
+                  size={16}
+                  className={cn(
+                    newArrivalsQuery.isFetching &&
+                      'animate-spin text-accent'
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+            </Tooltip>
+
+            <Tooltip
+              content={
+                viewMode === 'grid'
+                  ? 'Passer en vue carrousel'
+                  : 'Passer en vue grille'
+              }
             >
-              {viewMode === 'grid' ? (
-                <Minimize2 size={16} aria-hidden="true" />
-              ) : (
-                <Maximize2 size={16} aria-hidden="true" />
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={handleToggleView}
+                className={cn(
+                  'inline-flex h-9 w-9 items-center justify-center rounded-full',
+                  'border border-line bg-surface text-fg-muted shadow-card',
+                  'transition-colors duration-200',
+                  'hover:border-line-strong hover:bg-muted hover:text-fg',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                  'focus-visible:ring-offset-2 focus-visible:ring-offset-canvas'
+                )}
+                aria-label="Changer la vue des nouveautés"
+              >
+                {viewMode === 'grid' ? (
+                  <List size={16} aria-hidden="true" />
+                ) : (
+                  <Grid3X3 size={16} aria-hidden="true" />
+                )}
+              </button>
+            </Tooltip>
+
             <Link
               href="/produits?sort=recent"
-              className="flex items-center gap-1 text-xs sm:text-sm font-medium text-gold-600 hover:text-gold-500 transition-colors focus:outline-none focus:ring-2 focus:ring-gold-500 rounded px-2 py-1"
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-pill border border-line bg-surface px-3 py-1.5',
+                'text-xs font-semibold text-fg shadow-card',
+                'transition-colors duration-200',
+                'hover:border-accent/30 hover:bg-accent-soft hover:text-accent',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                'focus-visible:ring-offset-2 focus-visible:ring-offset-canvas'
+              )}
               aria-label="Voir toutes les nouveautés"
             >
               <span className="hidden sm:inline">Voir tout</span>
@@ -574,271 +1957,178 @@ export default function NewArrivals() {
           </div>
         </motion.div>
 
-        {/* Grille de produits */}
+        {/* ====================================================
+            CATEGORIES
+           ==================================================== */}
+        {categories.length > 1 && (
+          <div
+            className="mb-5 flex flex-wrap gap-2"
+            role="group"
+            aria-label="Filtrer les nouveautés par catégorie"
+          >
+            <button
+              type="button"
+              onClick={() => handleCategoryChange('')}
+              className={cn(
+                'inline-flex h-8 items-center rounded-pill border px-3 text-xs font-semibold',
+                'transition-colors duration-200',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                'focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+                category === ''
+                  ? 'border-accent/30 bg-accent-soft text-accent'
+                  : 'border-line bg-surface text-fg-muted hover:border-line-strong hover:bg-muted hover:text-fg'
+              )}
+              aria-pressed={category === ''}
+            >
+              Tous
+            </button>
+
+            {categories.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => handleCategoryChange(item)}
+                className={cn(
+                  'inline-flex h-8 items-center rounded-pill border px-3 text-xs font-semibold',
+                  'transition-colors duration-200',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                  'focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+                  category === item
+                    ? 'border-accent/30 bg-accent-soft text-accent'
+                    : 'border-line bg-surface text-fg-muted hover:border-line-strong hover:bg-muted hover:text-fg'
+                )}
+                aria-pressed={category === item}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ====================================================
+            GRID VIEW
+           ==================================================== */}
         {viewMode === 'grid' ? (
-          <div 
-            className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4"
+          <div
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5"
             role="list"
             aria-label="Liste des nouveautés"
           >
-            {productsWithMeta.map((prod, idx) => (
+            {displayedProducts.map((product, index) => (
               <motion.div
-                key={prod.id}
-                initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
-                whileInView={prefersReducedMotion ? {} : { opacity: 1, y: 0 }}
+                key={product.id}
+                initial={
+                  prefersReducedMotion
+                    ? { opacity: 1 }
+                    : { opacity: 0, y: 18 }
+                }
+                whileInView={
+                  prefersReducedMotion ? {} : { opacity: 1, y: 0 }
+                }
                 viewport={{ once: true, margin: '-50px' }}
-                transition={{ 
-                  duration: prefersReducedMotion ? 0 : 0.5, 
-                  delay: prefersReducedMotion ? 0 : idx * 0.05 
+                transition={{
+                  duration: prefersReducedMotion ? 0 : 0.35,
+                  delay: prefersReducedMotion
+                    ? 0
+                    : Math.min(index * 0.035, 0.25),
+                  ease: 'easeOut',
                 }}
-                whileHover={prefersReducedMotion ? {} : { y: -4 }}
-                className="group relative"
+                className="h-full"
                 role="listitem"
               >
-                <Link
-                  href={`/produits/${prod.slug || prod.id}`}
-                  className="bg-card rounded-xl overflow-hidden hover:shadow-lg transition-shadow border border-border hover:border-gold-400/30 flex flex-col h-full focus:outline-none focus:ring-2 focus:ring-gold-500"
-                  aria-label={`${prod.nom} - ${(prod.prix_promo ?? prod.prix).toLocaleString()} FC${prod.recent ? ' - Nouveau' : ''}`}
-                >
-                  {/* Image */}
-                  <div className="aspect-square relative bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
-                    {prod.images?.[0] && !prod.hasImageError ? (
-                      <Image
-                        src={prod.images[0]}
-                        alt={prod.nom}
-                        fill
-                        className="object-cover group-hover:scale-105 transition-transform duration-500"
-                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
-                        priority={idx < 3}
-                        quality={isMobile ? 75 : 85}
-                        onError={() => handleImageError(prod.id)}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                        <Package size={40} aria-hidden="true" />
-                      </div>
-                    )}
-
-                    {/* Badges sur l'image */}
-                    <div className="absolute top-2 left-2 flex flex-col gap-1">
-                      {prod.recent && (
-                        <Badge 
-                          variant="accent" 
-                          size="sm" 
-                          className={cn("text-[10px] sm:text-xs", !prefersReducedMotion && "animate-pulse")}
-                          aria-label="Nouveau produit"
-                        >
-                          <Sparkles size={10} className="mr-0.5" aria-hidden="true" /> 
-                          <span>Nouveau</span>
-                        </Badge>
-                      )}
-                      {prod.discount > 0 && (
-                        <Badge 
-                          variant="danger" 
-                          size="sm" 
-                          className="font-bold text-[10px] sm:text-xs"
-                          aria-label={`Réduction de ${prod.discount} pourcent`}
-                        >
-                          -{prod.discount}%
-                        </Badge>
-                      )}
-                    </div>
-
-                    {/* Boutons d'action au survol */}
-                    <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                      <Tooltip content="Ajouter au panier">
-                        <button
-                          onClick={(e) => handleQuickAdd(prod, e)}
-                          className="p-1.5 bg-white/90 dark:bg-neutral-800/90 rounded-full shadow-lg hover:bg-gold-500 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          aria-label={`Ajouter ${prod.nom} au panier`}
-                        >
-                          <ShoppingCart size={14} aria-hidden="true" />
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Partager">
-                        <button
-                          onClick={(e) => handleShare(prod, e)}
-                          className="p-1.5 bg-white/90 dark:bg-neutral-800/90 rounded-full shadow-lg hover:bg-gold-500 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          aria-label={`Partager ${prod.nom}`}
-                        >
-                          <Share2 size={14} aria-hidden="true" />
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Voir les détails">
-                        <span 
-                          className="p-1.5 bg-white/90 dark:bg-neutral-800/90 rounded-full shadow-lg hover:bg-gold-500 hover:text-white transition-colors cursor-pointer"
-                          aria-hidden="true"
-                        >
-                          <Eye size={14} />
-                        </span>
-                      </Tooltip>
-                    </div>
-                  </div>
-
-                  {/* Infos produit */}
-                  <div className="p-2 sm:p-3 flex flex-col justify-between flex-1">
-                    <div>
-                      <h3 className="text-xs sm:text-sm font-medium line-clamp-2 group-hover:text-gold-600 transition-colors">
-                        {prod.nom}
-                      </h3>
-                      {prod.categorie && (
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                          {prod.categorie}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="mt-2 space-y-1">
-                      <div className="flex items-baseline gap-1 sm:gap-1.5 flex-wrap">
-                        <span className="text-sm sm:text-base font-bold text-gold-600">
-                          {(prod.prix_promo ?? prod.prix).toLocaleString()} FC
-                        </span>
-                        {prod.prix_promo && (
-                          <span className="text-xs text-muted-foreground line-through">
-                            {prod.prix.toLocaleString()} FC
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Note & date */}
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <div className="flex items-center gap-0.5">
-                          {prod.note_moyenne != null && prod.note_moyenne > 0 ? (
-                            <>
-                              <Star size={12} className="text-amber-500 fill-amber-500" aria-hidden="true" />
-                              <span className="font-medium">{prod.note_moyenne.toFixed(1)}</span>
-                            </>
-                          ) : (
-                            <span className="text-neutral-400">—</span>
-                          )}
-                        </div>
-                        {prod.formattedDate && (
-                          <span className="flex items-center gap-0.5">
-                            <Clock size={12} aria-hidden="true" />
-                            <span>{prod.formattedDate}</span>
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Nombre de ventes (si présent) */}
-                      {prod.total_ventes != null && prod.total_ventes > 0 && (
-                        <div className="flex items-center gap-1 text-[10px] sm:text-xs text-muted-foreground">
-                          <TrendingUp size={10} aria-hidden="true" />
-                          <span>{prod.total_ventes} vendus</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </Link>
+                <ProductTile
+                  product={product}
+                  index={index}
+                  isMobile={isMobile}
+                  hasImageError={imageErrors.has(product.id)}
+                  onImageError={handleImageError}
+                  onQuickAdd={handleQuickAdd}
+                  onShare={handleShare}
+                />
               </motion.div>
             ))}
           </div>
         ) : (
-          /* Vue carrousel horizontal */
-          <div 
+          /* ==================================================
+              CAROUSEL VIEW
+             ================================================== */
+          <div
             ref={carouselRef}
-            className="flex gap-3 sm:gap-4 overflow-x-auto pb-4 scrollbar-hide snap-x snap-mandatory -mx-4 px-4"
+            className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 sm:gap-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
+            style={{ touchAction: 'pan-x' }}
             role="list"
             aria-label="Carrousel des nouveautés"
           >
-            {productsWithMeta.map((prod, idx) => (
+            {displayedProducts.map((product, index) => (
               <motion.div
-                key={prod.id}
-                initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
-                whileInView={prefersReducedMotion ? {} : { opacity: 1, y: 0 }}
+                key={product.id}
+                initial={
+                  prefersReducedMotion
+                    ? { opacity: 1 }
+                    : { opacity: 0, y: 18 }
+                }
+                whileInView={
+                  prefersReducedMotion ? {} : { opacity: 1, y: 0 }
+                }
                 viewport={{ once: true }}
-                transition={{ 
-                  duration: prefersReducedMotion ? 0 : 0.5, 
-                  delay: prefersReducedMotion ? 0 : idx * 0.05 
+                transition={{
+                  duration: prefersReducedMotion ? 0 : 0.35,
+                  delay: prefersReducedMotion
+                    ? 0
+                    : Math.min(index * 0.035, 0.25),
+                  ease: 'easeOut',
                 }}
-                className="min-w-[180px] sm:min-w-[200px] w-[180px] sm:w-[200px] flex-shrink-0 snap-start"
+                className="w-[180px] min-w-[180px] flex-shrink-0 snap-start sm:w-[210px] sm:min-w-[210px]"
                 role="listitem"
               >
-                <Link
-                  href={`/produits/${prod.slug || prod.id}`}
-                  className="bg-card rounded-xl overflow-hidden hover:shadow-lg transition-shadow border border-border hover:border-gold-400/30 flex flex-col h-full group focus:outline-none focus:ring-2 focus:ring-gold-500"
-                  aria-label={`${prod.nom} - ${(prod.prix_promo ?? prod.prix).toLocaleString()} FC`}
-                >
-                  <div className="aspect-square relative bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
-                    {prod.images?.[0] && !prod.hasImageError ? (
-                      <Image
-                        src={prod.images[0]}
-                        alt={prod.nom}
-                        fill
-                        className="object-cover group-hover:scale-105 transition-transform duration-500"
-                        sizes="200px"
-                        quality={isMobile ? 75 : 85}
-                        onError={() => handleImageError(prod.id)}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                        <Package size={36} aria-hidden="true" />
-                      </div>
-                    )}
-                    {prod.recent && (
-                      <Badge 
-                        variant="accent" 
-                        size="sm" 
-                        className="absolute top-2 left-2 text-[10px]"
-                        aria-label="Nouveau produit"
-                      >
-                        <Sparkles size={10} className="mr-0.5" aria-hidden="true" /> 
-                        <span>Nouveau</span>
-                      </Badge>
-                    )}
-                    {prod.discount > 0 && (
-                      <Badge 
-                        variant="danger" 
-                        size="sm" 
-                        className="absolute top-2 right-2 font-bold text-[10px]"
-                        aria-label={`Réduction de ${prod.discount} pourcent`}
-                      >
-                        -{prod.discount}%
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="p-2 sm:p-3">
-                    <h3 className="text-xs sm:text-sm font-medium truncate">{prod.nom}</h3>
-                    <span className="text-sm sm:text-base text-gold-600 font-bold">
-                      {(prod.prix_promo ?? prod.prix).toLocaleString()} FC
-                    </span>
-                    {prod.formattedDate && (
-                      <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                        <Clock size={10} aria-hidden="true" />
-                        <span>{prod.formattedDate}</span>
-                      </p>
-                    )}
-                  </div>
-                </Link>
+                <ProductTile
+                  product={product}
+                  index={index}
+                  isMobile={isMobile}
+                  hasImageError={imageErrors.has(product.id)}
+                  onImageError={handleImageError}
+                  onQuickAdd={handleQuickAdd}
+                  onShare={handleShare}
+                />
               </motion.div>
             ))}
           </div>
         )}
 
-        {/* Bouton "Voir plus" */}
-        <div className="text-center mt-4 sm:mt-6">
-          <Button
-            variant="outline-gold"
-            onClick={handleLoadMore}
-            className="text-xs sm:text-sm"
-            disabled={isFetching}
-            aria-label="Charger plus de nouveautés"
-          >
-            {isFetching ? (
-              <>
-                <RefreshCw size={14} className="mr-1 animate-spin" aria-hidden="true" />
-                Chargement...
-              </>
-            ) : (
-              <>
-                Découvrir plus de nouveautés 
-                <ArrowRight size={14} className="ml-1" aria-hidden="true" />
-              </>
-            )}
-          </Button>
-        </div>
+        {/* ====================================================
+            LOAD MORE
+           ==================================================== */}
+        {meta?.hasMore && (
+          <div className="mt-6 flex items-center justify-center">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleLoadMore}
+              disabled={newArrivalsQuery.isFetching}
+              leftIcon={
+                newArrivalsQuery.isFetching ? (
+                  <RefreshCw
+                    size={14}
+                    className="animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : undefined
+              }
+              rightIcon={
+                newArrivalsQuery.isFetching ? undefined : (
+                  <ArrowRight size={14} aria-hidden="true" />
+                )
+              }
+            >
+              {newArrivalsQuery.isFetching
+                ? 'Chargement…'
+                : 'Découvrir plus de nouveautés'}
+            </Button>
+          </div>
+        )}
       </Container>
     </section>
   )

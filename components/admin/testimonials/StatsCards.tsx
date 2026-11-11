@@ -1,266 +1,145 @@
 // components/admin/testimonials/StatsCards.tsx
 'use client'
 
-import { memo } from 'react'
-import { motion } from 'framer-motion'
-import { Tooltip } from '@/components/ui/Tooltip'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { cn } from '@/lib/utils'
 import {
-  MessageCircle,
-  AlertTriangle,
   CheckCircle2,
-  X,
+  Clock,
+  MessageSquare,
+  Pin,
+  ShieldCheck,
   Star,
-  TrendingUp,
-  TrendingDown,
-  Minus
+  ThumbsUp,
+  XCircle,
 } from 'lucide-react'
 
-/* ========================================================================== */
-/*  Types                                                                      */
-/* ========================================================================== */
-export interface TestimonialStats {
-  total: number
-  pending: number
-  published: number
-  rejected: number
-  avgRating: number
-  fiveStars?: number // nombre de notes 5 étoiles
-  // variations par rapport au mois précédent (optionnelles)
-  prevTotal?: number
-  prevPending?: number
-  prevPublished?: number
-  prevRejected?: number
-  prevAvgRating?: number
-}
+import { Skeleton } from '@/components/ui/Skeleton'
+import { cn } from '@/lib/utils'
+
+import type { TestimonialStats } from '@/lib/testimonials'
 
 interface StatsCardsProps {
   stats: TestimonialStats
   isLoading?: boolean
-  /** Callback quand une carte est cliquée (pour filtrer rapidement) */
-  onFilterClick?: (filter: { status?: string; minRating?: number }) => void
-  /** Liste des cartes à afficher (défaut : toutes) */
-  visibleCards?: Array<'total' | 'pending' | 'published' | 'rejected' | 'avgRating'>
-  /** Mode compact (moins de padding) */
-  compact?: boolean
-  /** Animation de comptage (non implémentée ici, placeholder) */
-  animateCount?: boolean
+  onFilterClick?: (filter: { status?: string; featured?: string; verified?: string }) => void
 }
 
-/* ========================================================================== */
-/*  Composant interne pour une carte                                           */
-/* ========================================================================== */
-interface StatCardData {
-  key: string
-  label: string
-  value: string | number
-  icon: React.ElementType
-  color: string
-  trend?: number // positif = hausse, négatif = baisse
-  description?: string // tooltip supplémentaire
-}
-
-const TrendIcon = ({ trend }: { trend?: number }) => {
-  if (trend === undefined || trend === 0) return <Minus size={12} className="text-neutral-400" />
-  if (trend > 0) return <TrendingUp size={12} className="text-green-500" />
-  return <TrendingDown size={12} className="text-red-500" />
-}
-
-const StatCard = memo(function StatCard({
-  card,
+function StatCard({
+  title,
+  value,
+  icon,
+  color,
   onClick,
-  compact
 }: {
-  card: StatCardData
+  title: string
+  value: string | number
+  icon: React.ReactNode
+  color: string
   onClick?: () => void
-  compact?: boolean
 }) {
-  const content = (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      whileHover={{ y: -2, scale: 1.02 }}
-      className={cn(
-        'bg-card rounded-xl border border-border shadow-sm transition-all duration-200',
-        onClick && 'cursor-pointer hover:border-gold-400/40 hover:shadow-md',
-        compact ? 'p-3' : 'p-4'
-      )}
+  return (
+    <button
+      type="button"
       onClick={onClick}
-      role={onClick ? 'button' : 'article'}
-      aria-label={`${card.label}: ${card.value}`}
+      className={cn(
+        'rounded-2xl border border-border bg-card p-4 text-left transition hover:border-gold-400/40 hover:shadow-gold focus:outline-none focus:ring-2 focus:ring-gold-500',
+        onClick ? 'cursor-pointer' : 'cursor-default'
+      )}
     >
-      <div className="flex items-center gap-2 mb-1">
-        <card.icon size={compact ? 16 : 18} className={cn('flex-shrink-0', card.color)} />
-        <span className="text-xs text-muted-foreground truncate">{card.label}</span>
-      </div>
-      <div className="flex items-baseline gap-2">
-        <span className={cn('font-bold text-foreground', compact ? 'text-xl' : 'text-2xl')}>
-          {card.value}
-        </span>
-        {card.trend !== undefined && (
-          <span className="inline-flex items-center gap-0.5 text-xs">
-            <TrendIcon trend={card.trend} />
-            {card.trend !== 0 && (
-              <span className={card.trend > 0 ? 'text-green-600' : 'text-red-600'}>
-                {Math.abs(card.trend)}%
-              </span>
-            )}
-          </span>
-        )}
-      </div>
-    </motion.div>
-  )
-
-  if (card.description) {
-    return (
-      <Tooltip content={card.description}>
-        {content}
-      </Tooltip>
-    )
-  }
-
-  return content
-})
-
-/* ========================================================================== */
-/*  Squelettes de chargement                                                   */
-/* ========================================================================== */
-const SkeletonCards = ({ count, compact }: { count: number; compact?: boolean }) => (
-  <>
-    {Array.from({ length: count }).map((_, i) => (
-      <div
-        key={i}
-        className={cn(
-          'bg-card rounded-xl border border-border shadow-sm',
-          compact ? 'p-3' : 'p-4'
-        )}
-      >
-        <div className="flex items-center gap-2 mb-2">
-          <Skeleton variant="circular" className="w-8 h-8" />
-          <Skeleton variant="text" className="w-16 h-4" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-muted-foreground">
+            {title}
+          </p>
+          <p className="mt-1 text-2xl font-bold text-foreground">{value}</p>
         </div>
-        <Skeleton variant="text" className="w-20 h-6" />
+
+        <div className={cn('rounded-xl p-2', color)}>{icon}</div>
       </div>
-    ))}
-  </>
-)
+    </button>
+  )
+}
 
-/* ========================================================================== */
-/*  Composant principal                                                        */
-/* ========================================================================== */
-export const StatsCards = memo(function StatsCards({
-  stats,
-  isLoading = false,
-  onFilterClick,
-  visibleCards,
-  compact = false,
-  animateCount: _animateCount = false // réservé pour future implémentation de compteur animé
-}: StatsCardsProps) {
-  // Fonction utilitaire : calcul du % de variation (si données précédentes)
-  const calcTrend = (current: number, previous?: number): number | undefined => {
-    if (previous === undefined || previous === 0) return undefined
-    return Math.round(((current - previous) / previous) * 100)
-  }
-
-  // Construction des cartes avec tooltips détaillés
-  const cards: StatCardData[] = [
-    {
-      key: 'total',
-      label: 'Total',
-      value: stats.total,
-      icon: MessageCircle,
-      color: 'text-gold-500',
-      trend: calcTrend(stats.total, stats.prevTotal),
-      description: `Total des témoignages : ${stats.published} publiés, ${stats.pending} en attente, ${stats.rejected} rejetés`
-    },
-    {
-      key: 'pending',
-      label: 'En attente',
-      value: stats.pending,
-      icon: AlertTriangle,
-      color: 'text-amber-500',
-      trend: calcTrend(stats.pending, stats.prevPending),
-      description: `${stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0}% du total`
-    },
-    {
-      key: 'published',
-      label: 'Publiés',
-      value: stats.published,
-      icon: CheckCircle2,
-      color: 'text-green-500',
-      trend: calcTrend(stats.published, stats.prevPublished),
-      description: `${stats.total > 0 ? Math.round((stats.published / stats.total) * 100) : 0}% du total`
-    },
-    {
-      key: 'rejected',
-      label: 'Rejetés',
-      value: stats.rejected,
-      icon: X,
-      color: 'text-red-500',
-      trend: calcTrend(stats.rejected, stats.prevRejected),
-      description: `${stats.total > 0 ? Math.round((stats.rejected / stats.total) * 100) : 0}% du total`
-    },
-    {
-      key: 'avgRating',
-      label: 'Note moyenne',
-      value: stats.total > 0 ? stats.avgRating.toFixed(1) : '—',
-      icon: Star,
-      color: stats.avgRating >= 4 ? 'text-gold-500' : stats.avgRating >= 3 ? 'text-amber-500' : 'text-red-500',
-      trend: calcTrend(stats.avgRating, stats.prevAvgRating),
-      description: stats.fiveStars !== undefined
-        ? `${stats.fiveStars} avis à 5 étoiles (${stats.total > 0 ? Math.round((stats.fiveStars / stats.total) * 100) : 0}%)`
-        : undefined
-    }
-  ]
-
-  // Filtrer selon les cartes visibles
-  const displayedCards = visibleCards
-    ? cards.filter(c => visibleCards.includes(c.key as any))
-    : cards
-
+export function StatsCards({ stats, isLoading, onFilterClick }: StatsCardsProps) {
   if (isLoading) {
     return (
-      <div className={cn(
-        'grid gap-4',
-        compact
-          ? 'grid-cols-2 sm:grid-cols-3'
-          : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
-      )}>
-        <SkeletonCards count={displayedCards.length} compact={compact} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div
+            key={index}
+            className="rounded-2xl border border-border bg-card p-4"
+          >
+            <Skeleton variant="text" className="mb-2 h-4 w-20" />
+            <Skeleton variant="text" className="h-8 w-16" />
+          </div>
+        ))}
       </div>
     )
   }
 
   return (
-    <div className={cn(
-      'grid gap-4',
-      compact
-        ? 'grid-cols-2 sm:grid-cols-3'
-        : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
-    )}>
-      {displayedCards.map(card => (
-        <StatCard
-          key={card.key}
-          card={card}
-          compact={compact}
-          onClick={
-            onFilterClick
-              ? () => {
-                  if (card.key === 'pending') onFilterClick({ status: 'pending' })
-                  else if (card.key === 'published') onFilterClick({ status: 'published' })
-                  else if (card.key === 'rejected') onFilterClick({ status: 'rejected' })
-                  else if (card.key === 'avgRating') onFilterClick({ minRating: 5 }) // ex: clic sur note → 5 étoiles
-                  // pour 'total', on enlève tout filtre (non implémenté ici mais possible)
-                  else onFilterClick({})
-                }
-              : undefined
-          }
-        />
-      ))}
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+      <StatCard
+        title="Total"
+        value={stats.total}
+        icon={<MessageSquare size={18} className="text-foreground" />}
+        color="bg-neutral-100 dark:bg-neutral-800"
+        onClick={() => onFilterClick?.({ status: 'all' })}
+      />
+
+      <StatCard
+        title="Publiés"
+        value={stats.published}
+        icon={<CheckCircle2 size={18} className="text-emerald-500" />}
+        color="bg-emerald-500/10"
+        onClick={() => onFilterClick?.({ status: 'published' })}
+      />
+
+      <StatCard
+        title="En attente"
+        value={stats.pending}
+        icon={<Clock size={18} className="text-amber-500" />}
+        color="bg-amber-500/10"
+        onClick={() => onFilterClick?.({ status: 'pending' })}
+      />
+
+      <StatCard
+        title="Rejetés"
+        value={stats.rejected}
+        icon={<XCircle size={18} className="text-red-500" />}
+        color="bg-red-500/10"
+        onClick={() => onFilterClick?.({ status: 'rejected' })}
+      />
+
+      <StatCard
+        title="Archivés"
+        value={stats.archived}
+        icon={<Clock size={18} className="text-muted-foreground" />}
+        color="bg-neutral-500/10"
+        onClick={() => onFilterClick?.({ status: 'archived' })}
+      />
+
+      <StatCard
+        title="Mis en avant"
+        value={stats.featured}
+        icon={<Pin size={18} className="text-gold-500" />}
+        color="bg-gold-500/10"
+        onClick={() => onFilterClick?.({ featured: 'true' })}
+      />
+
+      <StatCard
+        title="Vérifiés"
+        value={stats.verified}
+        icon={<ShieldCheck size={18} className="text-blue-500" />}
+        color="bg-blue-500/10"
+        onClick={() => onFilterClick?.({ verified: 'true' })}
+      />
+
+      <StatCard
+        title="Note moyenne"
+        value={`${stats.avgRating}/5`}
+        icon={<Star size={18} className="text-amber-500" />}
+        color="bg-amber-500/10"
+      />
     </div>
   )
-})
-
-export default StatsCards
+}

@@ -1,4 +1,3 @@
-// components/FilterBar.tsx
 'use client'
 
 import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from 'react'
@@ -31,7 +30,9 @@ import {
   Calendar,
   Zap,
 } from 'lucide-react'
-import { categoryTree, mainCategories, getTypes, getDetails } from '@/lib/categories'
+
+// ✅ NOUVEAU : Import du hook dynamique (remplace @/lib/categories)
+import { useCategories, findCategoryById, type CategoryNode } from '@/hooks/useCategories'
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  TYPES                                                          */
@@ -77,17 +78,11 @@ export interface FilterBarProps {
   priceRange?: { min: number; max: number }
   
   // Nouvelles fonctionnalités
-  /** Afficher les suggestions de recherche */
   showSearchSuggestions?: boolean
-  /** Callback pour les suggestions */
   onSearchSuggestion?: (suggestion: string) => void
-  /** Afficher le compteur de résultats en temps réel */
   showRealTimeCount?: boolean
-  /** Désactiver les animations */
   disableAnimations?: boolean
-  /** Afficher les filtres rapides (badges cliquables) */
   showQuickFilters?: boolean
-  /** Filtres rapides prédéfinis */
   quickFilters?: Array<{
     label: string
     icon?: React.ReactNode
@@ -109,9 +104,6 @@ const MOBILE_BREAKPOINT = 768
 /*  HOOKS PERSONNALISÉS                                            */
 /* ═══════════════════════════════════════════════════════════════ */
 
-/**
- * Hook pour debounce une valeur
- */
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value)
 
@@ -128,9 +120,6 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue
 }
 
-/**
- * Hook pour détecter la taille de l'écran
- */
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(false)
 
@@ -144,6 +133,25 @@ function useMediaQuery(query: string): boolean {
   }, [query])
 
   return matches
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  FONCTIONS UTILITAIRES POUR L'ARBRE DYNAMIQUE                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Trouve une catégorie par son nom (au lieu de l'ID) dans l'arbre dynamique.
+ * Nécessaire pour la compatibilité avec les anciens hooks qui utilisent les noms.
+ */
+function findCategoryByName(tree: CategoryNode[], name: string): CategoryNode | null {
+  for (const node of tree) {
+    if (node.nom === name) return node
+    if (node.children) {
+      const found = findCategoryByName(node.children, name)
+      if (found) return found
+    }
+  }
+  return null
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -196,6 +204,9 @@ export const FilterBar = memo<FilterBarProps>(({
   const isOnline = useOnlineStatus()
   const isMobile = useMediaQuery(`(max-width: ${MOBILE_BREAKPOINT}px)`)
 
+  // ✅ NOUVEAU : Récupération dynamique de l'arbre des catégories
+  const { data: categoriesTree, isLoading: isLoadingCategories } = useCategories()
+
   // États locaux
   const [internalMobileOpen, setInternalMobileOpen] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -246,7 +257,7 @@ export const FilterBar = memo<FilterBarProps>(({
   }, [selectedMainCategory, selectedSubCategory, selectedType, selectedDetail, minPrice, maxPrice, searchQuery])
 
   /* ═══════════════════════════════════════════════════════════════ */
-  /*  LABELS ET LISTES DÉRIVÉES                                    */
+  /*  LABELS ET LISTES DÉRIVÉES (DYNAMIQUES)                       */
   /* ═══════════════════════════════════════════════════════════════ */
 
   const getSortLabel = useCallback(() => {
@@ -264,20 +275,35 @@ export const FilterBar = memo<FilterBarProps>(({
     return <ArrowUpDown size={14} aria-hidden="true" />
   }, [sortBy])
 
+  // ✅ NOUVEAU : Extraction dynamique des catégories principales (noms)
+  const mainCategories = useMemo(() => {
+    if (!categoriesTree) return []
+    return categoriesTree.map(c => c.nom)
+  }, [categoriesTree])
+
+  // ✅ NOUVEAU : Sous-catégories dynamiques
   const subCategories = useMemo(() => {
-    if (!selectedMainCategory) return []
-    return categoryTree.find(c => c.name === selectedMainCategory)?.children?.map(s => s.name) || []
-  }, [selectedMainCategory])
+    if (!selectedMainCategory || !categoriesTree) return []
+    const mainNode = findCategoryByName(categoriesTree, selectedMainCategory)
+    return mainNode?.children?.map(s => s.nom) || []
+  }, [selectedMainCategory, categoriesTree])
 
+  // ✅ NOUVEAU : Types dynamiques
   const types = useMemo(() => {
-    if (!selectedSubCategory || !selectedMainCategory) return []
-    return getTypes(selectedMainCategory, selectedSubCategory)
-  }, [selectedMainCategory, selectedSubCategory])
+    if (!selectedSubCategory || !selectedMainCategory || !categoriesTree) return []
+    const mainNode = findCategoryByName(categoriesTree, selectedMainCategory)
+    const subNode = mainNode?.children?.find(s => s.nom === selectedSubCategory)
+    return subNode?.children?.map(t => t.nom) || []
+  }, [selectedMainCategory, selectedSubCategory, categoriesTree])
 
+  // ✅ NOUVEAU : Détails dynamiques
   const details = useMemo(() => {
-    if (!selectedType || !selectedMainCategory || !selectedSubCategory) return []
-    return getDetails(selectedMainCategory, selectedSubCategory, selectedType)
-  }, [selectedMainCategory, selectedSubCategory, selectedType])
+    if (!selectedType || !selectedMainCategory || !selectedSubCategory || !categoriesTree) return []
+    const mainNode = findCategoryByName(categoriesTree, selectedMainCategory)
+    const subNode = mainNode?.children?.find(s => s.nom === selectedSubCategory)
+    const typeNode = subNode?.children?.find(t => t.nom === selectedType)
+    return typeNode?.children?.map(d => d.nom) || []
+  }, [selectedMainCategory, selectedSubCategory, selectedType, categoriesTree])
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  HANDLERS                                                     */
@@ -287,7 +313,6 @@ export const FilterBar = memo<FilterBarProps>(({
     const value = e.target.value
     onSearchChange?.(value)
     
-    // Générer des suggestions basiques
     if (showSearchSuggestions && value.length > 2) {
       const suggestions = [
         `${value}`,
@@ -315,7 +340,6 @@ export const FilterBar = memo<FilterBarProps>(({
 
   const handleMinPriceChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
-    // Validation : seulement nombres positifs
     if (value === '' || /^\d+$/.test(value)) {
       setMinPrice(value)
     }
@@ -378,12 +402,10 @@ export const FilterBar = memo<FilterBarProps>(({
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + K pour focus recherche
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault()
         searchInputRef.current?.focus()
       }
-      // Escape pour fermer mobile drawer
       if (e.key === 'Escape' && mobileOpen) {
         setMobileOpen(false)
       }
@@ -513,15 +535,19 @@ export const FilterBar = memo<FilterBarProps>(({
                   align="left"
                 >
                   <DropdownItem onClick={() => handleMainCategoryChange('')}>Toutes</DropdownItem>
-                  {mainCategories.map(cat => (
-                    <DropdownItem 
-                      key={cat} 
-                      onClick={() => handleMainCategoryChange(cat)}
-                      aria-selected={selectedMainCategory === cat}
-                    >
-                      {cat}
-                    </DropdownItem>
-                  ))}
+                  {isLoadingCategories ? (
+                    <DropdownItem disabled>Chargement...</DropdownItem>
+                  ) : (
+                    mainCategories.map(cat => (
+                      <DropdownItem 
+                        key={cat} 
+                        onClick={() => handleMainCategoryChange(cat)}
+                        aria-selected={selectedMainCategory === cat}
+                      >
+                        {cat}
+                      </DropdownItem>
+                    ))
+                  )}
                 </Dropdown>
               </div>
 
@@ -648,6 +674,8 @@ export const FilterBar = memo<FilterBarProps>(({
     clearSearch,
     selectedMainCategory,
     handleMainCategoryChange,
+    mainCategories,
+    isLoadingCategories,
     subCategories,
     selectedSubCategory,
     handleSubCategoryChange,
@@ -759,8 +787,11 @@ export const FilterBar = memo<FilterBarProps>(({
                   size="sm" 
                   className="min-w-[100px] justify-between"
                   aria-label={`Catégorie: ${selectedMainCategory || 'Toutes'}`}
+                  disabled={isLoadingCategories}
                 >
-                  <span className="truncate max-w-[90px]">{selectedMainCategory || 'Catégories'}</span>
+                  <span className="truncate max-w-[90px]">
+                    {isLoadingCategories ? 'Chargement...' : (selectedMainCategory || 'Catégories')}
+                  </span>
                   <ChevronDown size={14} className="ml-1 opacity-70" aria-hidden="true" />
                 </Button>
               }
@@ -950,7 +981,7 @@ export const FilterBar = memo<FilterBarProps>(({
               aria-live="polite"
               aria-atomic="true"
             >
-              {isFetching && (
+              {(isFetching || isLoadingCategories) && (
                 <span 
                   className="w-3 h-3 border-2 border-gold-400 border-t-transparent rounded-full animate-spin"
                   aria-label="Chargement en cours"
