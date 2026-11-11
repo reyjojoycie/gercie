@@ -659,6 +659,10 @@ function settingsKeys(currency: Currency): string[] {
  *
  * Exemple :
  * 2850 signifie 1 USD = 2850 CDF.
+ *
+ * ⚠️ Le client Supabase doit être fourni explicitement.
+ * Ce fichier est partagé client/serveur : il ne doit pas
+ * importer supabaseServer (qui dépend de next/headers).
  */
 export async function getUsdCdfRate(options: {
   supabase?: any
@@ -666,19 +670,11 @@ export async function getUsdCdfRate(options: {
 } = {}): Promise<number | null> {
   const currency = normalizeCurrency(options.currency ?? 'USD')
 
-  let supabase = options.supabase
+  const supabase = options.supabase
 
-  if (!supabase) {
-    try {
-      const mod = await import('@/lib/supabaseServer')
-      const raw = (mod.createClient as any)(true)
-      supabase =
-        raw != null && typeof raw.then === 'function' ? await raw : raw
-    } catch {
-      return null
-    }
-  }
-
+  // ⚠️ FIX : ne pas importer dynamiquement supabaseServer ici.
+  // Ce fichier est partagé client/serveur. Les appelants côté serveur
+  // doivent passer un client supabase explicitement.
   if (!supabase || typeof supabase.from !== 'function') {
     return null
   }
