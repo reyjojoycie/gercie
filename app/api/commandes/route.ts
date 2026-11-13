@@ -49,7 +49,7 @@ async function loadModules() {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  HELPERS                                                        */
+/*  HELPERS NUMÉRIQUES                                             */
 /* ═══════════════════════════════════════════════════════════════ */
 
 function positiveNumber(value: any): number | null {
@@ -71,6 +71,40 @@ function roundCdf(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.round(value)
 }
+
+function clampPercent(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 0
+  return Math.min(100, Math.max(0, n))
+}
+
+function formatUsdValue(value: number): string {
+  const n = Number.isFinite(value) ? Math.max(0, value) : 0
+  return `$${n.toFixed(2)}`
+}
+
+function formatCdfValue(value: number): string {
+  const n = Number.isFinite(value) ? Math.max(0, value) : 0
+  return `${Math.round(n).toLocaleString('fr-FR')} FC`
+}
+
+function formatAmountPair(pair: { usd: number; cdf: number }): string {
+  if (pair.usd > 0) {
+    return pair.cdf > 0
+      ? `${formatUsdValue(pair.usd)} ≈ ${formatCdfValue(pair.cdf)}`
+      : formatUsdValue(pair.usd)
+  }
+
+  if (pair.cdf > 0) {
+    return formatCdfValue(pair.cdf)
+  }
+
+  return '—'
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  JSON / VARIANTE CANONIQUE                                      */
+/* ═══════════════════════════════════════════════════════════════ */
 
 function safeJsonStringify(value: any): string | null {
   if (value === null || value === undefined) return null
@@ -104,6 +138,58 @@ function parseMaybeJson(value: any): any {
   return raw
 }
 
+/**
+ * Canonicalise les attributs de variante :
+ * - supprime les clés vides ;
+ * - supprime les valeurs vides ;
+ * - trie les clés alphabétiquement.
+ *
+ * Cela garantit que :
+ *   {"couleur":"rouge","taille":"M"}
+ * et :
+ *   {"taille":"M","couleur":"rouge"}
+ * produisent la même clé.
+ */
+function canonicalizeVariantAttributes(
+  input: any
+): Record<string, string> | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null
+  }
+
+  const clean: Record<string, string> = {}
+
+  for (const [key, value] of Object.entries(input)) {
+    const cleanKey = String(key || '').trim()
+
+    if (!cleanKey) continue
+    if (value === null || value === undefined) continue
+
+    const cleanValue = String(value).trim()
+    if (!cleanValue) continue
+
+    clean[cleanKey] = cleanValue
+  }
+
+  const entries = Object.entries(clean)
+
+  if (entries.length === 0) return null
+
+  entries.sort(([a], [b]) => String(a).localeCompare(String(b)))
+
+  return Object.fromEntries(entries)
+}
+
+function stableVariantKeyFromAttributes(
+  attributes: Record<string, string> | null
+): string {
+  const clean = canonicalizeVariantAttributes(attributes)
+
+  if (!clean) return ''
+
+  return safeJsonStringify(clean) || ''
+}
+
 function parseVariantAttributes(item: any): Record<string, string> | null {
   const candidates = [
     item?.variant_key,
@@ -120,37 +206,104 @@ function parseVariantAttributes(item: any): Record<string, string> | null {
         (parsed as any).attrs ??
         parsed
 
-      if (attributes && typeof attributes === 'object') {
-        const clean: Record<string, string> = {}
+      const clean = canonicalizeVariantAttributes(attributes)
 
-        for (const [key, value] of Object.entries(attributes)) {
-          const cleanKey = String(key || '').trim()
-          const cleanValue = String(value ?? '').trim()
-
-          if (cleanKey && cleanValue) {
-            clean[cleanKey] = cleanValue
-          }
-        }
-
-        if (Object.keys(clean).length > 0) return clean
-      }
+      if (clean) return clean
     }
   }
 
   return null
 }
 
-function variantAttributesLabel(attributes: Record<string, string> | null): string | null {
-  if (!attributes) return null
+function variantAttributesLabel(
+  attributes: Record<string, string> | null
+): string | null {
+  const clean = canonicalizeVariantAttributes(attributes)
 
-  const values = Object.values(attributes)
+  if (!clean) return null
+
+  const values = Object.values(clean)
     .filter(Boolean)
     .map(String)
 
   return values.length > 0 ? values.join(' • ') : null
 }
 
-function normalizeDeliveryMode(value: any): 'domicile' | 'point_retrait' | 'express' {
+/* ═══════════════════════════════════════════════════════════════ */
+/*  RÉSOLUTION MONTANT USD / CDF                                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface AmountPair {
+  usd: number
+  cdf: number
+}
+
+/**
+ * Règle absolue :
+ * - USD explicite gagne toujours.
+ * - CDF explicite est converti en USD si taux disponible.
+ * - Champ legacy ambigu :
+ *   - >= 5000 : probablement CDF
+ *   - < 5000 : probablement USD
+ * - Aucun taux codé en dur.
+ */
+function resolveAmountPair(input: {
+  usd?: unknown
+  cdf?: unknown
+  legacy?: unknown
+  rate?: number | null
+  legacyCurrency?: 'USD' | 'CDF' | 'auto'
+}): AmountPair {
+  const rateNum = Number(input.rate)
+  const rateOk = Number.isFinite(rateNum) && rateNum > 0
+
+  const usdExplicit = positiveNumber(input.usd)
+  const cdfExplicit = positiveNumber(input.cdf)
+  const legacy = positiveNumber(input.legacy)
+
+  if (usdExplicit != null && usdExplicit > 0) {
+    const usd = round2(usdExplicit)
+    const cdf = rateOk ? roundCdf(usd * rateNum) : 0
+
+    return { usd, cdf }
+  }
+
+  if (cdfExplicit != null && cdfExplicit > 0) {
+    const cdf = roundCdf(cdfExplicit)
+    const usd = rateOk ? round2(cdf / rateNum) : 0
+
+    return { usd, cdf }
+  }
+
+  if (legacy != null && legacy > 0) {
+    const mode = input.legacyCurrency ?? 'auto'
+
+    const treatAsUsd =
+      mode === 'USD' || (mode === 'auto' && legacy < 5000)
+
+    if (treatAsUsd) {
+      const usd = round2(legacy)
+      const cdf = rateOk ? roundCdf(usd * rateNum) : 0
+
+      return { usd, cdf }
+    }
+
+    const cdf = roundCdf(legacy)
+    const usd = rateOk ? round2(cdf / rateNum) : 0
+
+    return { usd, cdf }
+  }
+
+  return { usd: 0, cdf: 0 }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  AUTRES HELPERS                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function normalizeDeliveryMode(
+  value: any
+): 'domicile' | 'point_retrait' | 'express' {
   const raw = String(value || '').trim()
 
   if (raw === 'point_retrait' || raw === 'pickup' || raw === 'relais') {
@@ -168,6 +321,7 @@ function coerceId(value: any): number | string | null {
   if (value === null || value === undefined || value === '') return null
 
   const n = Number(value)
+
   if (Number.isFinite(n) && String(value).trim() !== '') {
     return n
   }
@@ -381,30 +535,116 @@ async function fetchProductsByIds(
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  PRIX UNITAIRE SERVEUR                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * ═══════════════════════════════════════════════════════════════
+ *  RÉSOLUTION PRIX UNITAIRE — RÈGLE ABSOLUE
+ *
+ *  - Si USD existe → USD = vérité.
+ *    CDF = USD × taux si taux disponible.
+ *    Le CDF stocké est ignoré.
+ *
+ *  - Si seulement CDF existe → CDF = source temporaire.
+ *    USD = CDF / taux si taux disponible.
+ *
+ *  - Aucun taux codé en dur.
+ * ═══════════════════════════════════════════════════════════════
+ */
+function resolveUnitPrices(
+  product: any,
+  variant: any,
+  clientItem: any,
+  rate: number | null
+): { usd: number; cdf: number } {
+  const rateNum = Number(rate)
+  const rateOk = Number.isFinite(rateNum) && rateNum > 0
+
+  const baseUsd =
+    positiveNumber(product?.prix_usd) ??
+    positiveNumber(product?.price_usd)
+
+  const baseCdf =
+    positiveNumber(product?.prix) ??
+    positiveNumber(product?.price) ??
+    positiveNumber(product?.prix_cdf)
+
+  const variantUsd =
+    positiveNumber(variant?.prix_specifique_usd) ??
+    positiveNumber(variant?.price_specifique_usd)
+
+  const variantCdf =
+    positiveNumber(variant?.prix_specifique_cdf) ??
+    positiveNumber(variant?.prix_specifique) ??
+    positiveNumber(variant?.price_specifique)
+
+  const clientUsd = positiveNumber(clientItem?.prix_unitaire_usd)
+  const clientCdf = positiveNumber(clientItem?.prix_unitaire)
+
+  let usd =
+    variantUsd ??
+    baseUsd ??
+    clientUsd ??
+    0
+
+  const storedCdf =
+    variantCdf ??
+    baseCdf ??
+    clientCdf ??
+    0
+
+  let cdf = 0
+
+  if (usd > 0) {
+    /**
+     * USD = source principale.
+     * Le CDF stocké est ignoré si le taux est disponible.
+     */
+    cdf = rateOk ? roundCdf(usd * rateNum) : storedCdf
+  } else if (storedCdf > 0) {
+    /**
+     * Legacy : seulement un CDF existe.
+     * On dérive un USD temporaire si le taux est disponible.
+     */
+    cdf = storedCdf
+    usd = rateOk ? round2(cdf / rateNum) : 0
+  }
+
+  return {
+    usd: round2(usd),
+    cdf: roundCdf(cdf),
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  PROMO                                                          */
 /* ═══════════════════════════════════════════════════════════════ */
 
 async function resolvePromoReduction(
   supabase: any,
   code: string | null | undefined,
-  subtotalCdf: number,
   subtotalUsd: number,
+  subtotalCdf: number,
   rate: number | null,
   logger: any
 ): Promise<{
-  reductionCdf: number
   reductionUsd: number
+  reductionCdf: number
   promo?: any
   error?: string
 }> {
+  const rateNum = Number(rate)
+  const rateOk = Number.isFinite(rateNum) && rateNum > 0
+
   if (!code) {
-    return { reductionCdf: 0, reductionUsd: 0 }
+    return { reductionUsd: 0, reductionCdf: 0 }
   }
 
   const normalized = String(code).trim().toUpperCase()
 
   if (!normalized) {
-    return { reductionCdf: 0, reductionUsd: 0 }
+    return { reductionUsd: 0, reductionCdf: 0 }
   }
 
   if (supabase) {
@@ -417,76 +657,175 @@ async function resolvePromoReduction(
         .maybeSingle()
 
       if (!error && data) {
-        const expiresAt = data.expires_at || data.expiresAt || data.expiration_date
+        const expiresAt =
+          data.expires_at || data.expiresAt || data.expiration_date
+
         if (expiresAt && new Date(expiresAt) < new Date()) {
-          return { reductionCdf: 0, reductionUsd: 0, error: 'Ce code promo a expiré.' }
+          return {
+            reductionUsd: 0,
+            reductionCdf: 0,
+            error: 'Ce code promo a expiré.',
+          }
         }
 
-        const minTotalCdf =
-          positiveNumber(data.min_total ?? data.minTotal) ??
-          (rate && positiveNumber(data.min_total_usd ?? data.minTotalUsd)
-            ? roundCdf(positiveNumber(data.min_total_usd ?? data.minTotalUsd)! * rate)
-            : 0) ??
-          0
+        /**
+         * Minimum panier.
+         * USD explicite gagne.
+         */
+        const minTotalPair = resolveAmountPair({
+          usd: data.min_total_usd ?? data.minTotalUsd,
+          cdf: data.min_total_cdf ?? data.minTotalCdf,
+          legacy: data.min_total ?? data.minTotal,
+          rate,
+        })
 
-        if (minTotalCdf > 0 && subtotalCdf < minTotalCdf) {
+        if (
+          minTotalPair.usd > 0 &&
+          subtotalUsd + 0.005 < minTotalPair.usd
+        ) {
           return {
-            reductionCdf: 0,
             reductionUsd: 0,
-            error: `Ce code promo nécessite un minimum de ${minTotalCdf.toLocaleString('fr-FR')} FC.`,
+            reductionCdf: 0,
+            error: `Ce code promo nécessite un minimum de ${formatAmountPair(
+              minTotalPair
+            )}.`,
+          }
+        }
+
+        if (
+          minTotalPair.usd <= 0 &&
+          minTotalPair.cdf > 0 &&
+          subtotalCdf < minTotalPair.cdf
+        ) {
+          return {
+            reductionUsd: 0,
+            reductionCdf: 0,
+            error: `Ce code promo nécessite un minimum de ${formatAmountPair(
+              minTotalPair
+            )}.`,
           }
         }
 
         const rawValue =
-          positiveNumber(data.value ?? data.valeur ?? data.reduction_percent ?? data.discount) ??
-          0
+          positiveNumber(
+            data.value ??
+              data.valeur ??
+              data.reduction_percent ??
+              data.discount
+          ) ?? 0
 
         const type = String(
           data.type ?? data.kind ?? data.discount_type ?? 'percent'
         ).toLowerCase()
 
+        let reductionUsd = 0
         let reductionCdf = 0
 
-        if (type.includes('fixed') || type.includes('montant') || type.includes('euro') || type.includes('dollar')) {
-          const fixedCdf =
-            positiveNumber(data.value_cdf ?? data.montant_cdf) ??
-            (rate && positiveNumber(data.value_usd ?? data.montant_usd)
-              ? roundCdf(positiveNumber(data.value_usd ?? data.montant_usd)! * rate)
-              : rawValue)
+        const isFixed =
+          type.includes('fixed') ||
+          type.includes('montant') ||
+          type.includes('euro') ||
+          type.includes('dollar')
 
-          reductionCdf = Math.min(subtotalCdf, roundCdf(fixedCdf || 0))
+        if (isFixed) {
+          /**
+           * Montant fixe.
+           * USD explicite gagne.
+           */
+          const fixedPair = resolveAmountPair({
+            usd: data.value_usd ?? data.montant_usd,
+            cdf: data.value_cdf ?? data.montant_cdf,
+            legacy: rawValue,
+            rate,
+          })
+
+          reductionUsd =
+            fixedPair.usd > 0
+              ? fixedPair.usd
+              : rateOk && fixedPair.cdf > 0
+                ? round2(fixedPair.cdf / rateNum)
+                : 0
+
+          reductionCdf =
+            fixedPair.cdf > 0
+              ? fixedPair.cdf
+              : rateOk && reductionUsd > 0
+                ? roundCdf(reductionUsd * rateNum)
+                : 0
         } else {
-          const percent = Math.min(100, Math.max(0, rawValue))
-          reductionCdf = roundCdf((subtotalCdf * percent) / 100)
+          /**
+           * Pourcentage.
+           * Base principale = USD.
+           */
+          const percent = clampPercent(rawValue)
+
+          reductionUsd = round2((subtotalUsd * percent) / 100)
+
+          reductionCdf = rateOk
+            ? roundCdf(reductionUsd * rateNum)
+            : roundCdf((subtotalCdf * percent) / 100)
         }
 
-        const maxDiscountCdf =
-          positiveNumber(data.max_discount ?? data.maxDiscount) ??
-          (rate && positiveNumber(data.max_discount_usd ?? data.maxDiscountUsd)
-            ? roundCdf(positiveNumber(data.max_discount_usd ?? data.maxDiscountUsd)! * rate)
-            : null)
+        /**
+         * Plafond de réduction.
+         * USD explicite gagne.
+         */
+        const maxDiscountPair = resolveAmountPair({
+          usd: data.max_discount_usd ?? data.maxDiscountUsd,
+          cdf: data.max_discount_cdf ?? data.maxDiscountCdf,
+          legacy: data.max_discount ?? data.maxDiscount,
+          rate,
+        })
 
-        if (maxDiscountCdf && maxDiscountCdf > 0 && reductionCdf > maxDiscountCdf) {
-          reductionCdf = roundCdf(maxDiscountCdf)
+        if (
+          maxDiscountPair.usd > 0 &&
+          reductionUsd > maxDiscountPair.usd
+        ) {
+          reductionUsd = maxDiscountPair.usd
+        } else if (
+          maxDiscountPair.usd <= 0 &&
+          maxDiscountPair.cdf > 0 &&
+          reductionCdf > maxDiscountPair.cdf
+        ) {
+          reductionCdf = maxDiscountPair.cdf
+
+          if (rateOk) {
+            reductionUsd = round2(reductionCdf / rateNum)
+          }
         }
 
-        reductionCdf = Math.min(reductionCdf, subtotalCdf)
+        /**
+         * Sécurité : la réduction ne dépasse jamais le sous-total.
+         */
+        reductionUsd = Math.min(
+          round2(Math.max(0, reductionUsd)),
+          subtotalUsd
+        )
 
-        const reductionUsd =
-          rate && rate > 0
-            ? round2(reductionCdf / rate)
-            : positiveNumber(data.value_usd ?? data.max_discount_usd)
-            ? round2(positiveNumber(data.value_usd ?? data.max_discount_usd)!)
-            : round2(subtotalUsd > 0 && subtotalCdf > 0 ? (subtotalUsd * reductionCdf) / subtotalCdf : 0)
+        if (rateOk) {
+          reductionCdf =
+            reductionUsd > 0
+              ? roundCdf(reductionUsd * rateNum)
+              : 0
+        } else {
+          reductionCdf = Math.min(
+            roundCdf(Math.max(0, reductionCdf)),
+            subtotalCdf
+          )
+        }
 
         return {
-          reductionCdf,
-          reductionUsd,
+          reductionUsd: round2(reductionUsd),
+          reductionCdf: roundCdf(reductionCdf),
           promo: data,
         }
       }
 
-      if (error && !isMissingTableError(error) && !isMissingColumnError(error)) {
+      if (
+        error &&
+        !isMissingTableError(error) &&
+        !isMissingColumnError(error)
+      ) {
         logger.warn('Erreur promo_codes', error)
       }
     } catch (err) {
@@ -496,16 +835,23 @@ async function resolvePromoReduction(
 
   // Fallback legacy
   if (normalized === 'BIENVENUE10') {
-    const reductionCdf = roundCdf(subtotalCdf * 0.1)
-    const reductionUsd =
-      rate && rate > 0
-        ? round2(reductionCdf / rate)
-        : round2(subtotalUsd * 0.1)
+    const reductionUsd = round2(subtotalUsd * 0.1)
 
-    return { reductionCdf, reductionUsd }
+    const reductionCdf = rateOk
+      ? roundCdf(reductionUsd * rateNum)
+      : roundCdf(subtotalCdf * 0.1)
+
+    return {
+      reductionUsd,
+      reductionCdf,
+    }
   }
 
-  return { reductionCdf: 0, reductionUsd: 0, error: 'Code promo invalide.' }
+  return {
+    reductionUsd: 0,
+    reductionCdf: 0,
+    error: 'Code promo invalide.',
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -529,6 +875,9 @@ async function calculateServerShipping(
   quote: any
   error?: string
 }> {
+  const rateNum = Number(rate)
+  const rateOk = Number.isFinite(rateNum) && rateNum > 0
+
   try {
     const shippingUtils = await import('@/lib/shipping-utils')
 
@@ -611,16 +960,23 @@ async function calculateServerShipping(
     }
 
     const usd = round2(nonNegativeNumber(quote.total_usd))
-    const cdf =
-      positiveNumber(quote.total_cdf) !== null
-        ? roundCdf(quote.total_cdf)
-        : rate && rate > 0
-        ? roundCdf(usd * rate)
-        : 0
+
+    /**
+     * USD = source principale.
+     * Si USD = 0, livraison gratuite / non facturée → CDF = 0.
+     * Sinon CDF recalculé depuis USD si taux disponible.
+     */
+    let cdf = 0
+
+    if (usd > 0) {
+      cdf = rateOk
+        ? roundCdf(usd * rateNum)
+        : positiveNumber(quote.total_cdf) ?? 0
+    }
 
     return {
       usd,
-      cdf,
+      cdf: roundCdf(cdf),
       breakdown: quote.breakdown ?? null,
       delay_label: quote.delay_label ?? '',
       warnings: Array.isArray(quote.warnings) ? quote.warnings : [],
@@ -628,25 +984,44 @@ async function calculateServerShipping(
       quote,
     }
   } catch (err: any) {
-    logger.warn('Livraison serveur indisponible, fallback client', err?.message || err)
+    logger.warn(
+      'Livraison serveur indisponible, fallback client',
+      err?.message || err
+    )
   }
 
   // Fallback client / legacy
   const clientUsd =
     positiveNumber(clientFallback?.shipping_usd) ??
-    (rate && positiveNumber(clientFallback?.frais_livraison)
-      ? round2(positiveNumber(clientFallback?.frais_livraison)! / rate)
+    (rateOk && positiveNumber(clientFallback?.frais_livraison)
+      ? round2(positiveNumber(clientFallback?.frais_livraison)! / rateNum)
       : null)
 
   const clientCdf =
     positiveNumber(clientFallback?.shipping_cdf) ??
     positiveNumber(clientFallback?.frais_livraison) ??
-    (clientUsd && rate ? roundCdf(clientUsd * rate) : 0)
+    0
 
-  if (clientUsd !== null || clientCdf > 0) {
+  if (clientUsd != null && clientUsd > 0) {
     return {
-      usd: round2(clientUsd ?? 0),
-      cdf: roundCdf(clientCdf ?? 0),
+      usd: round2(clientUsd),
+      cdf: rateOk
+        ? roundCdf(clientUsd * rateNum)
+        : roundCdf(clientCdf),
+      breakdown: clientFallback?.shipping_breakdown ?? null,
+      delay_label: clientFallback?.shipping_delay_label ?? '',
+      warnings: [],
+      source: 'client_fallback',
+      quote: null,
+    }
+  }
+
+  if (clientCdf > 0) {
+    const derivedUsd = rateOk ? round2(clientCdf / rateNum) : 0
+
+    return {
+      usd: derivedUsd,
+      cdf: roundCdf(clientCdf),
       breakdown: clientFallback?.shipping_breakdown ?? null,
       delay_label: clientFallback?.shipping_delay_label ?? '',
       warnings: [],
@@ -714,7 +1089,9 @@ async function insertCommande(
       }
 
       logger.error('Échec insertion commande', error)
-      throw new Error(error?.message || 'Erreur lors de la création de la commande')
+      throw new Error(
+        error?.message || 'Erreur lors de la création de la commande'
+      )
     } catch (err: any) {
       if (attempt.name === 'extended' && isMissingColumnError(err)) {
         logger.warn('Exception colonnes commande étendues, fallback base')
@@ -731,7 +1108,9 @@ async function insertCommande(
       }
 
       logger.error('Exception insertion commande', err)
-      throw new Error(err?.message || 'Erreur lors de la création de la commande')
+      throw new Error(
+        err?.message || 'Erreur lors de la création de la commande'
+      )
     }
   }
 
@@ -776,10 +1155,7 @@ async function insertCommandeArticles(
         return
       }
 
-      if (
-        attempt.name !== 'minimal' &&
-        isMissingColumnError(error)
-      ) {
+      if (attempt.name !== 'minimal' && isMissingColumnError(error)) {
         logger.warn(
           `Colonnes commande_articles indisponibles pour ${attempt.name}, fallback`
         )
@@ -791,10 +1167,7 @@ async function insertCommandeArticles(
         error?.message || "Erreur lors de l'enregistrement des produits"
       )
     } catch (err: any) {
-      if (
-        attempt.name !== 'minimal' &&
-        isMissingColumnError(err)
-      ) {
+      if (attempt.name !== 'minimal' && isMissingColumnError(err)) {
         logger.warn(
           `Exception colonnes commande_articles pour ${attempt.name}, fallback`
         )
@@ -844,7 +1217,11 @@ async function decrementStock(
             .eq('id', item.produit_id)
             .single()
 
-          if (product && product.stock !== null && product.stock !== undefined) {
+          if (
+            product &&
+            product.stock !== null &&
+            product.stock !== undefined
+          ) {
             const newStock = Math.max(
               0,
               Number(product.stock) - Number(item.quantite)
@@ -928,7 +1305,11 @@ export async function POST(request: Request) {
     const rate =
       positiveNumber(data.shipping_rate_used) ??
       positiveNumber(data.exchange_rate) ??
+      positiveNumber((data as any).rate) ??
       null
+
+    const rateNum = Number(rate)
+    const rateOk = Number.isFinite(rateNum) && rateNum > 0
 
     const modeId = normalizeDeliveryMode(
       data.shipping_method ||
@@ -938,7 +1319,9 @@ export async function POST(request: Request) {
 
     const supabase = await createSupabaseClient(createClient)
 
-    const produitIds = [...new Set(data.items.map((item) => item.produit_id))]
+    const produitIds = [
+      ...new Set(data.items.map((item) => item.produit_id)),
+    ]
 
     const productsById = await fetchProductsByIds(
       supabase,
@@ -970,7 +1353,9 @@ export async function POST(request: Request) {
       if (product && product.est_actif === false) {
         return NextResponse.json(
           {
-            error: `Le produit "${product.nom || item.produit_id}" n'est plus disponible.`,
+            error: `Le produit "${
+              product.nom || item.produit_id
+            }" n'est plus disponible.`,
           },
           { status: 400 }
         )
@@ -984,13 +1369,16 @@ export async function POST(request: Request) {
       ) {
         return NextResponse.json(
           {
-            error: `Stock insuffisant pour "${product.nom || item.produit_id}".`,
+            error: `Stock insuffisant pour "${
+              product.nom || item.produit_id
+            }".`,
           },
           { status: 400 }
         )
       }
 
       const variantAttrs = parseVariantAttributes(item)
+      const variantKey = stableVariantKeyFromAttributes(variantAttrs)
 
       let variant: any = null
 
@@ -999,67 +1387,37 @@ export async function POST(request: Request) {
         Array.isArray(product.variantes) &&
         variantAttrs
       ) {
-        const targetKey = safeJsonStringify(variantAttrs)
-
         variant =
           product.variantes.find((v: any) => {
-            const vKey = safeJsonStringify(v?.attributes || {})
-            return vKey === targetKey
+            const vAttrs = canonicalizeVariantAttributes(v?.attributes)
+            const vKey = stableVariantKeyFromAttributes(vAttrs)
+
+            return vKey && vKey === variantKey
           }) || null
       }
 
-      const baseUsd =
-        positiveNumber(product?.prix_usd) ??
-        positiveNumber(product?.price_usd)
+      const prices = resolveUnitPrices(product, variant, item, rate)
 
-      const baseCdf =
-        positiveNumber(product?.prix) ??
-        positiveNumber(product?.price) ??
-        positiveNumber(product?.prix_cdf)
-
-      const variantUsd =
-        positiveNumber(variant?.prix_specifique_usd) ??
-        positiveNumber(variant?.price_specifique_usd)
-
-      const variantCdf =
-        positiveNumber(variant?.prix_specifique_cdf) ??
-        positiveNumber(variant?.prix_specifique) ??
-        positiveNumber(variant?.price_specifique)
-
-      let unitUsd =
-        variantUsd ??
-        baseUsd ??
-        positiveNumber(item.prix_unitaire_usd)
-
-      let unitCdf =
-        variantCdf ??
-        baseCdf ??
-        positiveNumber(item.prix_unitaire)
-
-      if (!unitUsd && unitCdf && rate) {
-        unitUsd = round2(unitCdf / rate)
-      }
-
-      if (!unitCdf && unitUsd && rate) {
-        unitCdf = roundCdf(unitUsd * rate)
-      }
-
-      if (!unitUsd || unitUsd <= 0) {
+      if (!prices.usd || prices.usd <= 0) {
         return NextResponse.json(
           {
-            error: `Prix USD indisponible pour "${product?.nom || item.produit_id}".`,
+            error: `Prix USD indisponible pour "${
+              product?.nom || item.produit_id
+            }".`,
           },
           { status: 400 }
         )
       }
 
-      if (!unitCdf || unitCdf <= 0) {
-        if (rate && rate > 0) {
-          unitCdf = roundCdf(unitUsd * rate)
+      if (!prices.cdf || prices.cdf <= 0) {
+        if (rateOk) {
+          prices.cdf = roundCdf(prices.usd * rateNum)
         } else {
           return NextResponse.json(
             {
-              error: `Prix CDF indisponible pour "${product?.nom || item.produit_id}". Taux de change manquant.`,
+              error: `Prix CDF indisponible pour "${
+                product?.nom || item.produit_id
+              }". Taux de change manquant.`,
             },
             { status: 400 }
           )
@@ -1075,10 +1433,11 @@ export async function POST(request: Request) {
         produit_id: item.produit_id,
         nom: product?.nom || 'Produit',
         quantite: item.quantite,
-        unitUsd: round2(unitUsd),
-        unitCdf: roundCdf(unitCdf),
+        unitUsd: round2(prices.usd),
+        unitCdf: roundCdf(prices.cdf),
         variantLabel,
         variantAttrs,
+        variantKey,
         variantId: variant?.id || null,
         product: product || null,
         delivery_config: product?.delivery_config ?? null,
@@ -1100,12 +1459,19 @@ export async function POST(request: Request) {
       )
     )
 
-    const subtotalCdf = roundCdf(
-      serverItems.reduce(
-        (acc, item) => acc + item.unitCdf * item.quantite,
-        0
-      )
-    )
+    /**
+     * Si taux disponible, subtotal CDF = subtotal USD × taux.
+     * Sinon fallback somme des CDF lignes.
+     */
+    const subtotalCdf =
+      rateOk && subtotalUsd > 0
+        ? roundCdf(subtotalUsd * rateNum)
+        : roundCdf(
+            serverItems.reduce(
+              (acc, item) => acc + item.unitCdf * item.quantite,
+              0
+            )
+          )
 
     if (subtotalUsd <= 0 || subtotalCdf <= 0) {
       return NextResponse.json(
@@ -1121,8 +1487,8 @@ export async function POST(request: Request) {
     const promoResult = await resolvePromoReduction(
       supabase,
       data.code_promo,
-      subtotalCdf,
       subtotalUsd,
+      subtotalCdf,
       rate,
       logger
     )
@@ -1134,8 +1500,19 @@ export async function POST(request: Request) {
       )
     }
 
-    const reductionCdf = roundCdf(promoResult.reductionCdf || 0)
-    const reductionUsd = round2(promoResult.reductionUsd || 0)
+    let reductionUsd = round2(promoResult.reductionUsd || 0)
+    let reductionCdf = roundCdf(promoResult.reductionCdf || 0)
+
+    reductionUsd = Math.min(reductionUsd, subtotalUsd)
+
+    if (rateOk) {
+      reductionCdf =
+        reductionUsd > 0
+          ? roundCdf(reductionUsd * rateNum)
+          : 0
+    } else {
+      reductionCdf = Math.min(reductionCdf, subtotalCdf)
+    }
 
     /* ------------------------------------------------------------ */
     /* Livraison intelligente serveur                                */
@@ -1164,7 +1541,17 @@ export async function POST(request: Request) {
     }
 
     const shippingUsd = round2(shipping.usd)
-    const shippingCdf = roundCdf(shipping.cdf)
+
+    /**
+     * USD = source principale.
+     * Si shipping USD = 0, shipping CDF = 0.
+     */
+    const shippingCdf =
+      shippingUsd > 0
+        ? rateOk
+          ? roundCdf(shippingUsd * rateNum)
+          : roundCdf(shipping.cdf)
+        : 0
 
     /* ------------------------------------------------------------ */
     /* Totaux finaux                                                 */
@@ -1175,12 +1562,18 @@ export async function POST(request: Request) {
       round2(subtotalUsd + shippingUsd - reductionUsd)
     )
 
-    const totalCdf = Math.max(
-      0,
-      roundCdf(subtotalCdf + shippingCdf - reductionCdf)
-    )
+    /**
+     * Total CDF cohérent avec total USD quand le taux est disponible.
+     */
+    const totalCdf =
+      rateOk && totalUsd > 0
+        ? roundCdf(totalUsd * rateNum)
+        : Math.max(
+            0,
+            roundCdf(subtotalCdf + shippingCdf - reductionCdf)
+          )
 
-    if (totalCdf <= 0) {
+    if (totalUsd <= 0 || totalCdf <= 0) {
       return NextResponse.json(
         { error: 'Le total final de la commande est invalide.' },
         { status: 400 }
@@ -1213,12 +1606,17 @@ export async function POST(request: Request) {
     const extendedPayload = {
       ...basePayload,
       currency: data.currency || 'USD',
+      subtotal_usd: subtotalUsd,
+      subtotal_cdf: subtotalCdf,
+      reduction_usd: reductionUsd,
+      reduction_cdf: reductionCdf,
       total_usd: totalUsd,
       total_cdf: totalCdf,
       shipping_usd: shippingUsd,
       shipping_cdf: shippingCdf,
       shipping_method: modeId,
       shipping_rate_used: rate,
+      exchange_rate: rate,
       shipping_breakdown: shipping.breakdown ?? null,
       shipping_delay_label: shipping.delay_label || null,
       delivery_note: data.delivery_note || null,
@@ -1264,12 +1662,13 @@ export async function POST(request: Request) {
       specifications: item.variantLabel || null,
       variante:
         item.variantLabel ||
-        (item.variantAttrs ? safeJsonStringify(item.variantAttrs) : null),
+        (item.variantKey ? item.variantKey : null),
     }))
 
     const extendedArticles = serverItems.map((item, index) => ({
       ...legacyArticles[index],
       prix_unitaire_usd: item.unitUsd,
+      variant_key: item.variantKey || null,
       variant_attributes: item.variantAttrs || null,
       delivery_config_snapshot: item.delivery_config || null,
       poids_kg: item.poids_kg || null,
@@ -1309,7 +1708,9 @@ export async function POST(request: Request) {
       if (profile?.telephone && notif.sendSMS) {
         notif.sendSMS(
           profile.telephone,
-          `Gercie: Commande #${numero_commande} confirmée pour ${totalCdf.toLocaleString('fr-FR')} FC.`
+          `Gercie: Commande #${numero_commande} confirmée pour ${totalCdf.toLocaleString(
+            'fr-FR'
+          )} FC.`
         )
       }
 
@@ -1332,15 +1733,23 @@ export async function POST(request: Request) {
         numero: commande.numero_commande,
         status: commande.statut || 'en_attente',
         currency: data.currency || 'USD',
-        total_usd: totalUsd,
-        total_cdf: totalCdf,
+
+        subtotal_usd: subtotalUsd,
+        subtotal_cdf: subtotalCdf,
+
+        reduction_usd: reductionUsd,
+        reduction_cdf: reductionCdf,
+
         shipping_usd: shippingUsd,
         shipping_cdf: shippingCdf,
         shipping_method: modeId,
         shipping_delay_label: shipping.delay_label || null,
         shipping_source: shipping.source,
-        reduction_usd: reductionUsd,
-        reduction_cdf: reductionCdf,
+
+        total_usd: totalUsd,
+        total_cdf: totalCdf,
+
+        exchange_rate: rate,
       },
       { status: 201 }
     )
@@ -1402,7 +1811,7 @@ export async function GET(request: Request) {
 
     const selectCandidates = [
       '*, commande_articles (*, produits (nom, images))',
-      '*, commande_articles (quantite, prix_unitaire, prix_unitaire_usd, specifications, variante, produits (nom, images))',
+      '*, commande_articles (quantite, prix_unitaire, prix_unitaire_usd, specifications, variante, variant_attributes, produits (nom, images))',
       '*, commande_articles (quantite, prix_unitaire, specifications, variante, produits (nom, images))',
       '*',
     ]
@@ -1465,53 +1874,69 @@ export async function GET(request: Request) {
       )
     }
 
-    const formatted = (commandes || []).map((cmd: any) => ({
-      id: cmd.id,
-      numero: cmd.numero_commande,
-      statut: cmd.statut,
-      date: cmd.created_at,
+    const formatted = (commandes || []).map((cmd: any) => {
+      const snapshot = cmd.shipping_snapshot ?? null
+      const snapshotRate = positiveNumber(snapshot?.rate_used) ?? null
 
-      type_livraison: cmd.type_livraison || cmd.shipping_method || null,
-      shipping_method: cmd.shipping_method || cmd.type_livraison || null,
-      shipping_delay_label: cmd.shipping_delay_label || null,
-      shipping_breakdown: cmd.shipping_breakdown || null,
-      shipping_snapshot: cmd.shipping_snapshot || null,
+      return {
+        id: cmd.id,
+        numero: cmd.numero_commande,
+        statut: cmd.statut,
+        date: cmd.created_at,
 
-      currency: cmd.currency || 'CDF',
+        type_livraison: cmd.type_livraison || cmd.shipping_method || null,
+        shipping_method: cmd.shipping_method || cmd.type_livraison || null,
+        shipping_delay_label: cmd.shipping_delay_label || null,
+        shipping_breakdown: cmd.shipping_breakdown || null,
+        shipping_snapshot: snapshot,
 
-      total: cmd.total_global ?? cmd.total_cdf ?? null,
-      total_global: cmd.total_global ?? null,
-      total_cdf: cmd.total_cdf ?? cmd.total_global ?? null,
-      total_usd: cmd.total_usd ?? null,
+        currency: cmd.currency || 'USD',
 
-      frais_livraison: cmd.frais_livraison ?? cmd.shipping_cdf ?? null,
-      shipping_cdf: cmd.shipping_cdf ?? cmd.frais_livraison ?? null,
-      shipping_usd: cmd.shipping_usd ?? null,
+        subtotal_usd: cmd.subtotal_usd ?? null,
+        subtotal_cdf: cmd.subtotal_cdf ?? null,
 
-      reduction: cmd.reduction ?? null,
-      code_promo_utilise: cmd.code_promo_utilise ?? null,
+        reduction_usd: cmd.reduction_usd ?? null,
+        reduction_cdf: cmd.reduction_cdf ?? null,
 
-      adresse_livraison: cmd.adresse_livraison || null,
-      commune_livraison_id: cmd.commune_livraison_id || null,
-      point_retrait_id: cmd.point_retrait_id || null,
-      point_retrait_nom: cmd.point_retrait_nom || null,
-      point_retrait_adresse: cmd.point_retrait_adresse || null,
-      point_retrait_telephone: cmd.point_retrait_telephone || null,
-      delivery_note: cmd.delivery_note || null,
+        total: cmd.total_global ?? cmd.total_cdf ?? null,
+        total_global: cmd.total_global ?? null,
+        total_cdf: cmd.total_cdf ?? cmd.total_global ?? null,
+        total_usd: cmd.total_usd ?? null,
 
-      articles: (cmd.commande_articles || []).map((a: any) => ({
-        nom: a.produits?.nom || 'Produit inconnu',
-        quantite: a.quantite,
-        prix_unitaire: a.prix_unitaire,
-        prix_unitaire_usd: a.prix_unitaire_usd ?? null,
-        specifications: a.specifications || null,
-        variante: a.variante || null,
-        variant_attributes: a.variant_attributes || null,
-        image: Array.isArray(a.produits?.images)
-          ? a.produits.images[0]
-          : a.produits?.images || null,
-      })),
-    }))
+        frais_livraison: cmd.frais_livraison ?? cmd.shipping_cdf ?? null,
+        shipping_cdf: cmd.shipping_cdf ?? cmd.frais_livraison ?? null,
+        shipping_usd: cmd.shipping_usd ?? null,
+
+        exchange_rate:
+          positiveNumber(cmd.shipping_rate_used) ??
+          positiveNumber(cmd.exchange_rate) ??
+          snapshotRate,
+
+        reduction: cmd.reduction ?? null,
+        code_promo_utilise: cmd.code_promo_utilise ?? null,
+
+        adresse_livraison: cmd.adresse_livraison || null,
+        commune_livraison_id: cmd.commune_livraison_id || null,
+        point_retrait_id: cmd.point_retrait_id || null,
+        point_retrait_nom: cmd.point_retrait_nom || null,
+        point_retrait_adresse: cmd.point_retrait_adresse || null,
+        point_retrait_telephone: cmd.point_retrait_telephone || null,
+        delivery_note: cmd.delivery_note || null,
+
+        articles: (cmd.commande_articles || []).map((a: any) => ({
+          nom: a.produits?.nom || 'Produit inconnu',
+          quantite: a.quantite,
+          prix_unitaire: a.prix_unitaire,
+          prix_unitaire_usd: a.prix_unitaire_usd ?? null,
+          specifications: a.specifications || null,
+          variante: a.variante || null,
+          variant_attributes: a.variant_attributes || null,
+          image: Array.isArray(a.produits?.images)
+            ? a.produits.images[0]
+            : a.produits?.images || null,
+        })),
+      }
+    })
 
     return NextResponse.json(formatted)
   } catch (error: any) {

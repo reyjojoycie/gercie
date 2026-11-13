@@ -1,3 +1,4 @@
+// app/commande/page.tsx
 'use client'
 
 import {
@@ -7,22 +8,28 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+
 import {
   AnimatePresence,
   motion,
   useReducedMotion,
 } from 'framer-motion'
+
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+
 import { useCart } from '@/contexts/CartContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/components/ui/Toast'
 import { useExchangeRate } from '@/hooks/useExchangeRate'
+
 import { Container } from '@/components/layout/Container'
 import { Button } from '@/components/ui/Button'
+
 import {
   Card,
   CardContent,
@@ -30,22 +37,26 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/Card'
+
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
+
 import LocationSelector from '@/components/LocationSelector'
 import DeliveryBreakdown from '@/components/DeliveryBreakdown'
+
 import type {
   DeliveryModeId,
   ShippingCartItem,
   ShippingQuote,
 } from '@/lib/shipping-utils'
+
 import {
   calculateShippingQuote,
   DELIVERY_MODE_IDS,
-  formatShippingMoney,
   getAvailableDeliveryModes,
   getDeliveryModeLabel,
 } from '@/lib/shipping-utils'
+
 import {
   AlertTriangle,
   ArrowLeft,
@@ -76,50 +87,77 @@ import {
   Zap,
 } from 'lucide-react'
 
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
 type Currency = 'USD' | 'CDF'
 
 type ShippingMethod = 'domicile' | 'point_retrait' | 'express'
+
+interface PricePair {
+  usd: number
+  cdf: number
+}
 
 interface RawCartItem {
   id?: string
   product_id?: string
   nom?: string
   name?: string
+
   prix?: number | null
   price?: number | null
-  prix_usd?: number | null
-  price_usd?: number | null
   prix_cdf?: number | null
   price_cdf?: number | null
+
+  prix_usd?: number | null
+  price_usd?: number | null
+  unit_price_usd?: number | null
+
   quantite?: number | null
   quantity?: number | null
+
   image?: string | null
   images?: string[] | null
+
   variante?: any
+
   stock?: number | null
+  stock_disponible?: number | null
+
   slug?: string
   delivery_config?: any
   poids_kg?: number | null
   logistics_group?: string | null
   non_consolidable?: boolean
-  unit_price_usd?: number | null
+
   [key: string]: any
 }
 
 interface NormalizedCartItem {
   key: string
   originalId: string
+  variantKey: string
+  variantAttributes: Record<string, string> | null
+  variantLabel: string | null
+
   nom: string
   image: string
+
   quantity: number
+
   priceUsd: number
   priceCdf: number
+
   lineUsd: number
   lineCdf: number
-  variantLabel: string | null
+
   stock: number | null
   isOutOfStock: boolean
+
   nonConsolidable: boolean
+
   delivery_config?: any
   poids_kg?: number | null
 }
@@ -170,23 +208,33 @@ interface PickupPoint {
 interface CartTotals {
   subtotalUsd: number
   subtotalCdf: number
+
   discountUsd: number
   discountCdf: number
+
   shippingUsd: number
   shippingCdf: number
+
   totalUsd: number
   totalCdf: number
+
   primarySubtotal: number
   secondarySubtotal: number
+
   primaryDiscount: number
   secondaryDiscount: number
+
   primaryShipping: number
   secondaryShipping: number
+
   primaryTotal: number
   secondaryTotal: number
+
   primaryCurrency: Currency
   secondaryCurrency: Currency
+
   shippingQuote: ShippingQuote | null
+
   hasNonConsolidable: boolean
   deliveryWarnings: string[]
 }
@@ -196,6 +244,20 @@ interface DeliveryAvailability {
   point_retrait: { available: boolean; reason: string | null }
   express: { available: boolean; reason: string | null }
 }
+
+interface PromoCodeLike {
+  code: string
+  type?: 'percent' | 'fixed'
+  value?: number | null
+  valid?: boolean
+  remainingToMinUsd?: number | null
+  message?: string | null
+  description?: string | null
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CONSTANTS                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
 
 const PLACEHOLDER = '/placeholder.jpg'
 
@@ -259,15 +321,72 @@ const SHIPPING_OPTIONS: {
 const inputClass =
   'w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-gold-500 disabled:opacity-60'
 
-function toPositiveNumber(value: any): number | null {
+const VARIANT_META_KEYS = new Set([
+  'id',
+  'attributes',
+  'attrs',
+  'prix',
+  'price',
+  'prix_specifique',
+  'prix_specifique_usd',
+  'prix_specifique_cdf',
+  'image',
+  'images',
+  'stock',
+  'poids_kg',
+  'nom',
+  'name',
+  'description',
+])
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  NUMBER / MONEY HELPERS                                         */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function toPositiveNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+
   const n = Number(value)
-  return Number.isFinite(n) && n > 0 ? n : null
+
+  if (!Number.isFinite(n) || n <= 0) return null
+
+  return n
 }
 
-function toNumberOrNull(value: any): number | null {
-  if (value === null || value === undefined || value === '') return null
-  const n = Number(String(value).replace(',', '.'))
-  return Number.isFinite(n) ? n : null
+function firstPositive(...values: unknown[]): number {
+  for (const value of values) {
+    const n = toPositiveNumber(value)
+
+    if (n != null) return n
+  }
+
+  return 0
+}
+
+function safeQuantity(value: unknown): number {
+  return Math.max(1, Math.floor(Number(value ?? 1) || 1))
+}
+
+function roundUsd(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function roundCdf(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.round(value + Number.EPSILON)
+}
+
+function toUsd(cdf: number, rate: number): number {
+  if (!Number.isFinite(cdf) || cdf <= 0) return 0
+  if (!Number.isFinite(rate) || rate <= 0) return 0
+  return roundUsd(cdf / rate)
+}
+
+function toCdf(usd: number, rate: number): number {
+  if (!Number.isFinite(usd) || usd <= 0) return 0
+  if (!Number.isFinite(rate) || rate <= 0) return 0
+  return roundCdf(usd * rate)
 }
 
 function formatUsd(value: number): string {
@@ -290,16 +409,208 @@ function formatDistance(km?: number | null): string {
   return `${km.toFixed(1)} km`
 }
 
+function resolveRate(exchange: any): number | null {
+  const candidates = [
+    exchange?.rate,
+    exchange?.usdRate,
+    exchange?.data?.rate,
+    exchange?.data?.current?.rate,
+    exchange,
+  ]
+
+  for (const candidate of candidates) {
+    const n = Number(candidate)
+
+    if (Number.isFinite(n) && n > 0) return n
+  }
+
+  return null
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════
+ *  RÉSOLUTION PRIX — RÈGLE ABSOLUE
+ *
+ *  - Si USD existe → USD = vérité, CDF = USD × taux.
+ *    Le CDF stocké est ignoré car potentiellement obsolète.
+ *  - Si seulement CDF existe → CDF = source temporaire, USD = CDF / taux.
+ *  - Aucun taux codé en dur.
+ * ═══════════════════════════════════════════════════════════════
+ */
+function resolvePricePair(
+  usdSource: number,
+  cdfSource: number,
+  rate: number | null
+): PricePair {
+  const rateNum = Number(rate)
+  const rateOk = Number.isFinite(rateNum) && rateNum > 0
+
+  let usd = usdSource > 0 ? roundUsd(usdSource) : 0
+  let cdf = cdfSource > 0 ? roundCdf(cdfSource) : 0
+
+  if (usd > 0) {
+    cdf = rateOk ? roundCdf(toCdf(usd, rateNum)) : 0
+  } else if (cdf > 0 && rateOk) {
+    usd = roundUsd(toUsd(cdf, rateNum))
+  }
+
+  return {
+    usd: roundUsd(usd),
+    cdf: roundCdf(cdf),
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  VARIANT HELPERS                                                */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function cleanVariantAttributes(
+  input: unknown
+): Record<string, string> | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null
+  }
+
+  const clean: Record<string, string> = {}
+
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    const cleanKey = String(key || '').trim()
+
+    if (!cleanKey) continue
+    if (value === null || value === undefined) continue
+
+    const cleanValue = String(value).trim()
+    if (!cleanValue) continue
+
+    clean[cleanKey] = cleanValue
+  }
+
+  return Object.keys(clean).length > 0 ? clean : null
+}
+
+function extractVariantAttributesFromObject(
+  input: unknown
+): Record<string, string> | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null
+  }
+
+  const record = input as Record<string, unknown>
+
+  const direct =
+    record.attributes ??
+    record.attrs
+
+  const directClean = cleanVariantAttributes(direct)
+
+  if (directClean) return directClean
+
+  const candidate: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(record)) {
+    if (VARIANT_META_KEYS.has(key)) continue
+    candidate[key] = value
+  }
+
+  return cleanVariantAttributes(candidate)
+}
+
+function parseVariantAttributes(variante: any): Record<string, string> | null {
+  if (!variante) return null
+
+  if (typeof variante === 'string') {
+    const trimmed = variante.trim()
+    if (!trimmed) return null
+
+    try {
+      const parsed = JSON.parse(trimmed)
+      return extractVariantAttributesFromObject(parsed)
+    } catch {
+      return null
+    }
+  }
+
+  return extractVariantAttributesFromObject(variante)
+}
+
+/**
+ * Clé de variante canonique.
+ *
+ * IMPORTANT :
+ * - trie les clés ;
+ * - ignore les valeurs vides ;
+ * - évite les doublons dus à l’ordre des attributs ;
+ * - cohérent avec CartContext et l’API commandes.
+ */
+function stableVariantKeyFromAttributes(
+  attributes: Record<string, string> | null
+): string {
+  if (!attributes) return ''
+
+  const entries = Object.entries(attributes).filter(([key, value]) => {
+    if (!key) return false
+    if (value === null || value === undefined) return false
+    return String(value).trim() !== ''
+  })
+
+  if (entries.length === 0) return ''
+
+  entries.sort(([a], [b]) => String(a).localeCompare(String(b)))
+
+  try {
+    return JSON.stringify(Object.fromEntries(entries))
+  } catch {
+    return ''
+  }
+}
+
+function getVariantLabelFromAttributes(
+  attributes: Record<string, string> | null
+): string | null {
+  if (!attributes) return null
+
+  const entries = Object.entries(attributes).filter(([key, value]) => {
+    if (!key) return false
+    if (value === null || value === undefined) return false
+    return String(value).trim() !== ''
+  })
+
+  if (entries.length === 0) return null
+
+  entries.sort(([a], [b]) => String(a).localeCompare(String(b)))
+
+  return entries.map(([, value]) => String(value)).join(' • ')
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  CART ITEM HELPERS                                              */
+/* ═══════════════════════════════════════════════════════════════ */
+
 function getItemImage(item: RawCartItem): string {
   if (typeof item.image === 'string' && item.image.trim()) return item.image
-  if (Array.isArray(item.images) && item.images.length > 0) return item.images[0]
-  if (typeof item.variante?.image === 'string' && item.variante.image.trim())
+
+  if (Array.isArray(item.images) && item.images.length > 0) {
+    const first = item.images[0]
+
+    if (typeof first === 'string' && first.trim()) return first
+  }
+
+  if (
+    typeof item.variante?.image === 'string' &&
+    item.variante.image.trim()
+  ) {
     return item.variante.image
+  }
+
   if (
     Array.isArray(item.variante?.images) &&
     item.variante.images.length > 0
-  )
-    return item.variante.images[0]
+  ) {
+    const first = item.variante.images[0]
+
+    if (typeof first === 'string' && first.trim()) return first
+  }
+
   return PLACEHOLDER
 }
 
@@ -307,26 +618,11 @@ function getItemName(item: RawCartItem): string {
   return String(item.nom || item.name || item.variante?.nom || 'Produit')
 }
 
-function getVariantLabel(item: RawCartItem): string | null {
-  if (!item.variante) return null
-  if (typeof item.variante === 'string') return item.variante
-
-  const attrs = item.variante?.attributes
-  if (attrs && typeof attrs === 'object') {
-    const values = Object.values(attrs).filter(Boolean).map(String)
-    if (values.length > 0) return values.join(' • ')
-  }
-
-  const nom = item.variante?.nom || item.variante?.name
-  if (nom) return String(nom)
-
-  return null
-}
-
 function isItemNonConsolidable(item: RawCartItem): boolean {
   if (Boolean(item.non_consolidable)) return true
 
   const config = item.delivery_config
+
   if (!config?.modes) return false
 
   return Object.values(config.modes).some((mode: any) =>
@@ -342,29 +638,52 @@ function isItemNonConsolidable(item: RawCartItem): boolean {
 function normalizeCartItem(
   item: RawCartItem,
   index: number,
-  rate: number | null | undefined
+  rate: number | null
 ): NormalizedCartItem {
-  const rawUsd = toPositiveNumber(
-    item.prix_usd ?? item.price_usd ?? item.unit_price_usd
+  const rateNum = Number(rate)
+  const rateOk = Number.isFinite(rateNum) && rateNum > 0
+
+  const variantAttributes = parseVariantAttributes(item.variante)
+  const variantKey = stableVariantKeyFromAttributes(variantAttributes)
+  const variantLabel = getVariantLabelFromAttributes(variantAttributes)
+
+  const usdSource = firstPositive(
+    item.prix_usd,
+    item.price_usd,
+    item.unit_price_usd,
+    item.variante?.prix_specifique_usd
   )
-  const rawCdf = toPositiveNumber(
-    item.prix ?? item.price ?? item.prix_cdf ?? item.price_cdf
+
+  const cdfSource = firstPositive(
+    item.prix,
+    item.price,
+    item.prix_cdf,
+    item.price_cdf,
+    item.variante?.prix_specifique_cdf,
+    item.variante?.prix_specifique,
+    item.variante?.prix
   )
 
-  const rateOk = Number.isFinite(Number(rate)) && Number(rate) > 0
+  let priceUsd = 0
+  let priceCdf = 0
 
-  let priceUsd =
-    rawUsd ?? (rawCdf && rateOk ? rawCdf / Number(rate) : 0)
-  let priceCdf =
-    rawCdf ?? (rawUsd && rateOk ? rawUsd * Number(rate) : 0)
+  if (usdSource > 0) {
+    /**
+     * USD = source principale.
+     * CDF est TOUJOURS recalculé depuis USD.
+     */
+    priceUsd = roundUsd(usdSource)
+    priceCdf = rateOk ? roundCdf(toCdf(priceUsd, rateNum)) : 0
+  } else if (cdfSource > 0) {
+    /**
+     * Legacy : seulement un CDF existe.
+     * On dérive un USD temporaire si le taux est disponible.
+     */
+    priceCdf = roundCdf(cdfSource)
+    priceUsd = rateOk ? roundUsd(toUsd(priceCdf, rateNum)) : 0
+  }
 
-  priceUsd = Number.isFinite(priceUsd) ? priceUsd : 0
-  priceCdf = Number.isFinite(priceCdf) ? priceCdf : 0
-
-  const quantity = Math.max(
-    1,
-    Math.floor(Number(item.quantite ?? item.quantity ?? 1) || 1)
-  )
+  const quantity = safeQuantity(item.quantite ?? item.quantity)
 
   const originalId = String(
     item.product_id || item.id || `${getItemName(item)}-${index}`
@@ -373,19 +692,24 @@ function normalizeCartItem(
   const stock =
     typeof item.stock === 'number' && Number.isFinite(item.stock)
       ? item.stock
-      : null
+      : typeof item.stock_disponible === 'number' &&
+          Number.isFinite(item.stock_disponible)
+        ? item.stock_disponible
+        : null
 
   return {
-    key: `${originalId}-${index}`,
+    key: `${originalId}::${variantKey}`,
     originalId,
+    variantKey,
+    variantAttributes,
+    variantLabel,
     nom: getItemName(item),
     image: getItemImage(item),
     quantity,
     priceUsd,
     priceCdf,
-    lineUsd: priceUsd * quantity,
-    lineCdf: priceCdf * quantity,
-    variantLabel: getVariantLabel(item),
+    lineUsd: roundUsd(priceUsd * quantity),
+    lineCdf: roundCdf(priceCdf * quantity),
     stock,
     isOutOfStock: stock === 0,
     nonConsolidable: isItemNonConsolidable(item),
@@ -397,260 +721,194 @@ function normalizeCartItem(
 function buildShippingCartItems(
   items: NormalizedCartItem[]
 ): ShippingCartItem[] {
-  return items.map((item) => {
-    let variantAttrs: Record<string, string> = {}
-
-    if (item.variantLabel) {
-      try {
-        const raw = item.variantLabel
-        if (raw.startsWith('{')) {
-          const parsed = JSON.parse(raw)
-          if (parsed && typeof parsed === 'object') {
-            variantAttrs = Object.fromEntries(
-              Object.entries(parsed).map(([key, value]) => [
-                key,
-                String(value),
-              ])
-            )
-          }
-        }
-      } catch {
-        variantAttrs = {}
-      }
-    }
-
-    return {
+  return items.map((item) => ({
+    id: item.originalId,
+    product_id: item.originalId,
+    nom: item.nom,
+    quantity: item.quantity,
+    unit_price_usd: item.priceUsd,
+    prix_usd: item.priceUsd,
+    prix: item.priceCdf,
+    delivery_config: item.delivery_config ?? null,
+    poids_kg: item.poids_kg ?? null,
+    product: {
       id: item.originalId,
-      product_id: item.originalId,
       nom: item.nom,
-      quantity: item.quantity,
-      unit_price_usd: item.priceUsd,
       prix_usd: item.priceUsd,
       prix: item.priceCdf,
-      delivery_config: item.delivery_config ?? null,
       poids_kg: item.poids_kg ?? null,
-      product: {
-        id: item.originalId,
-        nom: item.nom,
-        prix_usd: item.priceUsd,
-        prix: item.priceCdf,
-        poids_kg: item.poids_kg ?? null,
-        delivery_config: item.delivery_config ?? null,
-      },
-      variante:
-        Object.keys(variantAttrs).length > 0
-          ? {
-              attributes: variantAttrs,
-              poids_kg: item.poids_kg ?? null,
-            }
-          : null,
-    }
-  })
+      delivery_config: item.delivery_config ?? null,
+    },
+    variante: item.variantAttributes
+      ? {
+          attributes: item.variantAttributes,
+          poids_kg: item.poids_kg ?? null,
+        }
+      : null,
+  }))
 }
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TOTALS                                                         */
+/* ═══════════════════════════════════════════════════════════════ */
 
 function computeTotals(
   items: NormalizedCartItem[],
   summary: any,
-  rate: number | null | undefined,
+  rate: number | null,
   currency: Currency,
   shippingQuote: ShippingQuote | null
 ): CartTotals {
-  const computedSubtotalUsd = items.reduce(
-    (acc, item) => acc + item.lineUsd,
-    0
-  )
-  const computedSubtotalCdf = items.reduce(
-    (acc, item) => acc + item.lineCdf,
-    0
+  const rateNum = Number(rate)
+  const rateOk = Number.isFinite(rateNum) && rateNum > 0
+
+  const computedSubtotalUsd = roundUsd(
+    items.reduce((acc, item) => acc + item.lineUsd, 0)
   )
 
-  const rateOk = Number.isFinite(Number(rate)) && Number(rate) > 0
-
-  const ctxSubtotalCdf = toPositiveNumber(
-    summary?.sousTotal ?? summary?.subtotal ?? summary?.sous_total
-  )
-  const ctxSubtotalUsd = toPositiveNumber(
-    summary?.sousTotalUSD ??
-      summary?.subtotalUSD ??
-      summary?.sous_total_usd
+  const computedSubtotalCdf = roundCdf(
+    items.reduce((acc, item) => acc + item.lineCdf, 0)
   )
 
-  let subtotalUsd =
+  const subtotalPair = resolvePricePair(
     computedSubtotalUsd > 0
       ? computedSubtotalUsd
-      : ctxSubtotalUsd ?? 0
-
-  let subtotalCdf =
+      : firstPositive(
+          summary?.sousTotalUSD,
+          summary?.subtotalUSD,
+          summary?.sous_total_usd
+        ),
     computedSubtotalCdf > 0
       ? computedSubtotalCdf
-      : ctxSubtotalCdf ?? 0
+      : firstPositive(
+          summary?.sousTotal,
+          summary?.subtotal,
+          summary?.sous_total
+        ),
+    rate
+  )
 
-  if (subtotalUsd <= 0 && ctxSubtotalCdf && rateOk) {
-    subtotalUsd = ctxSubtotalCdf / Number(rate)
-  }
-
-  if (subtotalCdf <= 0 && ctxSubtotalUsd && rateOk) {
-    subtotalCdf = ctxSubtotalUsd * Number(rate)
-  }
-
-  if (subtotalUsd <= 0 && subtotalCdf > 0 && rateOk) {
-    subtotalUsd = subtotalCdf / Number(rate)
-  }
-
-  if (subtotalCdf <= 0 && subtotalUsd > 0 && rateOk) {
-    subtotalCdf = subtotalUsd * Number(rate)
-  }
-
-  subtotalUsd = Number.isFinite(subtotalUsd)
-    ? Math.max(0, subtotalUsd)
-    : 0
-
-  subtotalCdf = Number.isFinite(subtotalCdf)
-    ? Math.max(0, subtotalCdf)
-    : 0
-
-  const ctxDiscountCdf = toPositiveNumber(
-    summary?.remiseTotal ??
-      summary?.discount ??
+  const rawDiscountPair = resolvePricePair(
+    firstPositive(
+      summary?.remiseTotalUSD,
+      summary?.discountUSD,
+      summary?.remise_total_usd,
+      summary?.promoReductionUsd
+    ),
+    firstPositive(
+      summary?.remiseTotal,
+      summary?.discount,
       summary?.remise_total
-  )
-  const ctxDiscountUsd = toPositiveNumber(
-    summary?.remiseTotalUSD ??
-      summary?.discountUSD ??
-      summary?.remise_total_usd
+    ),
+    rate
   )
 
-  let discountUsd = ctxDiscountUsd ?? 0
-  let discountCdf = ctxDiscountCdf ?? 0
-
-  if (discountUsd <= 0 && ctxDiscountCdf && rateOk) {
-    discountUsd = ctxDiscountCdf / Number(rate)
-  }
-
-  if (discountCdf <= 0 && ctxDiscountUsd && rateOk) {
-    discountCdf = ctxDiscountUsd * Number(rate)
-  }
+  let discountUsd = Math.min(rawDiscountPair.usd, subtotalPair.usd)
+  let discountCdf =
+    rateOk && discountUsd > 0
+      ? roundCdf(toCdf(discountUsd, rateNum))
+      : Math.min(rawDiscountPair.cdf, subtotalPair.cdf)
 
   if (discountUsd <= 0 && discountCdf > 0 && rateOk) {
-    discountUsd = discountCdf / Number(rate)
+    discountUsd = roundUsd(toUsd(discountCdf, rateNum))
   }
 
   if (discountCdf <= 0 && discountUsd > 0 && rateOk) {
-    discountCdf = discountUsd * Number(rate)
+    discountCdf = roundCdf(toCdf(discountUsd, rateNum))
   }
 
-  discountUsd = Number.isFinite(discountUsd)
-    ? Math.max(0, discountUsd)
-    : 0
+  discountUsd = Math.max(0, roundUsd(discountUsd))
+  discountCdf = Math.max(0, roundCdf(discountCdf))
 
-  discountCdf = Number.isFinite(discountCdf)
-    ? Math.max(0, discountCdf)
-    : 0
-
-  if (discountUsd > subtotalUsd) {
-    discountUsd = subtotalUsd
-  }
-
-  if (discountCdf > subtotalCdf) {
-    discountCdf = subtotalCdf
-  }
-
-  let shippingUsd = shippingQuote
-    ? Number(shippingQuote.total_usd ?? 0)
-    : 0
-
-  let shippingCdf = shippingQuote
-    ? Number(shippingQuote.total_cdf ?? 0)
-    : 0
-
-  if (!Number.isFinite(shippingUsd) || shippingUsd < 0) {
-    shippingUsd = 0
-  }
-
-  if (!Number.isFinite(shippingCdf) || shippingCdf < 0) {
-    shippingCdf = 0
-  }
-
-  if (
-    shippingQuote &&
-    shippingUsd === 0 &&
-    shippingCdf > 0 &&
-    rateOk
-  ) {
-    shippingUsd = shippingCdf / Number(rate)
-  }
-
-  if (
-    shippingQuote &&
-    shippingCdf === 0 &&
-    shippingUsd > 0 &&
-    rateOk
-  ) {
-    shippingCdf = shippingUsd * Number(rate)
-  }
-
-  const ctxTotalCdf = toPositiveNumber(summary?.total)
-  const ctxTotalUsd = toPositiveNumber(
-    summary?.totalUSD ?? summary?.total_usd
+  const shippingAvailable = Boolean(
+    shippingQuote && shippingQuote.available !== false
   )
 
-  let totalUsd: number
-  let totalCdf: number
+  const shippingPair = shippingAvailable
+    ? resolvePricePair(
+        firstPositive(shippingQuote?.total_usd),
+        firstPositive(shippingQuote?.total_cdf),
+        rate
+      )
+    : { usd: 0, cdf: 0 }
 
-  if (shippingQuote) {
-    totalUsd = Math.max(
-      0,
-      subtotalUsd - discountUsd + shippingUsd
+  let shippingUsd = shippingPair.usd
+  let shippingCdf =
+    rateOk && shippingUsd > 0
+      ? roundCdf(toCdf(shippingUsd, rateNum))
+      : shippingPair.cdf
+
+  if (shippingUsd <= 0 && shippingCdf > 0 && rateOk) {
+    shippingUsd = roundUsd(toUsd(shippingCdf, rateNum))
+  }
+
+  if (shippingCdf <= 0 && shippingUsd > 0 && rateOk) {
+    shippingCdf = roundCdf(toCdf(shippingUsd, rateNum))
+  }
+
+  shippingUsd = Math.max(0, roundUsd(shippingUsd))
+  shippingCdf = Math.max(0, roundCdf(shippingCdf))
+
+  let totalUsd = 0
+  let totalCdf = 0
+
+  if (shippingAvailable) {
+    totalUsd = roundUsd(
+      Math.max(0, subtotalPair.usd - discountUsd + shippingUsd)
     )
-    totalCdf = Math.max(
-      0,
-      subtotalCdf - discountCdf + shippingCdf
-    )
+
+    totalCdf =
+      rateOk && totalUsd > 0
+        ? roundCdf(toCdf(totalUsd, rateNum))
+        : roundCdf(
+            Math.max(0, subtotalPair.cdf - discountCdf + shippingCdf)
+          )
   } else {
-    totalUsd = ctxTotalUsd ?? 0
-    totalCdf = ctxTotalCdf ?? 0
+    const contextTotalPair = resolvePricePair(
+      firstPositive(summary?.totalUSD, summary?.total_usd),
+      firstPositive(summary?.total),
+      rate
+    )
 
-    if (totalUsd <= 0 && ctxTotalCdf && rateOk) {
-      totalUsd = ctxTotalCdf / Number(rate)
-    }
+    if (contextTotalPair.usd > 0 || contextTotalPair.cdf > 0) {
+      totalUsd = contextTotalPair.usd
+      totalCdf =
+        rateOk && totalUsd > 0
+          ? roundCdf(toCdf(totalUsd, rateNum))
+          : contextTotalPair.cdf
+    } else {
+      totalUsd = roundUsd(Math.max(0, subtotalPair.usd - discountUsd))
 
-    if (totalCdf <= 0 && ctxTotalUsd && rateOk) {
-      totalCdf = ctxTotalUsd * Number(rate)
-    }
-
-    if (totalUsd <= 0 && totalCdf <= 0) {
-      totalUsd = Math.max(0, subtotalUsd - discountUsd)
-      totalCdf = Math.max(0, subtotalCdf - discountCdf)
+      totalCdf =
+        rateOk && totalUsd > 0
+          ? roundCdf(toCdf(totalUsd, rateNum))
+          : roundCdf(Math.max(0, subtotalPair.cdf - discountCdf))
     }
   }
 
   if (totalUsd > 0 && totalCdf <= 0 && rateOk) {
-    totalCdf = totalUsd * Number(rate)
+    totalCdf = roundCdf(toCdf(totalUsd, rateNum))
   }
 
   if (totalCdf > 0 && totalUsd <= 0 && rateOk) {
-    totalUsd = totalCdf / Number(rate)
+    totalUsd = roundUsd(toUsd(totalCdf, rateNum))
   }
 
-  totalUsd = Number.isFinite(totalUsd)
-    ? Math.max(0, totalUsd)
-    : 0
-
-  totalCdf = Number.isFinite(totalCdf)
-    ? Math.max(0, totalCdf)
-    : 0
+  totalUsd = Math.max(0, roundUsd(totalUsd))
+  totalCdf = Math.max(0, roundCdf(totalCdf))
 
   const hasNonConsolidable =
-    shippingQuote?.breakdown?.some(
-      (line: any) => line?.type === 'mandatory'
-    ) ||
+    (shippingAvailable &&
+      shippingQuote?.breakdown?.some(
+        (line: any) => line?.type === 'mandatory'
+      )) ||
     items.some((item) => item.nonConsolidable)
 
-  const deliveryWarnings = shippingQuote?.warnings ?? []
+  const deliveryWarnings = shippingAvailable
+    ? shippingQuote?.warnings ?? []
+    : []
 
-  const primaryCurrency: Currency =
-    currency === 'CDF' ? 'CDF' : 'USD'
-
+  const primaryCurrency: Currency = currency === 'CDF' ? 'CDF' : 'USD'
   const secondaryCurrency: Currency =
     primaryCurrency === 'USD' ? 'CDF' : 'USD'
 
@@ -659,34 +917,60 @@ function computeTotals(
     secondary: secondaryCurrency === 'USD' ? usd : cdf,
   })
 
-  const subtotalPair = getPair(subtotalUsd, subtotalCdf)
-  const discountPair = getPair(discountUsd, discountCdf)
-  const shippingPair = getPair(shippingUsd, shippingCdf)
-  const totalPair = getPair(totalUsd, totalCdf)
+  const subtotalPairDisplay = getPair(
+    subtotalPair.usd,
+    subtotalPair.cdf
+  )
+
+  const discountPairDisplay = getPair(discountUsd, discountCdf)
+  const shippingPairDisplay = getPair(shippingUsd, shippingCdf)
+  const totalPairDisplay = getPair(totalUsd, totalCdf)
 
   return {
-    subtotalUsd,
-    subtotalCdf,
+    subtotalUsd: subtotalPair.usd,
+    subtotalCdf: subtotalPair.cdf,
+
     discountUsd,
     discountCdf,
+
     shippingUsd,
     shippingCdf,
+
     totalUsd,
     totalCdf,
-    primarySubtotal: subtotalPair.primary,
-    secondarySubtotal: subtotalPair.secondary,
-    primaryDiscount: discountPair.primary,
-    secondaryDiscount: discountPair.secondary,
-    primaryShipping: shippingPair.primary,
-    secondaryShipping: shippingPair.secondary,
-    primaryTotal: totalPair.primary,
-    secondaryTotal: totalPair.secondary,
+
+    primarySubtotal: subtotalPairDisplay.primary,
+    secondarySubtotal: subtotalPairDisplay.secondary,
+
+    primaryDiscount: discountPairDisplay.primary,
+    secondaryDiscount: discountPairDisplay.secondary,
+
+    primaryShipping: shippingPairDisplay.primary,
+    secondaryShipping: shippingPairDisplay.secondary,
+
+    primaryTotal: totalPairDisplay.primary,
+    secondaryTotal: totalPairDisplay.secondary,
+
     primaryCurrency,
     secondaryCurrency,
-    shippingQuote,
+
+    shippingQuote: shippingAvailable ? shippingQuote : null,
+
     hasNonConsolidable: Boolean(hasNonConsolidable),
     deliveryWarnings,
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  ADDRESS / PICKUP HELPERS                                       */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function toNumberOrNull(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null
+
+  const n = Number(String(value).replace(',', '.'))
+
+  return Number.isFinite(n) ? n : null
 }
 
 function buildAddressText(source: {
@@ -707,10 +991,12 @@ function buildAddressText(source: {
 
 function normalizePickupPoint(raw: any): PickupPoint | null {
   const id = raw?.id ?? raw?.point_id ?? raw?.point_retrait_id
+
   if (id === null || id === undefined || id === '') return null
 
   const nom = String(raw?.nom ?? raw?.name ?? '').trim()
   const adresse = String(raw?.adresse ?? raw?.address ?? '').trim()
+
   if (!nom || !adresse) return null
 
   const latitude = toNumberOrNull(raw?.latitude ?? raw?.lat)
@@ -730,19 +1016,26 @@ function normalizePickupPoint(raw: any): PickupPoint | null {
     horaires: raw?.horaires ?? raw?.hours ?? null,
     contact_nom: raw?.contact_nom ?? raw?.contact ?? null,
     type_etablissement:
-      raw?.type_etablissement ?? raw?.type ?? raw?.establishment_type ?? null,
+      raw?.type_etablissement ??
+      raw?.type ??
+      raw?.establishment_type ??
+      null,
     photo_url: raw?.photo_url ?? raw?.photo ?? raw?.image_url ?? null,
     points_de_repere: raw?.points_de_repere ?? raw?.landmarks ?? null,
     instructions_retrait:
       raw?.instructions_retrait ?? raw?.pickup_instructions ?? null,
-    est_partenaire_verifie: Boolean(raw?.est_partenaire_verifie ?? raw?.verified),
+    est_partenaire_verifie: Boolean(
+      raw?.est_partenaire_verifie ?? raw?.verified
+    ),
     note_moyenne: toNumberOrNull(raw?.note_moyenne ?? raw?.rating),
     capacite: toNumberOrNull(raw?.capacite ?? raw?.capacity),
     delai_moyen_heures: toNumberOrNull(
       raw?.delai_moyen_heures ?? raw?.delay_hours ?? raw?.delai
     ),
     latitude:
-      latitude !== null && latitude >= -90 && latitude <= 90 ? latitude : null,
+      latitude !== null && latitude >= -90 && latitude <= 90
+        ? latitude
+        : null,
     longitude:
       longitude !== null && longitude >= -180 && longitude <= 180
         ? longitude
@@ -758,15 +1051,19 @@ function haversineDistanceKm(
   lon2: number
 ): number {
   const R = 6371
+
   const dLat = ((lat2 - lat1) * Math.PI) / 180
   const dLon = ((lon2 - lon1) * Math.PI) / 180
+
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2)
+
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
   return R * c
 }
 
@@ -778,6 +1075,7 @@ function buildMapsUrl(point: PickupPoint): string {
   const query = encodeURIComponent(
     `${point.nom}, ${point.adresse}, ${point.ville_nom || ''}`
   )
+
   return `https://www.google.com/maps/search/?api=1&query=${query}`
 }
 
@@ -789,6 +1087,7 @@ function buildDirectionsUrl(point: PickupPoint): string {
   const query = encodeURIComponent(
     `${point.nom}, ${point.adresse}, ${point.ville_nom || ''}`
   )
+
   return `https://www.google.com/maps/dir/?api=1&destination=${query}`
 }
 
@@ -796,12 +1095,15 @@ function buildOsmEmbedUrl(point: PickupPoint): string | null {
   if (point.latitude === null || point.longitude === null) return null
 
   const delta = 0.01
+
   const bbox = `${point.longitude - delta},${point.latitude - delta},${point.longitude + delta},${point.latitude + delta}`
+
   return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${point.latitude},${point.longitude}`
 }
 
 function buildQrUrl(point: PickupPoint): string {
   const data = buildMapsUrl(point)
+
   return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(data)}`
 }
 
@@ -810,39 +1112,53 @@ function useDebouncedValue<T>(value: T, delay = 300): T {
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(value), delay)
+
     return () => clearTimeout(timer)
   }, [delay, value])
 
   return debounced
 }
 
+/* ═══════════════════════════════════════════════════════════════ */
+/*  FORM SCHEMA                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+
 const commandeSchema = z
   .object({
     currency: z.enum(['USD', 'CDF']).default('USD'),
+
     type_livraison: z
       .enum(['domicile', 'point_retrait', 'express'])
       .default('domicile'),
+
     point_retrait_id: z
       .union([z.number(), z.string()])
       .nullable()
       .optional(),
+
     adresse_id: z.string().nullable().optional(),
     use_new_address: z.boolean().default(false),
+
     destination_nom: z
       .string()
       .min(2, 'Le nom du destinataire est requis')
       .max(120, 'Nom trop long'),
+
     destination_telephone: z
       .string()
       .regex(/^0[0-9]{9}$/, 'Numéro invalide (format : 08xxxxxxxx)'),
+
     province_id: z.any().nullable().optional(),
     ville_id: z.any().nullable().optional(),
     commune_id: z.any().nullable().optional(),
+
     quartier: z.string().max(160).optional().nullable(),
     avenue: z.string().max(160).optional().nullable(),
     numero: z.string().max(50).optional().nullable(),
     reference: z.string().max(255).optional().nullable(),
+
     express: z.boolean().default(false),
+
     messageCadeau: z.string().max(200).optional().nullable(),
     deliveryNote: z.string().max(250).optional().nullable(),
   })
@@ -855,6 +1171,7 @@ const commandeSchema = z
           message: 'Choisissez un point de retrait',
         })
       }
+
       return
     }
 
@@ -896,6 +1213,10 @@ const commandeSchema = z
   })
 
 type CommandeForm = z.infer<typeof commandeSchema>
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  UI PRIMITIVES                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
 
 function SimpleModal({
   open,
@@ -950,6 +1271,7 @@ function SimpleModal({
         onClick={onClose}
         aria-hidden="true"
       />
+
       <div
         role="dialog"
         aria-modal="true"
@@ -962,12 +1284,14 @@ function SimpleModal({
         <div className="flex items-start justify-between gap-4 border-b border-border p-5">
           <div>
             <h3 className="text-lg font-bold text-foreground">{title}</h3>
+
             {description && (
               <p className="mt-1 text-sm text-muted-foreground">
                 {description}
               </p>
             )}
           </div>
+
           <button
             type="button"
             onClick={onClose}
@@ -1009,10 +1333,13 @@ function Field({
         {label}
         {required && <span className="ml-1 text-red-500">*</span>}
       </span>
+
       {children}
+
       {hint && !error && (
         <span className="block text-xs text-muted-foreground">{hint}</span>
       )}
+
       {error && <span className="block text-xs text-red-500">{error}</span>}
     </label>
   )
@@ -1035,6 +1362,7 @@ function SummaryRow({
     <div className="flex items-start justify-between gap-3 text-sm">
       <div className="flex min-w-0 items-center gap-2">
         {icon && <span className="text-gold-500">{icon}</span>}
+
         <span
           className={cn(
             'truncate',
@@ -1048,6 +1376,7 @@ function SummaryRow({
           {label}
         </span>
       </div>
+
       <div className="shrink-0 text-right">
         <p
           className={cn(
@@ -1061,6 +1390,7 @@ function SummaryRow({
         >
           {value}
         </p>
+
         {secondary && (
           <p className="text-[11px] text-muted-foreground">{secondary}</p>
         )}
@@ -1103,6 +1433,7 @@ function Stepper() {
               >
                 {isCompleted ? <CheckCircle2 size={16} /> : step.icon}
               </span>
+
               <span className="text-xs font-medium sm:text-sm">
                 {step.label}
               </span>
@@ -1119,6 +1450,7 @@ function PickupPointSkeleton() {
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="flex gap-3">
         <div className="h-16 w-16 animate-pulse rounded-xl bg-muted" />
+
         <div className="flex-1 space-y-2">
           <div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
           <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
@@ -1129,23 +1461,86 @@ function PickupPointSkeleton() {
   )
 }
 
+/* ═══════════════════════════════════════════════════════════════ */
+/*  PAGE                                                           */
+/* ═══════════════════════════════════════════════════════════════ */
+
 export default function CommandePage() {
   const router = useRouter()
+
   const toast = useToast() as any
+
+  const addToast = useCallback(
+    (payload: any) => {
+      toast?.addToast?.(payload)
+    },
+    [toast]
+  )
+
   const { user, loading: authLoading } = useAuth()
-  const { rate, loading: rateLoading } = useExchangeRate()
+
+  const exchange = useExchangeRate() as any
+
+  const rawRate = useMemo(
+    () => resolveRate(exchange),
+    [exchange]
+  )
+
+  const rateLoading = Boolean(exchange?.loading)
+
   const prefersReducedMotion = useReducedMotion()
   const shouldAnimate = !prefersReducedMotion
+
   const cart = useCart() as any
+
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  /**
+   * FIX HYDRATION :
+   * Le taux peut être chargé côté client seulement.
+   * On évite donc d’utiliser le taux avant hydratation.
+   */
+  const rate = mounted ? rawRate : null
+
+  const rateNum = Number(rate)
+  const rateOk = Number.isFinite(rateNum) && rateNum > 0
 
   const items: RawCartItem[] = useMemo(
     () => (Array.isArray(cart?.items) ? cart.items : []),
     [cart?.items]
   )
 
-  const summary = cart?.summary || {}
-  const activePromo = cart?.activePromo || null
+  const summary = useMemo<any>(() => cart?.summary ?? {}, [cart?.summary])
+
+  const activePromo = useMemo<PromoCodeLike | null>(
+    () => (cart?.activePromo as PromoCodeLike | null) ?? null,
+    [cart?.activePromo]
+  )
+
   const promoError = cart?.promoError || null
+
+  const promoValid = Boolean(
+    summary?.promoValid ?? activePromo?.valid ?? false
+  )
+
+  const promoRemainingUsd = firstPositive(
+    summary?.promoRemainingUsd,
+    activePromo?.remainingToMinUsd
+  )
+
+  const promoRequirementMessage =
+    summary?.promoRequirementMessage ||
+    activePromo?.message ||
+    promoError ||
+    null
+
+  const effectivePromoCode = promoValid
+    ? String(activePromo?.code || '').trim().toUpperCase() || null
+    : null
 
   const [addresses, setAddresses] = useState<SavedAddress[]>([])
   const [loadingAddresses, setLoadingAddresses] = useState(false)
@@ -1153,21 +1548,26 @@ export default function CommandePage() {
   const [points, setPoints] = useState<PickupPoint[]>([])
   const [pointsLoading, setPointsLoading] = useState(false)
   const [pointsError, setPointsError] = useState<string | null>(null)
+
   const [pointSearch, setPointSearch] = useState('')
   const [pointCity, setPointCity] = useState('')
   const [onlyVerified, setOnlyVerified] = useState(false)
+
   const [pointSort, setPointSort] = useState<'distance' | 'note' | 'name'>(
     'distance'
   )
+
   const [userLocation, setUserLocation] = useState<{
     lat: number
     lng: number
   } | null>(null)
+
   const [locating, setLocating] = useState(false)
 
   const [selectorOpen, setSelectorOpen] = useState(false)
   const [mapPoint, setMapPoint] = useState<PickupPoint | null>(null)
   const [qrPoint, setQrPoint] = useState<PickupPoint | null>(null)
+
   const [selectedPointDetails, setSelectedPointDetails] =
     useState<PickupPoint | null>(null)
 
@@ -1214,12 +1614,29 @@ export default function CommandePage() {
   const adresseId = watch('adresse_id')
   const useNewAddress = watch('use_new_address')
   const pointRetraitId = watch('point_retrait_id')
+
   const isPickup = typeLivraison === 'point_retrait'
 
-  const cartItems = useMemo(
-    () => items.map((item, index) => normalizeCartItem(item, index, rate)),
-    [items, rate]
-  )
+  const cartItems = useMemo<NormalizedCartItem[]>(() => {
+    const seen = new Map<string, number>()
+
+    return items.map((raw, index) => {
+      const normalized = normalizeCartItem(raw, index, rate)
+
+      const baseKey = `${normalized.originalId}::${normalized.variantKey}`
+      const occurrence = seen.get(baseKey) ?? 0
+
+      seen.set(baseKey, occurrence + 1)
+
+      const key =
+        occurrence === 0 ? baseKey : `${baseKey}#${occurrence}`
+
+      return {
+        ...normalized,
+        key,
+      }
+    })
+  }, [items, rate])
 
   const shippingCartItems = useMemo(
     () => buildShippingCartItems(cartItems),
@@ -1250,12 +1667,15 @@ export default function CommandePage() {
     if (shippingCartItems.length === 0) return null
 
     const modeId = typeLivraison as DeliveryModeId
+
     if (!deliveryAvailability[modeId]?.available) return null
 
     try {
-      const subtotalUsd = cartItems.reduce(
-        (sum, item) => sum + item.priceUsd * item.quantity,
-        0
+      const subtotalUsd = roundUsd(
+        cartItems.reduce(
+          (sum, item) => sum + item.priceUsd * item.quantity,
+          0
+        )
       )
 
       return calculateShippingQuote({
@@ -1275,6 +1695,10 @@ export default function CommandePage() {
     typeLivraison,
   ])
 
+  const hasCurrentShippingQuote = Boolean(
+    currentShippingQuote && currentShippingQuote.available !== false
+  )
+
   const totals = useMemo(
     () =>
       computeTotals(
@@ -1288,7 +1712,7 @@ export default function CommandePage() {
   )
 
   const itemCount = useMemo(
-    () => cartItems.reduce((acc, i) => acc + i.quantity, 0),
+    () => cartItems.reduce((acc, item) => acc + item.quantity, 0),
     [cartItems]
   )
 
@@ -1303,6 +1727,7 @@ export default function CommandePage() {
     const found = points.find(
       (point) => String(point.id) === String(pointRetraitId)
     )
+
     return found || selectedPointDetails || null
   }, [pointRetraitId, points, selectedPointDetails])
 
@@ -1315,20 +1740,26 @@ export default function CommandePage() {
         (modeId) => deliveryAvailability[modeId]?.available
       )
 
-      if (firstAvailable) {
+      if (firstAvailable && firstAvailable !== currentMode) {
         setValue('type_livraison', firstAvailable)
 
-        toast?.addToast?.({
+        addToast({
           type: 'warning',
-          message: `Le mode « ${getDeliveryModeLabel(currentMode)} » n'est pas compatible avec certains articles. Mode ajusté : « ${getDeliveryModeLabel(firstAvailable)} ».`,
+          message: `Le mode « ${getDeliveryModeLabel(
+            currentMode
+          )} » n'est pas compatible avec certains articles. Mode ajusté : « ${getDeliveryModeLabel(
+            firstAvailable
+          )} ».`,
         })
       }
     }
-  }, [deliveryAvailability, setValue, toast, typeLivraison])
+  }, [addToast, deliveryAvailability, setValue, typeLivraison])
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push(`/login?redirect=${encodeURIComponent('/commande')}`)
+      router.push(
+        `/login?redirect=${encodeURIComponent('/commande')}`
+      )
     }
   }, [authLoading, router, user])
 
@@ -1354,6 +1785,7 @@ export default function CommandePage() {
         if (!res.ok) return
 
         const payload = await res.json()
+
         const list = Array.isArray(payload)
           ? payload
           : Array.isArray(payload?.data)
@@ -1415,6 +1847,7 @@ export default function CommandePage() {
 
       try {
         const params = new URLSearchParams()
+
         params.set('limit', '100')
 
         if (debouncedPointSearch.trim()) {
@@ -1430,16 +1863,22 @@ export default function CommandePage() {
           params.set('lng', String(userLocation.lng))
         }
 
-        const res = await fetch(`/api/points-retrait?${params.toString()}`, {
-          credentials: 'include',
-          cache: 'no-store',
-        })
+        const res = await fetch(
+          `/api/points-retrait?${params.toString()}`,
+          {
+            credentials: 'include',
+            cache: 'no-store',
+          }
+        )
 
         if (!res.ok) {
-          throw new Error('Impossible de charger les points de retrait.')
+          throw new Error(
+            'Impossible de charger les points de retrait.'
+          )
         }
 
         const payload = await res.json()
+
         const list = Array.isArray(payload)
           ? payload
           : Array.isArray(payload?.data)
@@ -1483,7 +1922,8 @@ export default function CommandePage() {
         if (!cancelled) {
           setPoints([])
           setPointsError(
-            err?.message || 'Erreur lors du chargement des points.'
+            err?.message ||
+              'Erreur lors du chargement des points.'
           )
         }
       } finally {
@@ -1510,7 +1950,7 @@ export default function CommandePage() {
       typeof navigator === 'undefined' ||
       !navigator.geolocation
     ) {
-      toast?.addToast?.({
+      addToast({
         type: 'warning',
         message:
           'Géolocalisation non disponible sur cet appareil.',
@@ -1526,9 +1966,10 @@ export default function CommandePage() {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         })
+
         setLocating(false)
 
-        toast?.addToast?.({
+        addToast({
           type: 'success',
           message: 'Position mise à jour.',
         })
@@ -1536,7 +1977,7 @@ export default function CommandePage() {
       () => {
         setLocating(false)
 
-        toast?.addToast?.({
+        addToast({
           type: 'error',
           message:
             "Impossible d'obtenir ta position.",
@@ -1548,35 +1989,37 @@ export default function CommandePage() {
         maximumAge: 60000,
       }
     )
-  }, [toast])
+  }, [addToast])
 
   const handleSelectPoint = useCallback(
     (point: PickupPoint) => {
       setValue('point_retrait_id', point.id, {
         shouldValidate: true,
       })
+
       setSelectedPointDetails(point)
       setSelectorOpen(false)
 
-      toast?.addToast?.({
+      addToast({
         type: 'success',
         message: `Point sélectionné : ${point.nom}`,
       })
     },
-    [setValue, toast]
+    [addToast, setValue]
   )
 
   const handleClearPoint = useCallback(() => {
     setValue('point_retrait_id', null, {
       shouldValidate: true,
     })
+
     setSelectedPointDetails(null)
 
-    toast?.addToast?.({
+    addToast({
       type: 'info',
       message: 'Point de retrait retiré.',
     })
-  }, [setValue, toast])
+  }, [addToast, setValue])
 
   const copyPointAddress = useCallback(
     async (point: PickupPoint) => {
@@ -1586,19 +2029,19 @@ export default function CommandePage() {
       try {
         await navigator.clipboard.writeText(text)
 
-        toast?.addToast?.({
+        addToast({
           type: 'success',
           message: 'Adresse copiée.',
         })
       } catch {
-        toast?.addToast?.({
+        addToast({
           type: 'error',
           message:
             "Impossible de copier l'adresse.",
         })
       }
     },
-    [toast]
+    [addToast]
   )
 
   const sharePoint = useCallback(
@@ -1615,21 +2058,21 @@ export default function CommandePage() {
         } else {
           await navigator.clipboard.writeText(url)
 
-          toast?.addToast?.({
+          addToast({
             type: 'success',
             message: 'Lien copié.',
           })
         }
       } catch (err: any) {
         if (err?.name !== 'AbortError') {
-          toast?.addToast?.({
+          addToast({
             type: 'error',
             message: 'Impossible de partager.',
           })
         }
       }
     },
-    [toast]
+    [addToast]
   )
 
   const sortedPoints = useMemo(() => {
@@ -1647,12 +2090,14 @@ export default function CommandePage() {
           a.distance ?? Number.POSITIVE_INFINITY
         const bDist =
           b.distance ?? Number.POSITIVE_INFINITY
+
         return aDist - bDist
       })
     } else if (pointSort === 'note') {
       list.sort((a, b) => {
         const aNote = a.note_moyenne ?? 0
         const bNote = b.note_moyenne ?? 0
+
         return bNote - aNote
       })
     } else {
@@ -1679,7 +2124,7 @@ export default function CommandePage() {
     if (
       typeof cart?.removePromoCode !== 'function'
     ) {
-      toast?.addToast?.({
+      addToast({
         type: 'error',
         message:
           'Impossible de retirer le code promo.',
@@ -1690,44 +2135,50 @@ export default function CommandePage() {
     try {
       await cart.removePromoCode()
 
-      toast?.addToast?.({
+      addToast({
         type: 'info',
         message: 'Code promo retiré.',
       })
     } catch (err: any) {
-      toast?.addToast?.({
+      addToast({
         type: 'error',
         message:
           err?.message ||
           'Erreur lors du retrait du code promo.',
       })
     }
-  }, [cart, toast])
+  }, [addToast, cart?.removePromoCode])
 
   const handleSelectSavedAddress = useCallback(
     (address: SavedAddress) => {
       setValue('adresse_id', address.id)
       setValue('use_new_address', false)
+
       setValue(
         'destination_nom',
         address.destinataire || ''
       )
+
       setValue(
         'destination_telephone',
         address.telephone || ''
       )
+
       setValue(
         'province_id',
         address.province_id ?? null
       )
+
       setValue(
         'ville_id',
         address.ville_id ?? null
       )
+
       setValue(
         'commune_id',
         address.commune_id ?? null
       )
+
       setValue('quartier', address.quartier || '')
       setValue('avenue', address.avenue || '')
       setValue('numero', address.numero || '')
@@ -1754,25 +2205,41 @@ export default function CommandePage() {
       }
 
       if (cartItems.length === 0) {
-        toast?.addToast?.({
+        addToast({
           type: 'error',
           message: 'Votre panier est vide.',
         })
+
         router.push('/panier')
         return
       }
 
-      if (!currentShippingQuote) {
+      if (!hasCurrentShippingQuote || !currentShippingQuote) {
         const modeId = values.type_livraison as DeliveryModeId
         const availability =
           deliveryAvailability[modeId]
 
-        toast?.addToast?.({
+        addToast({
           type: 'error',
           message:
             availability?.reason ||
             "Le mode de livraison sélectionné n'est pas disponible pour les articles de votre panier.",
         })
+
+        return
+      }
+
+      const missingUsdItem = cartItems.some(
+        (item) => item.priceUsd <= 0
+      )
+
+      if (missingUsdItem && !rateOk) {
+        addToast({
+          type: 'error',
+          message:
+            'Le taux USD/CDF est requis pour finaliser la commande. Patientez quelques secondes ou rechargez la page.',
+        })
+
         return
       }
 
@@ -1785,6 +2252,7 @@ export default function CommandePage() {
 
         let addressText = ''
         let communeId: number | string | null = null
+
         let pointPayload: {
           id: number | string
           nom: string
@@ -1840,51 +2308,97 @@ export default function CommandePage() {
             : selected?.commune_id ?? null
         }
 
-        const rateOk =
-          Number.isFinite(Number(rate)) &&
-          Number(rate) > 0
-
         const apiItems = cartItems.map((item) => {
-          const unitCdf =
+          let unitUsd =
+            item.priceUsd > 0
+              ? roundUsd(item.priceUsd)
+              : 0
+
+          let unitCdf =
             item.priceCdf > 0
-              ? item.priceCdf
-              : item.priceUsd > 0 && rateOk
-                ? item.priceUsd * Number(rate)
-                : 0
+              ? roundCdf(item.priceCdf)
+              : 0
+
+          if (unitUsd <= 0 && unitCdf > 0 && rateOk) {
+            unitUsd = roundUsd(toUsd(unitCdf, rateNum))
+          }
+
+          if (unitCdf <= 0 && unitUsd > 0 && rateOk) {
+            unitCdf = roundCdf(toCdf(unitUsd, rateNum))
+          }
+
+          if (unitUsd <= 0) {
+            throw new Error(
+              `Prix USD indisponible pour « ${item.nom} ».`
+            )
+          }
 
           if (unitCdf <= 0) {
             throw new Error(
-              `Impossible de déterminer le prix CDF de « ${item.nom} ». Vérifiez le taux de change.`
+              `Prix CDF indisponible pour « ${item.nom} ».`
             )
           }
 
           return {
             produit_id: item.originalId,
             quantite: item.quantity,
-            prix_unitaire: Math.round(unitCdf),
-            prix_unitaire_usd: Number(
-              item.priceUsd.toFixed(2)
-            ),
-            specifications:
-              item.variantLabel || null,
-            variante:
-              item.variantLabel || null,
+
+            prix_unitaire: unitCdf,
+            prix_unitaire_usd: unitUsd,
+
+            specifications: item.variantLabel || null,
+            variante: item.variantLabel || null,
+
+            variant_key: item.variantKey || null,
+            variant_attributes:
+              item.variantAttributes || null,
           }
         })
 
-        const totalCdf = Math.round(totals.totalCdf)
-        const totalUsd = Number(
-          totals.totalUsd.toFixed(2)
+        const subtotalUsd = roundUsd(totals.subtotalUsd)
+        const subtotalCdf = roundCdf(totals.subtotalCdf)
+
+        const discountUsd = promoValid
+          ? roundUsd(totals.discountUsd)
+          : 0
+
+        const discountCdf = promoValid
+          ? rateOk && discountUsd > 0
+            ? roundCdf(toCdf(discountUsd, rateNum))
+            : roundCdf(totals.discountCdf)
+          : 0
+
+        const shippingUsd = roundUsd(totals.shippingUsd)
+
+        const shippingCdf =
+          rateOk && shippingUsd > 0
+            ? roundCdf(toCdf(shippingUsd, rateNum))
+            : roundCdf(totals.shippingCdf)
+
+        let totalUsd = roundUsd(
+          Math.max(
+            0,
+            subtotalUsd - discountUsd + shippingUsd
+          )
         )
-        const reductionCdf = Math.round(
-          totals.discountCdf
-        )
-        const shippingUsd = Number(
-          totals.shippingUsd.toFixed(2)
-        )
-        const shippingCdf = Math.round(
-          totals.shippingCdf
-        )
+
+        let totalCdf =
+          rateOk && totalUsd > 0
+            ? roundCdf(toCdf(totalUsd, rateNum))
+            : roundCdf(
+                Math.max(
+                  0,
+                  subtotalCdf - discountCdf + shippingCdf
+                )
+              )
+
+        if (totalUsd <= 0 && totalCdf > 0 && rateOk) {
+          totalUsd = roundUsd(toUsd(totalCdf, rateNum))
+        }
+
+        if (totalCdf <= 0 && totalUsd > 0 && rateOk) {
+          totalCdf = roundCdf(toCdf(totalUsd, rateNum))
+        }
 
         if (totalCdf <= 0) {
           throw new Error(
@@ -1894,9 +2408,13 @@ export default function CommandePage() {
 
         const body: Record<string, any> = {
           items: apiItems,
+
           adresse_livraison: addressText,
           commune_livraison_id: communeId ?? null,
+
           type_livraison: values.type_livraison,
+          shipping_method: values.type_livraison,
+
           point_retrait_id:
             pointPayload?.id ?? null,
           point_retrait_nom:
@@ -1905,28 +2423,37 @@ export default function CommandePage() {
             pointPayload?.adresse ?? null,
           point_retrait_telephone:
             pointPayload?.telephone ?? null,
+
           express:
             values.type_livraison === 'express' ||
             values.express,
+
           message_cadeau:
             values.messageCadeau?.trim() || null,
           delivery_note:
             values.deliveryNote?.trim() || null,
-          reduction: reductionCdf,
-          code_promo:
-            activePromo?.code || null,
+
+          reduction: discountCdf,
+          code_promo: effectivePromoCode,
+
           remise_percent:
-            activePromo?.type === 'percent'
+            promoValid && activePromo?.type === 'percent'
               ? Number(activePromo.value) || 0
               : 0,
-          remise_montant: reductionCdf,
+
+          remise_montant: discountCdf,
+
           currency: values.currency,
+
           total_usd: totalUsd,
           total_cdf: totalCdf,
+
           shipping_usd: shippingUsd,
           shipping_cdf: shippingCdf,
+
           shipping_rate_used: rate || null,
-          shipping_method: values.type_livraison,
+          exchange_rate: rate || null,
+
           shipping_breakdown:
             currentShippingQuote?.breakdown ?? null,
           shipping_delay_label:
@@ -1963,7 +2490,7 @@ export default function CommandePage() {
           )
         }
 
-        toast?.addToast?.({
+        addToast({
           type: 'success',
           message:
             'Commande créée avec succès. Redirection vers le paiement...',
@@ -1981,7 +2508,7 @@ export default function CommandePage() {
 
         setGlobalError(message)
 
-        toast?.addToast?.({
+        addToast({
           type: 'error',
           message,
         })
@@ -1990,15 +2517,21 @@ export default function CommandePage() {
       }
     },
     [
-      activePromo,
+      activePromo?.type,
+      activePromo?.value,
+      addToast,
       addresses,
       cartItems,
       currentShippingQuote,
       deliveryAvailability,
+      effectivePromoCode,
+      hasCurrentShippingQuote,
+      promoValid,
       rate,
+      rateNum,
+      rateOk,
       router,
       selectedPoint,
-      toast,
       totals,
       user,
     ]
@@ -2016,6 +2549,7 @@ export default function CommandePage() {
             size={36}
             className="mx-auto animate-spin text-gold-500"
           />
+
           <p className="text-sm text-muted-foreground">
             Chargement de votre session...
           </p>
@@ -2037,13 +2571,16 @@ export default function CommandePage() {
                 className="text-gold-500"
               />
             </div>
+
             <h1 className="font-serif text-3xl font-extrabold text-foreground">
               Votre panier est vide
             </h1>
+
             <p className="mt-3 text-muted-foreground">
               Ajoutez des produits avant de finaliser
               votre commande.
             </p>
+
             <div className="mt-8 flex justify-center">
               <Button
                 type="button"
@@ -2061,6 +2598,25 @@ export default function CommandePage() {
     )
   }
 
+  const shippingValueDisplay = hasCurrentShippingQuote
+    ? totals.primaryShipping > 0
+      ? formatMoney(
+          totals.primaryShipping,
+          totals.primaryCurrency
+        )
+      : 'Gratuite'
+    : 'À confirmer'
+
+  const shippingSecondaryDisplay =
+    hasCurrentShippingQuote &&
+    totals.secondaryShipping > 0 &&
+    totals.secondaryShipping !== totals.primaryShipping
+      ? `≈ ${formatMoney(
+          totals.secondaryShipping,
+          totals.secondaryCurrency
+        )}`
+      : null
+
   return (
     <div className="min-h-screen bg-background pb-28 lg:pb-16">
       <Container className="py-8 md:py-12">
@@ -2075,13 +2631,16 @@ export default function CommandePage() {
               <ArrowLeft size={16} />
               Retour au panier
             </Link>
+
             <h1 className="font-serif text-3xl font-extrabold text-foreground md:text-4xl">
               Finaliser la commande
             </h1>
+
             <p className="mt-2 text-muted-foreground">
               {itemCount} article{itemCount > 1 ? 's' : ''} • livraison en RDC
             </p>
           </div>
+
           <Badge variant="gold" size="sm" className="w-fit">
             <ShieldCheck size={12} className="mr-1" />
             Paiement sécurisé
@@ -2091,6 +2650,7 @@ export default function CommandePage() {
         {globalError && (
           <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
             <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+
             <div>
               <p className="font-medium">Erreur</p>
               <p className="mt-1">{globalError}</p>
@@ -2098,12 +2658,17 @@ export default function CommandePage() {
           </div>
         )}
 
-        {rateLoading && totals.totalCdf <= 0 && (
+        {rateLoading && !rateOk && (
           <div className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-            <RefreshCw size={18} className="mt-0.5 shrink-0 animate-spin" />
+            <RefreshCw
+              size={18}
+              className="mt-0.5 shrink-0 animate-spin"
+            />
+
             <p>
-              Le taux USD/CDF est en cours de chargement. Vous pouvez continuer,
-              mais la conversion finale sera validée au paiement.
+              Le taux USD/CDF est en cours de chargement. Vous pouvez
+              continuer, mais la validation finale nécessitera le taux
+              officiel.
             </p>
           </div>
         )}
@@ -2111,14 +2676,16 @@ export default function CommandePage() {
         {totals.hasNonConsolidable && (
           <div className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
             <Info size={18} className="mt-0.5 shrink-0" />
+
             <div className="flex-1">
               <p className="font-medium">
                 Certains articles ont des frais de livraison obligatoires
               </p>
+
               <p className="mt-1 text-xs opacity-90">
-                Ces articles gardent leurs frais spécifiques même si d&apos;autres
-                articles peuvent être regroupés. Le breakdown détaillé est
-                affiché sous le mode de livraison choisi.
+                Ces articles gardent leurs frais spécifiques même si
+                d&apos;autres articles peuvent être regroupés. Le breakdown
+                détaillé est affiché sous le mode de livraison choisi.
               </p>
             </div>
           </div>
@@ -2137,11 +2704,13 @@ export default function CommandePage() {
                   <CreditCard size={18} className="text-gold-500" />
                   Devise
                 </CardTitle>
+
                 <CardDescription>
                   Choisissez la devise principale d&apos;affichage et
                   d&apos;intention de paiement.
                 </CardDescription>
               </CardHeader>
+
               <CardContent>
                 <Controller
                   name="currency"
@@ -2167,12 +2736,14 @@ export default function CommandePage() {
                                 ? 'Dollar'
                                 : 'Franc congolais'}
                             </p>
+
                             <p className="text-xs text-muted-foreground">
                               {curr === 'USD'
                                 ? 'USD principal'
                                 : 'CDF principal'}
                             </p>
                           </div>
+
                           <span className="text-lg font-extrabold text-gold-600">
                             {curr}
                           </span>
@@ -2181,9 +2752,10 @@ export default function CommandePage() {
                     </div>
                   )}
                 />
+
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Le montant final sera converti automatiquement selon le taux
-                  officiel affiché.
+                  USD reste la source de vérité. Le CDF est converti
+                  automatiquement selon le taux officiel affiché.
                 </p>
               </CardContent>
             </Card>
@@ -2194,11 +2766,13 @@ export default function CommandePage() {
                   <Phone size={18} className="text-gold-500" />
                   Coordonnées du destinataire
                 </CardTitle>
+
                 <CardDescription>
                   Ces informations sont utilisées pour le contact de livraison
                   ou de retrait.
                 </CardDescription>
               </CardHeader>
+
               <CardContent>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field
@@ -2212,6 +2786,7 @@ export default function CommandePage() {
                       placeholder="Ex : Jean Mukendi"
                     />
                   </Field>
+
                   <Field
                     label="Téléphone"
                     required
@@ -2233,11 +2808,13 @@ export default function CommandePage() {
                   <Truck size={18} className="text-gold-500" />
                   Mode de livraison
                 </CardTitle>
+
                 <CardDescription>
                   Sélectionnez le mode de livraison souhaité. Les modes
                   indisponibles sont grisés selon les articles du panier.
                 </CardDescription>
               </CardHeader>
+
               <CardContent className="space-y-4">
                 <Controller
                   name="type_livraison"
@@ -2247,6 +2824,7 @@ export default function CommandePage() {
                       {SHIPPING_OPTIONS.map((option) => {
                         const availability =
                           deliveryAvailability[option.id]
+
                         const isDisabled = !availability?.available
                         const isSelected = field.value === option.id
 
@@ -2271,30 +2849,40 @@ export default function CommandePage() {
                               <span className="text-gold-500">
                                 {option.icon}
                               </span>
+
                               <Badge variant="neutral" size="sm">
                                 {option.delay}
                               </Badge>
                             </div>
+
                             <p className="text-sm font-semibold text-foreground">
                               {option.label}
                             </p>
+
                             <p className="text-xs text-muted-foreground">
                               {option.description}
                             </p>
+
                             {isDisabled && availability?.reason && (
                               <p className="mt-1 text-[11px] text-red-500">
                                 {availability.reason}
                               </p>
                             )}
+
                             {!isDisabled &&
                               isSelected &&
-                              currentShippingQuote && (
+                              hasCurrentShippingQuote && (
                                 <p className="mt-1 text-xs font-medium text-gold-600">
-                                  {formatShippingMoney(
-                                    currentShippingQuote.total_usd,
-                                    'USD'
-                                  )}{' '}
-                                  · {currentShippingQuote.delay_label}
+                                  {totals.primaryShipping > 0
+                                    ? formatMoney(
+                                        totals.primaryShipping,
+                                        totals.primaryCurrency
+                                      )
+                                    : 'Gratuite'}
+
+                                  {' · '}
+
+                                  {currentShippingQuote?.delay_label}
                                 </p>
                               )}
                           </button>
@@ -2346,10 +2934,12 @@ export default function CommandePage() {
                         <MapPin size={18} className="text-gold-500" />
                         Point de retrait
                       </CardTitle>
+
                       <CardDescription>
                         Choisis un relais colis partenaire proche de toi.
                       </CardDescription>
                     </CardHeader>
+
                     <CardContent className="space-y-4">
                       {selectedPoint ? (
                         <div className="rounded-2xl border border-gold-400/20 bg-background/60 p-4">
@@ -2360,17 +2950,20 @@ export default function CommandePage() {
                                   src={selectedPoint.photo_url}
                                   alt={selectedPoint.nom}
                                   className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
+                                  loading="lazy"
                                 />
                               ) : (
                                 <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-gold-100 text-gold-600 dark:bg-gold-900/30 dark:text-gold-400">
                                   <Store size={22} />
                                 </div>
                               )}
+
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="text-sm font-bold text-foreground">
                                     {selectedPoint.nom}
                                   </p>
+
                                   {selectedPoint.est_partenaire_verifie && (
                                     <Badge variant="gold" size="sm">
                                       <ShieldCheck
@@ -2380,6 +2973,7 @@ export default function CommandePage() {
                                       Vérifié
                                     </Badge>
                                   )}
+
                                   {selectedPoint.distance !== undefined && (
                                     <Badge variant="neutral" size="sm">
                                       {formatDistance(
@@ -2388,9 +2982,11 @@ export default function CommandePage() {
                                     </Badge>
                                   )}
                                 </div>
+
                                 <p className="mt-1 text-sm text-muted-foreground">
                                   {selectedPoint.adresse}
                                 </p>
+
                                 <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
                                   {selectedPoint.ville_nom && (
                                     <span className="flex items-center gap-1">
@@ -2398,18 +2994,21 @@ export default function CommandePage() {
                                       {selectedPoint.ville_nom}
                                     </span>
                                   )}
+
                                   {selectedPoint.telephone && (
                                     <span className="flex items-center gap-1">
                                       <Phone size={12} />
                                       {selectedPoint.telephone}
                                     </span>
                                   )}
+
                                   {selectedPoint.horaires && (
                                     <span className="flex items-center gap-1">
                                       <Clock size={12} />
                                       {selectedPoint.horaires}
                                     </span>
                                   )}
+
                                   {typeof selectedPoint.note_moyenne ===
                                     'number' && (
                                     <span className="flex items-center gap-1 text-amber-500">
@@ -2421,6 +3020,7 @@ export default function CommandePage() {
                                     </span>
                                   )}
                                 </div>
+
                                 {selectedPoint.instructions_retrait && (
                                   <p className="mt-3 rounded-xl border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
                                     <span className="font-semibold text-foreground">
@@ -2431,6 +3031,7 @@ export default function CommandePage() {
                                 )}
                               </div>
                             </div>
+
                             <div className="flex flex-wrap gap-2">
                               <Button
                                 type="button"
@@ -2441,6 +3042,7 @@ export default function CommandePage() {
                               >
                                 Changer
                               </Button>
+
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -2456,6 +3058,7 @@ export default function CommandePage() {
                               >
                                 Itinéraire
                               </Button>
+
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -2467,6 +3070,7 @@ export default function CommandePage() {
                               >
                                 Carte
                               </Button>
+
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -2478,6 +3082,7 @@ export default function CommandePage() {
                               >
                                 QR
                               </Button>
+
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -2489,6 +3094,7 @@ export default function CommandePage() {
                               >
                                 Copier
                               </Button>
+
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -2508,13 +3114,16 @@ export default function CommandePage() {
                             size={32}
                             className="mx-auto mb-3 text-muted-foreground"
                           />
+
                           <p className="text-sm font-medium text-foreground">
                             Aucun point de retrait sélectionné
                           </p>
+
                           <p className="mt-1 text-xs text-muted-foreground">
                             Choisis un relais colis partenaire pour retirer ta
                             commande.
                           </p>
+
                           <Button
                             type="button"
                             variant="luxe"
@@ -2527,6 +3136,7 @@ export default function CommandePage() {
                           </Button>
                         </div>
                       )}
+
                       {errors.point_retrait_id && (
                         <p className="text-xs text-red-500">
                           {errors.point_retrait_id.message}
@@ -2545,11 +3155,13 @@ export default function CommandePage() {
                     <MapPin size={18} className="text-gold-500" />
                     Adresse de livraison
                   </CardTitle>
+
                   <CardDescription>
                     Choisissez une adresse enregistrée ou saisissez-en une
                     nouvelle.
                   </CardDescription>
                 </CardHeader>
+
                 <CardContent className="space-y-5">
                   {loadingAddresses ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -2561,6 +3173,7 @@ export default function CommandePage() {
                       <p className="text-sm font-medium text-foreground">
                         Adresses enregistrées
                       </p>
+
                       <div className="grid gap-3 sm:grid-cols-2">
                         {addresses.map((address) => {
                           const isActive =
@@ -2585,16 +3198,19 @@ export default function CommandePage() {
                                 <p className="text-sm font-semibold text-foreground">
                                   {address.nom || 'Adresse'}
                                 </p>
+
                                 {address.is_default && (
                                   <Badge variant="gold" size="sm">
                                     Défaut
                                   </Badge>
                                 )}
                               </div>
+
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {address.destinataire || '—'} •{' '}
                                 {address.telephone || '—'}
                               </p>
+
                               <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
                                 {buildAddressText(address) ||
                                   'Adresse incomplète'}
@@ -2602,6 +3218,7 @@ export default function CommandePage() {
                             </button>
                           )
                         })}
+
                         <button
                           type="button"
                           onClick={handleUseNewAddress}
@@ -2643,6 +3260,7 @@ export default function CommandePage() {
                           <p className="text-sm font-medium text-foreground">
                             Nouvelle adresse
                           </p>
+
                           <Field
                             label="Localisation"
                             required
@@ -2664,10 +3282,12 @@ export default function CommandePage() {
                                       'province_id',
                                       data?.province_id ?? null
                                     )
+
                                     setValue(
                                       'ville_id',
                                       data?.ville_id ?? null
                                     )
+
                                     field.onChange(
                                       data?.commune_id ?? null
                                     )
@@ -2676,6 +3296,7 @@ export default function CommandePage() {
                               )}
                             />
                           </Field>
+
                           <div className="grid gap-4 sm:grid-cols-2">
                             <Field
                               label="Quartier"
@@ -2688,6 +3309,7 @@ export default function CommandePage() {
                                 placeholder="Ex : Limete"
                               />
                             </Field>
+
                             <Field
                               label="Avenue"
                               required
@@ -2699,6 +3321,7 @@ export default function CommandePage() {
                                 placeholder="Ex : Avenue Kasa-Vubu"
                               />
                             </Field>
+
                             <Field
                               label="Numéro"
                               required
@@ -2710,6 +3333,7 @@ export default function CommandePage() {
                                 placeholder="Ex : 123"
                               />
                             </Field>
+
                             <Field
                               label="Point de repère"
                               error={errors.reference?.message}
@@ -2735,10 +3359,12 @@ export default function CommandePage() {
                   <Gift size={18} className="text-gold-500" />
                   Options complémentaires
                 </CardTitle>
+
                 <CardDescription>
                   Message cadeau et instructions de livraison.
                 </CardDescription>
               </CardHeader>
+
               <CardContent className="space-y-4">
                 <Field
                   label="Message cadeau"
@@ -2752,6 +3378,7 @@ export default function CommandePage() {
                     placeholder="Ex : Joyeux anniversaire, profite bien !"
                   />
                 </Field>
+
                 <Field
                   label="Instructions de livraison"
                   hint="Optionnel — max 250 caractères"
@@ -2777,68 +3404,88 @@ export default function CommandePage() {
                       <Package size={18} className="text-gold-500" />
                       Récapitulatif
                     </h2>
+
                     <p className="mt-1 text-xs text-muted-foreground">
                       Prix principaux en {totals.primaryCurrency}
-                      {totals.secondaryCurrency !== totals.primaryCurrency &&
+                      {totals.secondaryCurrency !==
+                        totals.primaryCurrency &&
                         ` • conversion ${totals.secondaryCurrency}`}
                     </p>
                   </div>
 
                   <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
-                    {cartItems.map((item) => (
-                      <div
-                        key={item.key}
-                        className="flex items-start gap-3 rounded-xl border border-border bg-background/50 p-2"
-                      >
-                        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted">
-                          <img
-                            src={item.image || PLACEHOLDER}
-                            alt={item.nom}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="line-clamp-1 text-sm font-medium text-foreground">
-                            {item.nom}
-                          </p>
-                          {item.variantLabel && (
-                            <p className="text-xs text-muted-foreground">
-                              {item.variantLabel}
+                    {cartItems.map((item) => {
+                      const linePrimary =
+                        totals.primaryCurrency === 'USD'
+                          ? item.lineUsd
+                          : item.lineCdf
+
+                      const lineSecondary =
+                        totals.secondaryCurrency === 'USD'
+                          ? item.lineUsd
+                          : item.lineCdf
+
+                      return (
+                        <div
+                          key={item.key}
+                          className="flex items-start gap-3 rounded-xl border border-border bg-background/50 p-2"
+                        >
+                          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted">
+                            <img
+                              src={item.image || PLACEHOLDER}
+                              alt={item.nom}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <p className="line-clamp-1 text-sm font-medium text-foreground">
+                              {item.nom}
                             </p>
-                          )}
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <p className="text-xs text-muted-foreground">
-                              Qté : {item.quantity}
-                            </p>
-                            {item.nonConsolidable && (
-                              <Badge variant="neutral" size="sm">
-                                <Truck size={10} className="mr-1" />
-                                Frais spécifiques
-                              </Badge>
+
+                            {item.variantLabel && (
+                              <p className="text-xs text-muted-foreground">
+                                {item.variantLabel}
+                              </p>
                             )}
+
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <p className="text-xs text-muted-foreground">
+                                Qté : {item.quantity}
+                              </p>
+
+                              {item.nonConsolidable && (
+                                <Badge variant="neutral" size="sm">
+                                  <Truck size={10} className="mr-1" />
+                                  Frais spécifiques
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <p className="text-sm font-semibold text-gold-600">
+                              {formatMoney(
+                                linePrimary,
+                                totals.primaryCurrency
+                              )}
+                            </p>
+
+                            {lineSecondary > 0 &&
+                              lineSecondary !== linePrimary && (
+                                <p className="text-[10px] text-muted-foreground">
+                                  ≈{' '}
+                                  {formatMoney(
+                                    lineSecondary,
+                                    totals.secondaryCurrency
+                                  )}
+                                </p>
+                              )}
                           </div>
                         </div>
-                        <div className="shrink-0 text-right">
-                          <p className="text-sm font-semibold text-gold-600">
-                            {formatMoney(
-                              totals.primaryCurrency === 'USD'
-                                ? item.lineUsd
-                                : item.lineCdf,
-                              totals.primaryCurrency
-                            )}
-                          </p>
-                          {totals.secondaryCurrency === 'USD' ? (
-                            <p className="text-[10px] text-muted-foreground">
-                              ≈ {formatMoney(item.lineUsd, 'USD')}
-                            </p>
-                          ) : (
-                            <p className="text-[10px] text-muted-foreground">
-                              ≈ {formatMoney(item.lineCdf, 'CDF')}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
 
                   {isPickup && selectedPoint && (
@@ -2847,9 +3494,11 @@ export default function CommandePage() {
                         <MapPin size={12} />
                         Point de retrait
                       </p>
+
                       <p className="text-sm font-semibold text-foreground">
                         {selectedPoint.nom}
                       </p>
+
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {selectedPoint.adresse}
                       </p>
@@ -2863,14 +3512,20 @@ export default function CommandePage() {
                         totals.primarySubtotal,
                         totals.primaryCurrency
                       )}
-                      secondary={`≈ ${formatMoney(
-                        totals.secondarySubtotal,
-                        totals.secondaryCurrency
-                      )}`}
+                      secondary={
+                        totals.secondarySubtotal > 0 &&
+                        totals.secondarySubtotal !==
+                          totals.primarySubtotal
+                          ? `≈ ${formatMoney(
+                              totals.secondarySubtotal,
+                              totals.secondaryCurrency
+                            )}`
+                          : null
+                      }
                       icon={<Package size={14} />}
                     />
 
-                    {totals.primaryDiscount > 0 && (
+                    {promoValid && totals.primaryDiscount > 0 && (
                       <SummaryRow
                         label={
                           activePromo?.code
@@ -2881,10 +3536,16 @@ export default function CommandePage() {
                           totals.primaryDiscount,
                           totals.primaryCurrency
                         )}`}
-                        secondary={`- ${formatMoney(
-                          totals.secondaryDiscount,
-                          totals.secondaryCurrency
-                        )}`}
+                        secondary={
+                          totals.secondaryDiscount > 0 &&
+                          totals.secondaryDiscount !==
+                            totals.primaryDiscount
+                            ? `- ${formatMoney(
+                                totals.secondaryDiscount,
+                                totals.secondaryCurrency
+                              )}`
+                            : null
+                        }
                         tone="discount"
                         icon={<Tag size={14} />}
                       />
@@ -2894,45 +3555,34 @@ export default function CommandePage() {
                       label={`Livraison (${getDeliveryModeLabel(
                         typeLivraison as DeliveryModeId
                       )})`}
-                      value={
-                        totals.primaryShipping > 0
-                          ? formatMoney(
-                              totals.primaryShipping,
-                              totals.primaryCurrency
-                            )
-                          : isPickup
-                            ? 'Retrait en point'
-                            : 'Gratuite'
-                      }
-                      secondary={
-                        totals.primaryShipping > 0
-                          ? `≈ ${formatMoney(
-                              totals.secondaryShipping,
-                              totals.secondaryCurrency
-                            )}`
-                          : null
-                      }
+                      value={shippingValueDisplay}
+                      secondary={shippingSecondaryDisplay}
                       icon={<Truck size={14} />}
                     />
 
-                    {currentShippingQuote?.delay_label && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Clock size={12} className="text-gold-500" />
-                        Délai estimé : {currentShippingQuote.delay_label}
-                      </div>
-                    )}
+                    {hasCurrentShippingQuote &&
+                      currentShippingQuote?.delay_label && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Clock size={12} className="text-gold-500" />
+                          Délai estimé :{' '}
+                          {currentShippingQuote.delay_label}
+                        </div>
+                      )}
                   </div>
 
                   <div className="border-t border-gold-400/20 pt-4">
                     <div className="flex items-end justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-foreground">
-                          Total
+                          Total commande
                         </p>
+
                         <p className="text-xs text-muted-foreground">
-                          Taxes et frais inclus
+                          Livraison estimée incluse. Le montant final peut être
+                          validé au paiement.
                         </p>
                       </div>
+
                       <div className="text-right">
                         <p className="text-2xl font-extrabold text-gold-600">
                           {formatMoney(
@@ -2940,13 +3590,18 @@ export default function CommandePage() {
                             totals.primaryCurrency
                           )}
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          ≈{' '}
-                          {formatMoney(
-                            totals.secondaryTotal,
-                            totals.secondaryCurrency
+
+                        {totals.secondaryTotal > 0 &&
+                          totals.secondaryTotal !==
+                            totals.primaryTotal && (
+                            <p className="text-xs text-muted-foreground">
+                              ≈{' '}
+                              {formatMoney(
+                                totals.secondaryTotal,
+                                totals.secondaryCurrency
+                              )}
+                            </p>
                           )}
-                        </p>
                       </div>
                     </div>
                   </div>
@@ -2958,43 +3613,106 @@ export default function CommandePage() {
                     </p>
 
                     {activePromo ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                              {activePromo.code}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Remise :{' '}
-                              {formatMoney(
-                                totals.primaryDiscount,
-                                totals.primaryCurrency
-                              )}
-                            </p>
+                      promoValid ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                                {activePromo.code}
+                              </p>
+
+                              <p className="text-xs text-muted-foreground">
+                                Remise :{' '}
+                                {formatMoney(
+                                  totals.primaryDiscount,
+                                  totals.primaryCurrency
+                                )}
+                              </p>
+                            </div>
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                void handleRemovePromo()
+                              }
+                              leftIcon={<X size={14} />}
+                            >
+                              Retirer
+                            </Button>
                           </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleRemovePromo}
-                            leftIcon={<X size={14} />}
+
+                          <Link
+                            href="/panier"
+                            className="inline-flex items-center gap-1 text-xs text-gold-600 transition hover:text-gold-700 hover:underline"
                           >
-                            Retirer
-                          </Button>
+                            <ExternalLink size={12} />
+                            Modifier dans le panier
+                          </Link>
                         </div>
-                        <Link
-                          href="/panier"
-                          className="inline-flex items-center gap-1 text-xs text-gold-600 transition hover:text-gold-700 hover:underline"
-                        >
-                          <ExternalLink size={12} />
-                          Modifier dans le panier
-                        </Link>
-                      </div>
+                      ) : (
+                        <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle
+                              size={16}
+                              className="mt-0.5 shrink-0"
+                            />
+
+                            <div className="min-w-0">
+                              <p className="font-semibold">
+                                {activePromo.code}
+                              </p>
+
+                              <p className="mt-1 text-xs">
+                                {promoRequirementMessage ||
+                                  'Ce code promo n’est pas applicable pour le moment.'}
+                              </p>
+
+                              {promoRemainingUsd > 0 && (
+                                <p className="mt-1 text-[11px] opacity-90">
+                                  Ajoutez encore{' '}
+                                  {formatUsd(promoRemainingUsd)}
+                                  {rateOk
+                                    ? ` ≈ ${formatCdf(
+                                        promoRemainingUsd * rateNum
+                                      )}`
+                                    : ''}{' '}
+                                  pour utiliser ce code promo.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                void handleRemovePromo()
+                              }
+                              leftIcon={<X size={14} />}
+                            >
+                              Retirer
+                            </Button>
+
+                            <Link
+                              href="/panier"
+                              className="inline-flex items-center gap-1 text-xs text-gold-600 transition hover:text-gold-700 hover:underline"
+                            >
+                              <ExternalLink size={12} />
+                              Modifier dans le panier
+                            </Link>
+                          </div>
+                        </div>
+                      )
                     ) : (
                       <div className="space-y-2">
                         <p className="text-xs text-muted-foreground">
                           Aucun code promo appliqué.
                         </p>
+
                         <Link
                           href="/panier"
                           className="inline-flex items-center gap-1 text-xs text-gold-600 transition hover:text-gold-700 hover:underline"
@@ -3005,7 +3723,7 @@ export default function CommandePage() {
                       </div>
                     )}
 
-                    {promoError && (
+                    {promoError && !activePromo && (
                       <p className="text-xs text-red-500">{promoError}</p>
                     )}
                   </div>
@@ -3015,7 +3733,9 @@ export default function CommandePage() {
                     variant="luxe"
                     fullWidth
                     size="lg"
-                    disabled={submitting || !currentShippingQuote}
+                    disabled={
+                      submitting || !hasCurrentShippingQuote
+                    }
                     className="shadow-gold hover:shadow-glow-gold"
                     leftIcon={
                       submitting ? (
@@ -3030,7 +3750,7 @@ export default function CommandePage() {
                   >
                     {submitting
                       ? 'Traitement...'
-                      : !currentShippingQuote
+                      : !hasCurrentShippingQuote
                         ? 'Mode de livraison indisponible'
                         : 'Continuer vers le paiement'}
                   </Button>
@@ -3043,10 +3763,12 @@ export default function CommandePage() {
                       />
                       Paiement sécurisé Mobile Money / carte
                     </div>
+
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Truck size={14} className="text-gold-500" />
                       Livraison suivie à Kinshasa et provinces
                     </div>
+
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Info size={14} className="text-gold-500" />
                       Aucune donnée de portefeuille n&apos;est utilisée
@@ -3063,26 +3785,32 @@ export default function CommandePage() {
         <div className="mx-auto flex max-w-6xl items-center gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted-foreground">Total</p>
+
             <p className="truncate text-lg font-bold text-gold-600">
               {formatMoney(
                 totals.primaryTotal,
                 totals.primaryCurrency
               )}
             </p>
-            <p className="truncate text-[11px] text-muted-foreground">
-              ≈{' '}
-              {formatMoney(
-                totals.secondaryTotal,
-                totals.secondaryCurrency
+
+            {totals.secondaryTotal > 0 &&
+              totals.secondaryTotal !== totals.primaryTotal && (
+                <p className="truncate text-[11px] text-muted-foreground">
+                  ≈{' '}
+                  {formatMoney(
+                    totals.secondaryTotal,
+                    totals.secondaryCurrency
+                  )}
+                </p>
               )}
-            </p>
           </div>
+
           <Button
             type="submit"
             form="checkout-form"
             variant="luxe"
             className="shrink-0"
-            disabled={submitting || !currentShippingQuote}
+            disabled={submitting || !hasCurrentShippingQuote}
             leftIcon={
               submitting ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -3110,6 +3838,7 @@ export default function CommandePage() {
                 size={16}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
               />
+
               <input
                 value={pointSearch}
                 onChange={(event) =>
@@ -3119,6 +3848,7 @@ export default function CommandePage() {
                 className={cn(inputClass, 'pl-9')}
               />
             </div>
+
             <div className="relative min-w-[160px]">
               <input
                 value={pointCity}
@@ -3129,12 +3859,14 @@ export default function CommandePage() {
                 placeholder="Ville..."
                 className={inputClass}
               />
+
               <datalist id="checkout-pickup-city-options">
                 {cityOptions.map((city) => (
                   <option key={city} value={city} />
                 ))}
               </datalist>
             </div>
+
             <select
               value={pointSort}
               onChange={(event) =>
@@ -3148,6 +3880,7 @@ export default function CommandePage() {
               <option value="note">Trier par note</option>
               <option value="name">Trier par nom</option>
             </select>
+
             <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
               <input
                 type="checkbox"
@@ -3159,6 +3892,7 @@ export default function CommandePage() {
               />
               Vérifiés seulement
             </label>
+
             <Button
               type="button"
               variant="outline-gold"
@@ -3183,6 +3917,7 @@ export default function CommandePage() {
                 <AlertTriangle size={16} />
                 Erreur de chargement
               </p>
+
               <p>{pointsError}</p>
             </div>
           ) : sortedPoints.length === 0 ? (
@@ -3211,17 +3946,20 @@ export default function CommandePage() {
                           src={point.photo_url}
                           alt={point.nom}
                           className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
+                          loading="lazy"
                         />
                       ) : (
                         <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-gold-100 text-gold-600 dark:bg-gold-900/30 dark:text-gold-400">
                           <Store size={22} />
                         </div>
                       )}
+
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="truncate text-sm font-bold text-foreground">
                             {point.nom}
                           </p>
+
                           {point.est_partenaire_verifie && (
                             <Badge variant="gold" size="sm">
                               <ShieldCheck
@@ -3231,15 +3969,18 @@ export default function CommandePage() {
                               Vérifié
                             </Badge>
                           )}
+
                           {point.distance !== undefined && (
                             <Badge variant="neutral" size="sm">
                               {formatDistance(point.distance)}
                             </Badge>
                           )}
                         </div>
+
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                           {point.adresse}
                         </p>
+
                         <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
                           {point.ville_nom && (
                             <span className="flex items-center gap-1">
@@ -3247,12 +3988,14 @@ export default function CommandePage() {
                               {point.ville_nom}
                             </span>
                           )}
+
                           {point.horaires && (
                             <span className="flex items-center gap-1">
                               <Clock size={11} />
                               {point.horaires}
                             </span>
                           )}
+
                           {typeof point.note_moyenne === 'number' && (
                             <span className="flex items-center gap-1 text-amber-500">
                               <Star
@@ -3265,6 +4008,7 @@ export default function CommandePage() {
                         </div>
                       </div>
                     </div>
+
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -3287,6 +4031,7 @@ export default function CommandePage() {
                           ? 'Sélectionné'
                           : 'Choisir'}
                       </Button>
+
                       <Button
                         type="button"
                         variant="ghost"
@@ -3302,6 +4047,7 @@ export default function CommandePage() {
                       >
                         Itinéraire
                       </Button>
+
                       <Button
                         type="button"
                         variant="ghost"
@@ -3311,6 +4057,7 @@ export default function CommandePage() {
                       >
                         Carte
                       </Button>
+
                       <Button
                         type="button"
                         variant="ghost"
@@ -3345,6 +4092,7 @@ export default function CommandePage() {
               >
                 Fermer
               </Button>
+
               <Button
                 type="button"
                 variant="luxe"
@@ -3396,6 +4144,7 @@ export default function CommandePage() {
               >
                 Fermer
               </Button>
+
               <Button
                 type="button"
                 variant="luxe"
@@ -3417,9 +4166,11 @@ export default function CommandePage() {
               alt={`QR code ${qrPoint.nom}`}
               className="mx-auto h-52 w-52 rounded-xl border border-border bg-white p-3"
             />
+
             <p className="mt-3 text-sm font-semibold text-foreground">
               {qrPoint.nom}
             </p>
+
             <p className="text-xs text-muted-foreground">
               {qrPoint.adresse}
             </p>

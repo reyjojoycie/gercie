@@ -9,6 +9,9 @@
 /*  - Les frais de livraison sont configurés en USD.               */
 /*  - Le CDF est dérivé : CDF = USD × taux USD/CDF.                */
 /*  - Les commandes déjà créées doivent garder leur snapshot.      */
+/*  - Si seulement un CDF legacy existe et qu’aucun taux n’est     */
+/*    disponible, le CDF est conservé comme fallback d’affichage,  */
+/*    sans appliquer la consolidation intelligente.                */
 /* ═══════════════════════════════════════════════════════════════ */
 
 export type Currency = 'USD' | 'CDF'
@@ -46,7 +49,7 @@ export interface DeliveryModeConfig {
 
   /**
    * CDF = conversion dérivée.
-   * Peut être conservé pour compatibilité legacy / affichage.
+   * Peut être conservé comme fallback legacy si le taux est indisponible.
    */
   fee_cdf?: number | null
 
@@ -270,9 +273,23 @@ const GROUP_LABELS: Record<LogisticsGroup, string> = {
 /*  NUMBER HELPERS                                                 */
 /* ═══════════════════════════════════════════════════════════════ */
 
+function parseFiniteNumber(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'boolean') return null
+
+  const raw =
+    typeof value === 'string'
+      ? value.replace(',', '.').trim()
+      : value
+
+  const n = Number(raw)
+
+  return Number.isFinite(n) ? n : null
+}
+
 function toNumber(value: any, fallback = 0): number {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
+  const n = parseFiniteNumber(value)
+  return n != null ? n : fallback
 }
 
 function positiveNum(value: any): number {
@@ -281,10 +298,12 @@ function positiveNum(value: any): number {
 }
 
 function roundUsd(value: number): number {
+  if (!Number.isFinite(value)) return 0
   return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
 function roundCdf(value: number): number {
+  if (!Number.isFinite(value)) return 0
   return Math.round(value + Number.EPSILON)
 }
 
@@ -293,20 +312,52 @@ function roundCdf(value: number): number {
  * Utile pour les frais explicitement gratuits.
  */
 function nullableNonNegative(value: any): number | null {
-  const n = Number(value)
-  if (!Number.isFinite(n) || n < 0) return null
+  const n = parseFiniteNumber(value)
+  if (n == null || n < 0) return null
   return roundUsd(n)
 }
 
 /**
  * Ignore 0.
- * Utile pour les prix unitaires : si un prix est 0,
- * on peut tenter un fallback depuis l'autre devise.
+ * Conservé pour compatibilité interne, mais ne doit plus être utilisé
+ * pour résoudre un prix USD principal.
  */
 function nullablePositive(value: any): number | null {
-  const n = Number(value)
-  if (!Number.isFinite(n) || n <= 0) return null
+  const n = parseFiniteNumber(value)
+  if (n == null || n <= 0) return null
   return roundUsd(n)
+}
+
+/**
+ * Résout la première valeur numérique finie >= 0.
+ * Important : 0 est une valeur explicite valide.
+ */
+function explicitNonNegative(...values: any[]): number | null {
+  for (const value of values) {
+    const n = parseFiniteNumber(value)
+
+    if (n != null && n >= 0) {
+      return roundUsd(n)
+    }
+  }
+
+  return null
+}
+
+/**
+ * Résout la première valeur numérique finie > 0.
+ * Utile pour les fallbacks CDF legacy où 0 n’a pas de sens.
+ */
+function explicitPositive(...values: any[]): number | null {
+  for (const value of values) {
+    const n = parseFiniteNumber(value)
+
+    if (n != null && n > 0) {
+      return roundUsd(n)
+    }
+  }
+
+  return null
 }
 
 /**
@@ -314,14 +365,14 @@ function nullablePositive(value: any): number | null {
  * On garde plus de précision que pour un montant USD.
  */
 function nullablePositiveRate(value: any): number | null {
-  const n = Number(value)
-  if (!Number.isFinite(n) || n <= 0) return null
+  const n = parseFiniteNumber(value)
+  if (n == null || n <= 0) return null
   return Number(n.toFixed(4))
 }
 
 function clampPercent(value: any): number | null {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return null
+  const n = parseFiniteNumber(value)
+  if (n == null) return null
   return Math.min(100, Math.max(0, n))
 }
 
@@ -531,6 +582,8 @@ export function createDefaultDeliveryConsolidationConfig(): DeliveryConsolidatio
 
     free_shipping_threshold_usd: null,
 
+    // Sécurité absolue : la livraison gratuite ne doit jamais annuler
+    // les frais obligatoires / non consolidables.
     free_shipping_applies_to: 'consolidable_only',
   }
 }
@@ -607,16 +660,20 @@ export function normalizeDeliveryModeConfig(
       ? true
       : legacyActive ?? (legacyFeeCdf > 0 || def.enabled)
 
-  const feeCdfInput =
-    nullableNonNegative(input?.fee_cdf) ??
-    (legacyFeeCdf > 0 ? legacyFeeCdf : null)
+  /**
+   * USD = source principale.
+   * 0 USD explicite doit être respecté.
+   */
+  const feeUsdExplicit = explicitNonNegative(input?.fee_usd)
 
-  const feeUsdInput = nullableNonNegative(input?.fee_usd)
+  const feeCdfExplicit = explicitNonNegative(input?.fee_cdf)
+  const feeCdfInput =
+    feeCdfExplicit ?? (legacyFeeCdf > 0 ? legacyFeeCdf : null)
 
   let feeUsd: number
 
-  if (feeUsdInput != null) {
-    feeUsd = feeUsdInput
+  if (feeUsdExplicit != null) {
+    feeUsd = feeUsdExplicit
   } else if (feeCdfInput != null && rate && rate > 0) {
     feeUsd = roundUsd(feeCdfInput / rate)
   } else {
@@ -628,9 +685,8 @@ export function normalizeDeliveryModeConfig(
   }
 
   /*
-   * USD principal :
-   * si le taux est disponible, le CDF est toujours dérivé du USD.
-   * Sinon, on garde une valeur legacy pour compatibilité d'affichage.
+   * Si le taux est disponible, le CDF est toujours dérivé du USD.
+   * Sinon, on garde une valeur legacy pour compatibilité d’affichage.
    */
   const derivedFeeCdf =
     rate && rate > 0 ? roundCdf(feeUsd * rate) : null
@@ -664,25 +720,33 @@ export function normalizeDeliveryModeConfig(
     ? 'mandatory_per_unit'
     : inputCalculationMode
 
+  /**
+   * base_fee_usd = 0 explicite ne doit pas écraser fee_usd si fee_usd > 0.
+   * On considère donc base_fee_usd comme renseigné seulement s’il est > 0,
+   * sauf si fee_usd est lui-même 0.
+   */
+  const baseFeeExplicit = explicitNonNegative(input?.base_fee_usd)
   const baseFeeUsd =
-    nullableNonNegative(input?.base_fee_usd) ?? feeUsd
+    baseFeeExplicit != null && baseFeeExplicit > 0
+      ? baseFeeExplicit
+      : feeUsd
 
   const additionalUnitFeeUsd =
     input?.additional_unit_fee_usd === null
       ? null
-      : nullableNonNegative(input?.additional_unit_fee_usd) ??
+      : explicitNonNegative(input?.additional_unit_fee_usd) ??
         (calculationMode === 'shared' ? 0 : null)
 
   const maxLineFeeUsd =
     input?.max_line_fee_usd === null
       ? null
-      : nullableNonNegative(input?.max_line_fee_usd) ??
+      : explicitNonNegative(input?.max_line_fee_usd) ??
         (calculationMode === 'shared' && legacyFeeCdf > 0 ? feeUsd : null)
 
   const minLineFeeUsd =
     input?.min_line_fee_usd === null
       ? null
-      : nullableNonNegative(input?.min_line_fee_usd) ?? null
+      : explicitNonNegative(input?.min_line_fee_usd)
 
   const delayMinHours =
     nullableNonNegative(input?.delay_min_hours) ?? def.delay_min_hours ?? null
@@ -732,20 +796,20 @@ export function normalizeDeliveryModeConfig(
     labor_fee_usd: roundUsd(labor),
 
     free_weight_kg:
-      nullableNonNegative(input?.free_weight_kg) ?? def.free_weight_kg ?? 0,
+      explicitNonNegative(input?.free_weight_kg) ?? def.free_weight_kg ?? 0,
     per_extra_kg_usd:
-      nullableNonNegative(input?.per_extra_kg_usd) ??
+      explicitNonNegative(input?.per_extra_kg_usd) ??
       def.per_extra_kg_usd ??
       0,
     max_weight_kg:
       input?.max_weight_kg === null
         ? null
-        : nullableNonNegative(input?.max_weight_kg),
+        : explicitNonNegative(input?.max_weight_kg),
 
     free_shipping_threshold_usd:
       input?.free_shipping_threshold_usd === null
         ? null
-        : nullableNonNegative(input?.free_shipping_threshold_usd),
+        : explicitNonNegative(input?.free_shipping_threshold_usd),
 
     notes:
       typeof input?.notes === 'string' && input.notes.trim()
@@ -878,24 +942,25 @@ export function normalizeDeliveryConsolidationConfig(
     max_order_shipping_usd:
       input?.max_order_shipping_usd === null
         ? null
-        : nullableNonNegative(input?.max_order_shipping_usd),
+        : explicitNonNegative(input?.max_order_shipping_usd),
 
     min_order_shipping_usd:
       input?.min_order_shipping_usd === null
         ? null
-        : nullableNonNegative(input?.min_order_shipping_usd) ??
+        : explicitNonNegative(input?.min_order_shipping_usd) ??
           def.min_order_shipping_usd ??
           1,
 
     free_shipping_threshold_usd:
       input?.free_shipping_threshold_usd === null
         ? null
-        : nullableNonNegative(input?.free_shipping_threshold_usd),
+        : explicitNonNegative(input?.free_shipping_threshold_usd),
 
-    free_shipping_applies_to:
-      input?.free_shipping_applies_to === 'all'
-        ? 'all'
-        : 'consolidable_only',
+    /**
+     * Sécurité absolue :
+     * la livraison gratuite ne s’applique jamais aux frais obligatoires.
+     */
+    free_shipping_applies_to: 'consolidable_only',
   }
 }
 
@@ -1040,16 +1105,43 @@ export function normalizeShippingCartItem(
     Math.floor(positiveNum(item.quantity ?? item.quantite ?? 1))
   )
 
-  const directUsd =
-    nullablePositive(item.unit_price_usd) ??
-    nullablePositive(item.prix_usd) ??
-    nullablePositive(item.price_usd)
+  /**
+   * USD = source principale.
+   * 0 USD explicite est respecté.
+   */
+  const directUsd = explicitNonNegative(
+    item.unit_price_usd,
+    item.prix_usd,
+    item.price_usd,
+    legacy.unit_price_usd,
+    legacy.prix_usd,
+    legacy.price_usd,
+    item.product?.unit_price_usd,
+    item.product?.prix_usd,
+    item.product?.price_usd,
+    item.variante?.unit_price_usd,
+    item.variante?.prix_usd,
+    item.variante?.price_usd
+  )
 
-  const directCdf =
-    nullablePositive(item.prix) ??
-    nullablePositive(item.price) ??
-    nullablePositive(item.prix_cdf) ??
-    nullablePositive(item.price_cdf)
+  const directCdf = explicitNonNegative(
+    item.prix,
+    item.price,
+    item.prix_cdf,
+    item.price_cdf,
+    legacy.prix,
+    legacy.price,
+    legacy.prix_cdf,
+    legacy.price_cdf,
+    item.product?.prix,
+    item.product?.price,
+    item.product?.prix_cdf,
+    item.product?.price_cdf,
+    item.variante?.prix,
+    item.variante?.price,
+    item.variante?.prix_cdf,
+    item.variante?.price_cdf
+  )
 
   const unitPriceUsd =
     directUsd ??
@@ -1111,6 +1203,7 @@ interface LineResult {
   group: LogisticsGroup
   quantity: number
   amount_usd: number
+  amount_cdf_fallback: number | null
   consolidable: boolean
   type: 'mandatory' | 'consolidable'
   note?: string | null
@@ -1122,7 +1215,13 @@ function computeLine(item: NormalizedShippingItem): LineResult {
   const qty = item.quantity
   const warnings: string[] = []
 
-  const base = positiveNum(mode.base_fee_usd ?? mode.fee_usd)
+  /**
+   * base_fee_usd = 0 ne doit pas effacer fee_usd si fee_usd > 0.
+   */
+  const base =
+    mode.base_fee_usd != null && Number(mode.base_fee_usd) > 0
+      ? roundUsd(Number(mode.base_fee_usd))
+      : positiveNum(mode.fee_usd)
 
   const extraPerUnit = roundUsd(
     positiveNum(mode.handling_fee_usd) +
@@ -1208,11 +1307,13 @@ function computeLine(item: NormalizedShippingItem): LineResult {
 
   if (consolidable) {
     const min =
-      mode.min_line_fee_usd != null ? positiveNum(mode.min_line_fee_usd) : 0
+      mode.min_line_fee_usd != null
+        ? roundUsd(Math.max(0, Number(mode.min_line_fee_usd)))
+        : 0
 
     const max =
       mode.max_line_fee_usd != null
-        ? positiveNum(mode.max_line_fee_usd)
+        ? roundUsd(Math.max(0, Number(mode.max_line_fee_usd)))
         : null
 
     if (max != null && amount > max) {
@@ -1226,6 +1327,30 @@ function computeLine(item: NormalizedShippingItem): LineResult {
     }
   }
 
+  /**
+   * Fallback CDF legacy :
+   * si aucun USD n’a pu être résolu mais qu’un fee_cdf existe,
+   * on conserve une valeur CDF pour l’affichage quand le taux est indisponible.
+   */
+  let amountCdfFallback: number | null = null
+
+  if (amount === 0) {
+    const legacyCdf = positiveNum(mode.fee_cdf)
+
+    if (legacyCdf > 0) {
+      if (calculationMode === 'free') {
+        amountCdfFallback = 0
+      } else if (
+        calculationMode === 'mandatory_per_unit' ||
+        calculationMode === 'per_unit'
+      ) {
+        amountCdfFallback = roundCdf(legacyCdf * qty)
+      } else {
+        amountCdfFallback = roundCdf(legacyCdf)
+      }
+    }
+  }
+
   return {
     key: item.key,
     label: item.nom,
@@ -1233,6 +1358,7 @@ function computeLine(item: NormalizedShippingItem): LineResult {
     group: item.logistics.group,
     quantity: qty,
     amount_usd: amount,
+    amount_cdf_fallback: amountCdfFallback,
     consolidable,
     type: consolidable ? 'consolidable' : 'mandatory',
     note,
@@ -1282,14 +1408,24 @@ function mergeConsolidationConfigs(
     discount_percent: discountPercent,
     cross_group_discount_percent: crossGroupDiscountPercent,
 
+    /**
+     * Plafond : valeur la plus stricte.
+     * Si un produit impose 3 USD et un autre 10 USD, le plafond commun est 3 USD.
+     */
     max_order_shipping_usd: maxValues.length
-      ? Math.max(...maxValues)
+      ? Math.min(...maxValues)
       : null,
 
+    /**
+     * Plancher : valeur la plus haute.
+     */
     min_order_shipping_usd: minValues.length
       ? Math.max(...minValues)
       : 1,
 
+    /**
+     * Seuil gratuit : valeur la plus haute pour satisfaire tous les produits.
+     */
     free_shipping_threshold_usd: freeValues.length
       ? Math.max(...freeValues)
       : null,
@@ -1359,6 +1495,7 @@ function lineToBreakdownItem(
     label: line.label,
     type,
     amount_usd: line.amount_usd,
+    amount_cdf: line.amount_cdf_fallback ?? null,
     quantity: line.quantity,
     product_id: line.product_id,
     group: line.group,
@@ -1437,7 +1574,11 @@ function enrichBreakdown(
     ...item,
     amount_usd: roundUsd(item.amount_usd),
     amount_cdf:
-      rate && rate > 0 ? roundCdf(item.amount_usd * rate) : item.amount_cdf ?? 0,
+      rate && rate > 0
+        ? roundCdf(item.amount_usd * rate)
+        : item.amount_cdf != null
+          ? roundCdf(item.amount_cdf)
+          : 0,
   }))
 }
 
@@ -1483,6 +1624,20 @@ export function calculateShippingQuote(params: {
     consolidableLines.reduce((sum, line) => sum + line.amount_usd, 0)
   )
 
+  const mandatoryFallbackCdf = roundCdf(
+    mandatoryLines.reduce(
+      (sum, line) => sum + (line.amount_cdf_fallback ?? 0),
+      0
+    )
+  )
+
+  const consolidableFallbackCdfBefore = roundCdf(
+    consolidableLines.reduce(
+      (sum, line) => sum + (line.amount_cdf_fallback ?? 0),
+      0
+    )
+  )
+
   const consolidation = mergeConsolidationConfigs(
     normalizedItems.map(
       (item) =>
@@ -1490,6 +1645,8 @@ export function calculateShippingQuote(params: {
         createDefaultDeliveryConsolidationConfig()
     )
   )
+
+  const canApplySmartConsolidation = rateUsed != null && rateUsed > 0
 
   const breakdown: ShippingBreakdownItem[] = []
 
@@ -1502,6 +1659,7 @@ export function calculateShippingQuote(params: {
     {
       group: LogisticsGroup
       amount: number
+      amountCdfFallback: number
       items: LineResult[]
     }
   >()
@@ -1511,11 +1669,15 @@ export function calculateShippingQuote(params: {
 
     if (existing) {
       existing.amount = roundUsd(existing.amount + line.amount_usd)
+      existing.amountCdfFallback = roundCdf(
+        existing.amountCdfFallback + (line.amount_cdf_fallback ?? 0)
+      )
       existing.items.push(line)
     } else {
       groupMap.set(line.group, {
         group: line.group,
         amount: line.amount_usd,
+        amountCdfFallback: line.amount_cdf_fallback ?? 0,
         items: [line],
       })
     }
@@ -1530,8 +1692,13 @@ export function calculateShippingQuote(params: {
   const groups: ShippingGroupBreakdown[] = []
 
   let consolidableAfterCross = 0
+  let consolidableAfterCrossFallback = 0
 
-  if (consolidation.enabled && rawGroups.length > 1) {
+  if (
+    canApplySmartConsolidation &&
+    consolidation.enabled &&
+    rawGroups.length > 1
+  ) {
     const crossDiscountPercent =
       clampPercent(consolidation.cross_group_discount_percent) ?? 50
 
@@ -1549,6 +1716,7 @@ export function calculateShippingQuote(params: {
         group: rawGroup.group,
         label: getLogisticsGroupLabel(rawGroup.group),
         amount_usd: afterAmount,
+        amount_cdf: roundCdf(afterAmount * (rateUsed as number)),
         items: rawGroup.items.map((line) =>
           lineToBreakdownItem(line, 'line', modeId)
         ),
@@ -1564,6 +1732,7 @@ export function calculateShippingQuote(params: {
           )}`,
           type: 'discount',
           amount_usd: discountAmount,
+          amount_cdf: roundCdf(discountAmount * (rateUsed as number)),
           group: rawGroup.group,
           mode: modeId,
         })
@@ -1575,10 +1744,17 @@ export function calculateShippingQuote(params: {
         consolidableAfterCross + rawGroup.amount
       )
 
+      consolidableAfterCrossFallback = roundCdf(
+        consolidableAfterCrossFallback + rawGroup.amountCdfFallback
+      )
+
       groups.push({
         group: rawGroup.group,
         label: getLogisticsGroupLabel(rawGroup.group),
         amount_usd: rawGroup.amount,
+        amount_cdf: canApplySmartConsolidation
+          ? roundCdf(rawGroup.amount * (rateUsed as number))
+          : roundCdf(rawGroup.amountCdfFallback),
         items: rawGroup.items.map((line) =>
           lineToBreakdownItem(line, 'line', modeId)
         ),
@@ -1587,13 +1763,16 @@ export function calculateShippingQuote(params: {
   }
 
   consolidableAfterCross = roundUsd(consolidableAfterCross)
+  consolidableAfterCrossFallback = roundCdf(consolidableAfterCrossFallback)
 
   let consolidableFinal = consolidableAfterCross
+  let consolidableFinalFallback = consolidableAfterCrossFallback
 
   const finalDiscountPercent =
     clampPercent(consolidation.discount_percent) ?? 0
 
   if (
+    canApplySmartConsolidation &&
     consolidation.enabled &&
     finalDiscountPercent > 0 &&
     consolidableFinal > 0
@@ -1608,10 +1787,12 @@ export function calculateShippingQuote(params: {
         label: 'Remise livraison groupée',
         type: 'discount',
         amount_usd: -discountAmount,
+        amount_cdf: roundCdf(-discountAmount * (rateUsed as number)),
         mode: modeId,
       })
 
       consolidableFinal = roundUsd(consolidableFinal - discountAmount)
+      consolidableFinalFallback = 0
     }
   }
 
@@ -1622,35 +1803,78 @@ export function calculateShippingQuote(params: {
     )
   )
 
+  /**
+   * subtotalUsd explicite = 0 doit être respecté.
+   */
+  const explicitSubtotalUsd =
+    params.subtotalUsd === null || params.subtotalUsd === undefined
+      ? null
+      : parseFiniteNumber(params.subtotalUsd)
+
   const subtotalUsd =
-    nullablePositive(params.subtotalUsd) ?? computedSubtotalUsd
+    explicitSubtotalUsd != null && explicitSubtotalUsd >= 0
+      ? roundUsd(explicitSubtotalUsd)
+      : computedSubtotalUsd
 
   let freeShippingApplied = false
 
-  const freeThreshold = consolidation.free_shipping_threshold_usd
+  /**
+   * Seuils de livraison gratuite :
+   * - seuil par mode ;
+   * - seuil de consolidation commande.
+   *
+   * On retient le plus strict (le plus élevé) pour satisfaire toutes les règles.
+   */
+  const modeFreeThresholds = normalizedItems
+    .map((item) =>
+      explicitNonNegative(item.modeConfig.free_shipping_threshold_usd)
+    )
+    .filter((value): value is number => value != null && value > 0)
+
+  const modeFreeThreshold = modeFreeThresholds.length
+    ? Math.max(...modeFreeThresholds)
+    : null
+
+  const orderFreeThreshold = consolidation.enabled
+    ? explicitNonNegative(consolidation.free_shipping_threshold_usd)
+    : null
+
+  const effectiveFreeThresholdValues = [
+    modeFreeThreshold,
+    orderFreeThreshold,
+  ].filter((value): value is number => value != null && value > 0)
+
+  const effectiveFreeThreshold = effectiveFreeThresholdValues.length
+    ? Math.max(...effectiveFreeThresholdValues)
+    : null
 
   if (
-    freeThreshold != null &&
-    freeThreshold > 0 &&
-    subtotalUsd >= freeThreshold &&
+    canApplySmartConsolidation &&
+    effectiveFreeThreshold != null &&
+    effectiveFreeThreshold > 0 &&
+    subtotalUsd >= effectiveFreeThreshold &&
     consolidableFinal > 0
   ) {
     freeShippingApplied = true
 
     breakdown.push({
       id: 'free-shipping-threshold',
-      label: `Livraison gratuite dès ${formatUsdPreview(freeThreshold)}`,
+      label: `Livraison gratuite dès ${formatUsdPreview(effectiveFreeThreshold)}`,
       type: 'free_shipping',
       amount_usd: -consolidableFinal,
+      amount_cdf: roundCdf(-consolidableFinal * (rateUsed as number)),
       mode: modeId,
       note: 'Appliquée uniquement sur la partie consolidable.',
     })
 
     consolidableFinal = 0
+    consolidableFinalFallback = 0
   }
 
   if (
     !freeShippingApplied &&
+    canApplySmartConsolidation &&
+    consolidation.enabled &&
     consolidation.max_order_shipping_usd != null &&
     consolidableFinal > positiveNum(consolidation.max_order_shipping_usd)
   ) {
@@ -1662,14 +1886,18 @@ export function calculateShippingQuote(params: {
       label: 'Plafond livraison consolidée',
       type: 'cap',
       amount_usd: adjustment,
+      amount_cdf: roundCdf(adjustment * (rateUsed as number)),
       mode: modeId,
     })
 
     consolidableFinal = maxAmount
+    consolidableFinalFallback = 0
   }
 
   if (
     !freeShippingApplied &&
+    canApplySmartConsolidation &&
+    consolidation.enabled &&
     consolidableFinal > 0 &&
     consolidation.min_order_shipping_usd != null &&
     consolidableFinal < positiveNum(consolidation.min_order_shipping_usd)
@@ -1682,28 +1910,37 @@ export function calculateShippingQuote(params: {
       label: 'Minimum livraison consolidée',
       type: 'floor',
       amount_usd: adjustment,
+      amount_cdf: roundCdf(adjustment * (rateUsed as number)),
       mode: modeId,
     })
 
     consolidableFinal = minAmount
+    consolidableFinalFallback = 0
   }
 
   if (consolidableFinal < 0) {
     consolidableFinal = 0
   }
 
+  if (consolidableFinalFallback < 0) {
+    consolidableFinalFallback = 0
+  }
+
   const totalUsd = roundUsd(mandatoryTotal + consolidableFinal)
-  const totalCdf =
-    rateUsed && rateUsed > 0 ? roundCdf(totalUsd * rateUsed) : 0
+
+  const totalCdf = canApplySmartConsolidation
+    ? roundCdf(totalUsd * (rateUsed as number))
+    : roundCdf(mandatoryFallbackCdf + consolidableAfterCrossFallback)
 
   const enrichedBreakdown = enrichBreakdown(breakdown, rateUsed)
 
   const enrichedGroups: ShippingGroupBreakdown[] = groups.map((group) => ({
     ...group,
     amount_usd: roundUsd(group.amount_usd),
-    amount_cdf:
-      rateUsed && rateUsed > 0
-        ? roundCdf(group.amount_usd * rateUsed)
+    amount_cdf: canApplySmartConsolidation
+      ? roundCdf(group.amount_usd * (rateUsed as number))
+      : group.amount_cdf != null
+        ? roundCdf(group.amount_cdf)
         : 0,
     items: enrichBreakdown(group.items, rateUsed),
   }))
@@ -1716,6 +1953,15 @@ export function calculateShippingQuote(params: {
   if (mandatoryTotal > 0 && consolidableFinal === 0 && !freeShippingApplied) {
     warnings.push(
       'Certains articles ont des frais de livraison obligatoires non consolidables.'
+    )
+  }
+
+  if (
+    !canApplySmartConsolidation &&
+    (mandatoryFallbackCdf > 0 || consolidableAfterCrossFallback > 0)
+  ) {
+    warnings.push(
+      'Taux USD/CDF indisponible : seuls les montants CDF legacy sont conservés, sans consolidation intelligente.'
     )
   }
 
@@ -1757,7 +2003,9 @@ export function calculateShippingQuote(params: {
     consolidable_final_usd: consolidableFinal,
 
     free_shipping_applied: freeShippingApplied,
-    free_shipping_threshold_usd: freeThreshold ?? null,
+    free_shipping_threshold_usd: canApplySmartConsolidation
+      ? effectiveFreeThreshold ?? null
+      : null,
 
     delay_min_hours: delay.delay_min_hours,
     delay_max_hours: delay.delay_max_hours,
@@ -1832,11 +2080,39 @@ export function estimateProductDeliveryFee(
 ): ProductDeliveryEstimate {
   const safeQuantity = Math.max(1, Math.floor(positiveNum(quantity)))
 
+  /**
+   * USD = source principale.
+   * 0 USD explicite est respecté.
+   */
+  const directUsd = explicitNonNegative(
+    product?.prix_usd,
+    product?.price_usd,
+    product?.unit_price_usd,
+    product?.product?.prix_usd,
+    product?.product?.price_usd,
+    product?.variante?.prix_usd,
+    product?.variante?.price_usd
+  )
+
+  const directCdf = explicitNonNegative(
+    product?.prix,
+    product?.price,
+    product?.prix_cdf,
+    product?.price_cdf,
+    product?.product?.prix,
+    product?.product?.price,
+    product?.product?.prix_cdf,
+    product?.product?.price_cdf,
+    product?.variante?.prix,
+    product?.variante?.price,
+    product?.variante?.prix_cdf,
+    product?.variante?.price_cdf
+  )
+
   const unitPriceUsd =
-    nullablePositive(product?.prix_usd) ??
-    nullablePositive(product?.price_usd) ??
-    (nullablePositive(product?.prix) != null && rate && rate > 0
-      ? roundUsd(positiveNum(product?.prix) / rate)
+    directUsd ??
+    (directCdf != null && rate && rate > 0
+      ? roundUsd(directCdf / rate)
       : 0)
 
   const item: ShippingCartItem = {
@@ -1886,6 +2162,24 @@ export function formatShippingMoney(
   }
 
   return `${Math.round(n).toLocaleString('fr-FR')} FC`
+}
+
+export function formatShippingMoneySigned(
+  value: number | null | undefined,
+  currency: Currency
+): string {
+  const n = Number(value ?? 0)
+
+  if (!Number.isFinite(n)) return '—'
+
+  const sign = n < 0 ? '-' : ''
+  const abs = Math.abs(n)
+
+  if (currency === 'USD') {
+    return `${sign}$${abs.toFixed(2)}`
+  }
+
+  return `${sign}${Math.round(abs).toLocaleString('fr-FR')} FC`
 }
 
 export function getShippingPrimaryValue(

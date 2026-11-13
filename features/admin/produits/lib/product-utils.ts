@@ -11,6 +11,51 @@ import type {
 import { normalizeProductDeliveryConfig } from '@/lib/shipping-utils'
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  TYPES                                                          */
+/* ═══════════════════════════════════════════════════════════════ */
+
+export type PriceSource =
+  | 'USD'
+  | 'CDF_CONVERTED'
+  | 'CDF_LEGACY'
+  | 'NONE'
+
+export interface PriceResolution {
+  /**
+   * Prix USD principal.
+   * Peut être 0 si explicitement renseigné.
+   */
+  prixUsd: number
+
+  /**
+   * Prix CDF recalculé ou legacy.
+   * Si cdfKnown = false, ce 0 ne doit pas être interprété comme un 0 CDF explicite.
+   */
+  prixCdf: number
+
+  /**
+   * Indique si le CDF est réellement connu.
+   */
+  cdfKnown: boolean
+
+  /**
+   * Indique si l’USD est réellement connu.
+   * true même pour 0 USD explicite.
+   */
+  usdKnown: boolean
+
+  /**
+   * Taux serveur valide.
+   */
+  rateOk: boolean
+
+  /**
+   * Source principale du prix résolu.
+   */
+  source: PriceSource
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  CONSTANTS                                                      */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -64,18 +109,119 @@ export const EMPTY_SUMMARY: FormSummary = {
   deliveryNonConsolidable: false,
 }
 
+const PRICE_USD_KEYS = [
+  'prix_usd',
+  'price_usd',
+  'unit_price_usd',
+] as const
+
+const PRICE_CDF_KEYS = [
+  'prix',
+  'prix_cdf',
+  'price',
+  'price_cdf',
+] as const
+
+const ORIGINAL_PRICE_USD_KEYS = [
+  'prix_original_usd',
+] as const
+
+const ORIGINAL_PRICE_CDF_KEYS = [
+  'prix_original',
+  'prix_cdf_original',
+] as const
+
 /* ═══════════════════════════════════════════════════════════════ */
 /*  BASIC NUMBER HELPERS                                           */
 /* ═══════════════════════════════════════════════════════════════ */
 
-export function num(value: any): number | null {
-  const n = Number(value)
+function parseFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'boolean') return null
+
+  const raw =
+    typeof value === 'string'
+      ? value.replace(',', '.').trim()
+      : value
+
+  const n = Number(raw)
+
   return Number.isFinite(n) ? n : null
 }
 
+function round2(value: number): number {
+  if (!Number.isFinite(value)) return 0
+
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function roundCdf(value: number): number {
+  if (!Number.isFinite(value)) return 0
+
+  return Math.round(value + Number.EPSILON)
+}
+
+function toUsd(cdf: number, rate: number): number {
+  if (!Number.isFinite(cdf) || cdf < 0) return 0
+  if (!Number.isFinite(rate) || rate <= 0) return 0
+
+  return round2(cdf / rate)
+}
+
+function toCdf(usd: number, rate: number): number {
+  if (!Number.isFinite(usd) || usd < 0) return 0
+  if (!Number.isFinite(rate) || rate <= 0) return 0
+
+  return roundCdf(usd * rate)
+}
+
+/**
+ * USD : autorise 0.
+ * Important : 0 USD explicite doit être respecté.
+ */
+function explicitUsd(...values: unknown[]): number | null {
+  for (const value of values) {
+    const n = parseFiniteNumber(value)
+
+    if (n != null && n >= 0) {
+      return round2(n)
+    }
+  }
+
+  return null
+}
+
+/**
+ * CDF : autorise 0.
+ */
+function explicitCdf(...values: unknown[]): number | null {
+  for (const value of values) {
+    const n = parseFiniteNumber(value)
+
+    if (n != null && n >= 0) {
+      return roundCdf(n)
+    }
+  }
+
+  return null
+}
+
+function pickValues(source: any, keys: readonly string[]): unknown[] {
+  return keys.map((key) => source?.[key])
+}
+
+export function num(value: any): number | null {
+  return parseFiniteNumber(value)
+}
+
 export function positiveNum(value: any): number | null {
-  const n = num(value)
+  const n = parseFiniteNumber(value)
   return n !== null && n > 0 ? n : null
+}
+
+function clampRemise(value: unknown): number {
+  const n = parseFiniteNumber(value) ?? 0
+  return Math.min(90, Math.max(0, n))
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -83,12 +229,12 @@ export function positiveNum(value: any): number | null {
 /* ═══════════════════════════════════════════════════════════════ */
 
 export function formatUsd(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '—'
-  return `$${value.toFixed(2)}`
+  if (!Number.isFinite(value) || value < 0) return '—'
+  return `$${round2(value).toFixed(2)}`
 }
 
 export function formatCdf(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '—'
+  if (!Number.isFinite(value) || value < 0) return '—'
   return `${Math.round(value).toLocaleString('fr-FR')} FC`
 }
 
@@ -163,29 +309,254 @@ export function isForbiddenKey(key: string): boolean {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  PRICE HELPERS                                                  */
+/*  PRICE RESOLUTION                                               */
 /* ═══════════════════════════════════════════════════════════════ */
 
-export function computePrices(values: any, rate: number | null) {
-  const rawUsd = positiveNum(values?.prix_usd ?? values?.price_usd)
-  const rawCdf = positiveNum(values?.prix ?? values?.prix_cdf ?? values?.price)
-  const rateOk = positiveNum(rate)
+/**
+ * Règle absolue :
+ * - Si USD existe (y compris 0) → USD = vérité.
+ *   CDF = USD × taux.
+ *   Si USD = 0, CDF = 0 même sans taux.
+ *
+ * - Si seulement CDF existe → CDF = source temporaire.
+ *   USD = CDF / taux.
+ *
+ * - Si CDF seul et taux indisponible → CDF_LEGACY.
+ *   Lecture tolérée, écriture refusée.
+ *
+ * - Aucun taux codé en dur.
+ */
+function resolvePriceFromSignals(
+  usdSignal: number | null,
+  cdfSignal: number | null,
+  rate: number | null
+): PriceResolution {
+  const rateNum = parseFiniteNumber(rate)
+  const rateOk = rateNum != null && rateNum > 0
 
-  let prixUsd = rawUsd ?? 0
-  let prixCdf = rawCdf ?? 0
+  if (usdSignal != null) {
+    const usd = round2(usdSignal)
 
-  if (!prixUsd && prixCdf && rateOk) {
-    prixUsd = Number((prixCdf / rateOk).toFixed(2))
+    if (usd === 0) {
+      return {
+        prixUsd: 0,
+        prixCdf: 0,
+        cdfKnown: true,
+        usdKnown: true,
+        rateOk,
+        source: 'USD',
+      }
+    }
+
+    if (rateOk && rateNum != null) {
+      return {
+        prixUsd: usd,
+        prixCdf: roundCdf(toCdf(usd, rateNum)),
+        cdfKnown: true,
+        usdKnown: true,
+        rateOk,
+        source: 'USD',
+      }
+    }
+
+    /**
+     * Taux indisponible.
+     *
+     * On ne garde un CDF legacy que s’il est strictement positif.
+     * Un CDF = 0 en présence d’un USD > 0 est considéré comme incohérent
+     * et n’est pas marqué comme connu.
+     */
+    const fallbackCdf =
+      cdfSignal != null && cdfSignal > 0
+        ? roundCdf(cdfSignal)
+        : null
+
+    return {
+      prixUsd: usd,
+      prixCdf: fallbackCdf ?? 0,
+      cdfKnown: fallbackCdf != null,
+      usdKnown: true,
+      rateOk,
+      source: 'USD',
+    }
   }
 
-  if (!prixCdf && prixUsd && rateOk) {
-    prixCdf = Math.round(prixUsd * rateOk)
+  if (cdfSignal != null) {
+    const cdf = roundCdf(cdfSignal)
+
+    if (cdf === 0) {
+      return {
+        prixUsd: 0,
+        prixCdf: 0,
+        cdfKnown: true,
+        usdKnown: true,
+        rateOk,
+        source: 'USD',
+      }
+    }
+
+    if (rateOk && rateNum != null) {
+      const usd = round2(toUsd(cdf, rateNum))
+
+      return {
+        prixUsd: usd,
+        prixCdf: cdf,
+        cdfKnown: true,
+        usdKnown: true,
+        rateOk,
+        source: 'CDF_CONVERTED',
+      }
+    }
+
+    return {
+      prixUsd: 0,
+      prixCdf: cdf,
+      cdfKnown: true,
+      usdKnown: false,
+      rateOk,
+      source: 'CDF_LEGACY',
+    }
   }
 
   return {
-    prixUsd,
-    prixCdf,
+    prixUsd: 0,
+    prixCdf: 0,
+    cdfKnown: false,
+    usdKnown: false,
     rateOk,
+    source: 'NONE',
+  }
+}
+
+export function computePrices(
+  values: any,
+  rate: number | null
+): PriceResolution {
+  const usdSignal = explicitUsd(...pickValues(values, PRICE_USD_KEYS))
+  const cdfSignal = explicitCdf(...pickValues(values, PRICE_CDF_KEYS))
+
+  return resolvePriceFromSignals(usdSignal, cdfSignal, rate)
+}
+
+function computeOriginalPrices(
+  values: any,
+  finalPrice: PriceResolution,
+  rate: number | null
+): PriceResolution {
+  const usdSignal = explicitUsd(
+    ...pickValues(values, ORIGINAL_PRICE_USD_KEYS)
+  )
+
+  const cdfSignal = explicitCdf(
+    ...pickValues(values, ORIGINAL_PRICE_CDF_KEYS)
+  )
+
+  let resolved = resolvePriceFromSignals(usdSignal, cdfSignal, rate)
+
+  const percent = clampRemise(values?.remise_percent)
+
+  /**
+   * Si aucun prix original n’est renseigné mais qu’une remise existe,
+   * on peut le déduire depuis le prix final.
+   */
+  if (resolved.source === 'NONE' && percent > 0) {
+    const denominator = 1 - percent / 100
+
+    if (denominator > 0) {
+      if (
+        (finalPrice.source === 'USD' ||
+          finalPrice.source === 'CDF_CONVERTED') &&
+        finalPrice.usdKnown
+      ) {
+        const originalUsd = round2(finalPrice.prixUsd / denominator)
+
+        resolved = resolvePriceFromSignals(originalUsd, null, rate)
+      } else if (finalPrice.cdfKnown && finalPrice.prixCdf > 0) {
+        const originalCdf = roundCdf(finalPrice.prixCdf / denominator)
+
+        resolved = resolvePriceFromSignals(null, originalCdf, rate)
+      }
+    }
+  }
+
+  return resolved
+}
+
+function canWritePriceResolution(resolved: PriceResolution): boolean {
+  return (
+    resolved.source === 'USD' ||
+    resolved.source === 'CDF_CONVERTED'
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  VARIANT HELPERS                                                */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function hasVariantPriceSignal(variant: any): boolean {
+  return (
+    variant?.prix_usd !== undefined ||
+    variant?.price_usd !== undefined ||
+    variant?.unit_price_usd !== undefined ||
+    variant?.prix !== undefined ||
+    variant?.prix_cdf !== undefined ||
+    variant?.price !== undefined ||
+    variant?.price_cdf !== undefined
+  )
+}
+
+function normalizeVariantPrices(
+  variantes: any[],
+  rate: number | null
+): any[] {
+  if (!Array.isArray(variantes)) return []
+
+  return variantes.map((variant) => {
+    if (!isPlainObject(variant)) return variant
+    if (!hasVariantPriceSignal(variant)) return variant
+
+    const price = computePrices(variant, rate)
+    const out: any = { ...variant }
+
+    if (price.source !== 'NONE') {
+      out.prix_usd = price.prixUsd
+    }
+
+    if (price.cdfKnown) {
+      out.prix = price.prixCdf
+      out.prix_cdf = price.prixCdf
+    }
+
+    return out
+  })
+}
+
+function validateVariantPrices(
+  variantes: any[],
+  rate: number | null,
+  errors: string[]
+): void {
+  for (const variant of variantes) {
+    if (!isPlainObject(variant)) continue
+    if (!hasVariantPriceSignal(variant)) continue
+
+    const price = computePrices(variant, rate)
+
+    if (price.source === 'CDF_LEGACY') {
+      errors.push(
+        'Une variante contient un prix CDF legacy sans taux USD/CDF disponible. Le prix USD doit être renseigné ou le taux doit être disponible.'
+      )
+
+      return
+    }
+
+    if (price.source === 'NONE') {
+      errors.push(
+        'Une variante ne contient aucun prix USD ou CDF exploitable.'
+      )
+
+      return
+    }
   }
 }
 
@@ -283,11 +654,14 @@ export function normalizeProductForForm(
 ): ProductDraft | null {
   if (!product) return null
 
-  const base: ProductDraft = { ...product }
+  const base: any = { ...product }
 
   base.images = toImageArray(base)
 
-  base.variantes = Array.isArray(base.variantes) ? base.variantes : []
+  base.variantes = normalizeVariantPrices(
+    Array.isArray(base.variantes) ? base.variantes : [],
+    rate
+  )
 
   base.variant_attributes = Array.isArray(base.variant_attributes)
     ? base.variant_attributes
@@ -317,43 +691,30 @@ export function normalizeProductForForm(
     base.slug = slugify(base.nom || '')
   }
 
-  const { prixUsd, prixCdf } = computePrices(base, rate)
+  const price = computePrices(base, rate)
 
-  if (prixUsd > 0) base.prix_usd = prixUsd
-
-  if (prixCdf > 0) {
-    base.prix = prixCdf
-    base.prix_cdf = prixCdf
+  if (price.source !== 'NONE') {
+    base.prix_usd = price.prixUsd
   }
 
-  const remisePercent = Math.max(0, num(base.remise_percent) ?? 0)
-
-  const rawOriginalUsd = positiveNum(base.prix_original_usd)
-  const rawOriginalCdf = positiveNum(base.prix_original)
-
-  let originalUsd = rawOriginalUsd ?? 0
-  let originalCdf = rawOriginalCdf ?? 0
-
-  if (!originalUsd && originalCdf && rate) {
-    originalUsd = Number((originalCdf / rate).toFixed(2))
+  if (price.cdfKnown) {
+    base.prix = price.prixCdf
+    base.prix_cdf = price.prixCdf
   }
 
-  if (!originalCdf && originalUsd && rate) {
-    originalCdf = Math.round(originalUsd * rate)
+  base.remise_percent = clampRemise(base.remise_percent)
+
+  const original = computeOriginalPrices(base, price, rate)
+
+  if (original.source !== 'NONE') {
+    base.prix_original_usd = original.prixUsd
   }
 
-  if (remisePercent > 0 && prixUsd > 0 && !originalUsd) {
-    originalUsd = Number((prixUsd / (1 - remisePercent / 100)).toFixed(2))
+  if (original.cdfKnown) {
+    base.prix_original = original.prixCdf
   }
 
-  if (remisePercent > 0 && prixCdf > 0 && !originalCdf) {
-    originalCdf = Math.round(prixCdf / (1 - remisePercent / 100))
-  }
-
-  if (originalUsd > 0) base.prix_original_usd = originalUsd
-  if (originalCdf > 0) base.prix_original = originalCdf
-
-  return base
+  return base as ProductDraft
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -363,7 +724,7 @@ export function normalizeProductForForm(
 export function buildSummary(values: any, rate: number | null): FormSummary {
   if (!values) return EMPTY_SUMMARY
 
-  const { prixUsd, prixCdf } = computePrices(values, rate)
+  const price = computePrices(values, rate)
   const images = toImageArray(values)
   const variantes = Array.isArray(values.variantes) ? values.variantes : []
   const variantAttributes = Array.isArray(values.variant_attributes)
@@ -393,14 +754,14 @@ export function buildSummary(values: any, rate: number | null): FormSummary {
     )
   )
 
-  const remisePercent = Math.max(0, num(values.remise_percent) ?? 0)
+  const remisePercent = clampRemise(values.remise_percent)
 
   return {
     nom: String(values.nom || '').trim(),
     slug: String(values.slug || '').trim() || slugify(values.nom || ''),
     categorie: String(values.categorie || '').trim(),
-    prixUsd,
-    prixCdf,
+    prixUsd: price.prixUsd,
+    prixCdf: price.prixCdf,
     stock: num(values.stock),
     imagesCount: images.length,
     variantesCount: variantes.length,
@@ -432,19 +793,20 @@ export function sanitizePayload(
   const description = String(values?.description || '').trim()
   const slug = String(values?.slug || '').trim() || slugify(nom)
 
-  const { prixUsd, prixCdf, rateOk } = computePrices(values, rate)
+  const price = computePrices(values, rate)
+  const original = computeOriginalPrices(values, price, rate)
+
+  const rawRemise = num(values?.remise_percent) ?? 0
+  const remisePercent = clampRemise(rawRemise)
 
   const stock = num(values?.stock) ?? 0
-  const remisePercent = Math.min(
-    90,
-    Math.max(0, num(values?.remise_percent) ?? 0)
-  )
 
   const images = toImageArray(values)
 
-  const variantes = Array.isArray(values?.variantes)
-    ? values.variantes
-    : []
+  const variantes = normalizeVariantPrices(
+    Array.isArray(values?.variantes) ? values.variantes : [],
+    rate
+  )
 
   const variantAttributes = Array.isArray(values?.variant_attributes)
     ? values.variant_attributes
@@ -479,32 +841,21 @@ export function sanitizePayload(
   if (!categorie) errors.push('La catégorie est requise.')
   if (images.length === 0) errors.push('Ajoutez au moins une image produit.')
 
-  if (prixUsd <= 0) {
-    errors.push('Le prix USD est requis : USD est la devise principale.')
-  }
-
-  if (prixCdf <= 0) {
+  if (price.source === 'NONE') {
+    errors.push('Aucun prix USD ou CDF exploitable détecté.')
+  } else if (price.source === 'CDF_LEGACY') {
     errors.push(
-      rateOk
-        ? 'Le prix CDF est invalide.'
-        : 'Le prix CDF ne peut pas être calculé : taux de change indisponible.'
+      'Prix CDF legacy détecté sans taux USD/CDF disponible. Le prix USD doit être renseigné ou le taux doit être disponible.'
     )
   }
 
   if (stock < 0) errors.push('Le stock ne peut pas être négatif.')
 
-  if (remisePercent < 0 || remisePercent > 90) {
+  if (rawRemise < 0 || rawRemise > 90) {
     errors.push('La remise doit être entre 0 et 90%.')
   }
 
-  for (const variante of variantes) {
-    const varianteStock = num(variante?.stock)
-
-    if (varianteStock !== null && varianteStock < 0) {
-      errors.push('Le stock d’une variante ne peut pas être négatif.')
-      break
-    }
-  }
+  validateVariantPrices(variantes, rate, errors)
 
   if (normalizedDeliveryConfig.enabled) {
     const activeModes = Object.values(
@@ -513,25 +864,15 @@ export function sanitizePayload(
 
     if (!activeModes) {
       errors.push(
-        'La livraison avancée est activée, mais aucun mode de livraison nest actif.'
+        'La livraison avancée est activée, mais aucun mode de livraison n’est actif.'
       )
     }
   }
 
-  const prixOriginalUsd =
-    positiveNum(values?.prix_original_usd) ??
-    (remisePercent > 0 && prixUsd > 0
-      ? Number((prixUsd / (1 - remisePercent / 100)).toFixed(2))
-      : null)
+  const canWritePrice = canWritePriceResolution(price)
+  const canWriteOriginal = canWritePriceResolution(original)
 
-  const prixOriginalCdf =
-    positiveNum(values?.prix_original) ??
-    positiveNum(values?.prix_cdf_original) ??
-    (remisePercent > 0 && prixCdf > 0
-      ? Math.round(prixCdf / (1 - remisePercent / 100))
-      : null)
-
-  const payload: ProductDraft = { ...values }
+  const payload: any = { ...values }
 
   delete payload._saved_at
 
@@ -556,11 +897,16 @@ export function sanitizePayload(
     main_image_index: num(values?.main_image_index) ?? 0,
     categorie_id: values?.categorie_id || null,
 
-    prix_usd: prixUsd,
-    prix: prixCdf,
-    prix_cdf: prixCdf,
-    prix_original_usd: prixOriginalUsd,
-    prix_original: prixOriginalCdf,
+    prix_usd: canWritePrice ? price.prixUsd : null,
+    prix: price.cdfKnown ? price.prixCdf : null,
+    prix_cdf: price.cdfKnown ? price.prixCdf : null,
+
+    prix_original_usd: canWriteOriginal ? original.prixUsd : null,
+    prix_original:
+      canWriteOriginal && original.cdfKnown
+        ? original.prixCdf
+        : null,
+
     remise_percent: remisePercent,
 
     stock,
@@ -606,6 +952,9 @@ export function sanitizePayload(
     ribbon: values?.ribbon || 'none',
     limit_per_client: num(values?.limit_per_client),
     negociable: Boolean(values?.negociable),
+
+    exchange_rate: price.rateOk ? parseFiniteNumber(rate) : null,
+    price_source: price.source,
   })
 
   for (const key of Object.keys(payload)) {
@@ -615,7 +964,7 @@ export function sanitizePayload(
   }
 
   return {
-    payload,
+    payload: payload as ProductDraft,
     errors,
     summary: buildSummary(payload, rate),
   }
