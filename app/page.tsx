@@ -17,11 +17,16 @@ import {
   AlertTriangle,
   ArrowUp,
   Grid3X3,
+  Headset,
   LayoutList,
   Loader2,
   RotateCcw,
+  ShieldCheck,
   SlidersHorizontal,
+  Smartphone,
   Sparkles,
+  Truck,
+  type LucideIcon,
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -92,10 +97,39 @@ const ProductQuickView = dynamic(
 )
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TYPES                                                          */
+/*  TYPES & DONNÉES STATIQUES                                      */
 /* ═══════════════════════════════════════════════════════════════ */
 
 type ViewMode = 'grid' | 'list'
+
+interface Reassurance {
+  icon: LucideIcon
+  title: string
+  description: string
+}
+
+const REASSURANCES: Reassurance[] = [
+  {
+    icon: Truck,
+    title: 'Livraison rapide',
+    description: 'Partout en RDC',
+  },
+  {
+    icon: Smartphone,
+    title: 'Mobile Money',
+    description: 'Orange, Airtel, M-Pesa',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Paiement sécurisé',
+    description: 'Vos achats protégés',
+  },
+  {
+    icon: Headset,
+    title: 'Support client',
+    description: 'Une équipe à votre écoute',
+  },
+]
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  HERO SKELETON                                                  */
@@ -104,13 +138,15 @@ type ViewMode = 'grid' | 'list'
 function HeroSkeleton() {
   return (
     <div
-      className="relative w-full overflow-hidden rounded-panel bg-muted"
+      className="skeleton relative w-full overflow-hidden rounded-panel border border-line bg-muted shadow-card"
       style={{ aspectRatio: '2 / 1' }}
       role="status"
       aria-label="Chargement du carrousel"
     >
       <div className="absolute inset-0 flex items-center justify-center">
-        <Loader2 size={32} className="animate-spin text-accent" aria-hidden="true" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface/80 shadow-card backdrop-blur">
+          <Loader2 size={26} className="animate-spin text-accent" aria-hidden="true" />
+        </div>
       </div>
       <span className="sr-only">Chargement du carrousel…</span>
     </div>
@@ -129,27 +165,101 @@ function SectionSkeleton({
   count?: number
 }) {
   return (
-    <div className="space-y-4" role="status" aria-label={title}>
+    <div className="space-y-5" role="status" aria-label={title}>
       <span className="sr-only">{title}</span>
 
-      <div className="flex items-center justify-between">
-        <div className="skeleton h-6 w-48 rounded-full" />
-        <div className="skeleton h-8 w-24 rounded-pill" />
+      <div className="flex items-end justify-between gap-4">
+        <div className="space-y-2">
+          <div className="skeleton h-3 w-20 rounded-full" />
+          <div className="skeleton h-7 w-52 rounded-full" />
+        </div>
+        <div className="skeleton h-9 w-28 rounded-pill" />
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
         {Array.from({ length: count }).map((_, index) => (
           <div
             key={`section-skeleton-${index}`}
-            className="space-y-3 rounded-card border border-line bg-surface p-3"
+            className="space-y-3 rounded-card border border-line bg-surface p-3 shadow-card"
           >
             <div className="skeleton aspect-square w-full rounded-control" />
             <div className="skeleton h-3.5 w-3/4 rounded-full" />
             <div className="skeleton h-3 w-1/2 rounded-full" />
+            <div className="skeleton h-5 w-1/3 rounded-full" />
           </div>
         ))}
       </div>
     </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SECTION HEADING (réutilisable)                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function SectionHeading({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string
+  title: string
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="mb-1.5 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+        <span className="h-px w-6 bg-accent/60" aria-hidden="true" />
+        {eyebrow}
+      </p>
+
+      <h2 className="font-heading text-2xl font-bold tracking-tight text-fg sm:text-3xl">
+        {title}
+      </h2>
+
+      {children}
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  BANDEAU DE RÉASSURANCE                                         */
+/* ═══════════════════════════════════════════════════════════════ */
+
+function ReassuranceStrip() {
+  return (
+    <ul
+      className={cn(
+        'grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line shadow-card',
+        'lg:grid-cols-4'
+      )}
+      aria-label="Nos engagements"
+    >
+      {REASSURANCES.map(({ icon: Icon, title, description }) => (
+        <li
+          key={title}
+          className="group flex items-center gap-3 bg-surface px-4 py-4 transition-colors duration-200 hover:bg-muted/60 sm:px-5"
+        >
+          <span
+            className={cn(
+              'flex h-10 w-10 shrink-0 items-center justify-center rounded-control',
+              'bg-accent/10 text-accent transition-transform duration-200 group-hover:scale-105'
+            )}
+          >
+            <Icon size={20} strokeWidth={1.9} aria-hidden="true" />
+          </span>
+
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-fg">
+              {title}
+            </span>
+            <span className="block truncate text-xs text-fg-muted">
+              {description}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -295,10 +405,12 @@ export default function HomePage() {
     if (heroError && heroSlides.length === 0) {
       return (
         <div
-          className="flex flex-col items-center justify-center gap-3 rounded-panel border border-line bg-surface py-16 text-center"
+          className="flex flex-col items-center justify-center gap-3 rounded-panel border border-line bg-surface py-16 text-center shadow-card"
           role="alert"
         >
-          <AlertTriangle className="text-danger" size={32} aria-hidden="true" />
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-danger-soft">
+            <AlertTriangle className="text-danger" size={26} aria-hidden="true" />
+          </span>
 
           <p className="text-sm text-fg-muted">
             Impossible de charger le carrousel.
@@ -318,10 +430,12 @@ export default function HomePage() {
 
     if (heroSlides.length === 0) {
       return (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-panel border border-dashed border-line bg-muted py-16 text-center">
-          <Sparkles className="text-accent" size={28} aria-hidden="true" />
+        <div className="flex flex-col items-center justify-center gap-3 rounded-panel border border-dashed border-line bg-gradient-to-b from-accent/5 to-muted py-16 text-center">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
+            <Sparkles className="text-accent" size={26} aria-hidden="true" />
+          </span>
 
-          <p className="text-lg font-semibold text-fg">
+          <p className="font-heading text-lg font-semibold text-fg">
             Rien à l&apos;horizon pour le moment
           </p>
 
@@ -332,7 +446,11 @@ export default function HomePage() {
       )
     }
 
-    return <HeroCarousel slides={heroSlides} {...heroProps} />
+    return (
+      <div className="overflow-hidden rounded-panel shadow-raised">
+        <HeroCarousel slides={heroSlides} {...heroProps} />
+      </div>
+    )
   }, [heroError, heroLoading, heroProps, heroSlides, refetchHero])
 
   /* ───────────────────────────────────────────────────────────── */
@@ -341,13 +459,9 @@ export default function HomePage() {
 
   const catalogueHeader = useMemo(
     () => (
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h2 className="text-2xl font-bold tracking-tight text-fg sm:text-3xl">
-            Catalogue
-          </h2>
-
-          <p className="mt-1 text-sm text-fg-muted" aria-live="polite">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <SectionHeading eyebrow="Découvrir" title="Notre catalogue">
+          <p className="mt-2 text-sm text-fg-muted" aria-live="polite">
             {isLoading || isFetching ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2
@@ -358,16 +472,16 @@ export default function HomePage() {
                 Chargement des produits…
               </span>
             ) : (
-              <span>
-                <span className="font-semibold text-fg">
+              <span className="inline-flex items-center gap-2">
+                <span className="inline-flex items-center rounded-pill bg-accent/10 px-2.5 py-0.5 text-xs font-bold text-accent">
                   {productsCount?.count ?? 0}
-                </span>{' '}
+                </span>
                 produit{productsCount?.count !== 1 ? 's' : ''} trouvé
                 {productsCount?.count !== 1 ? 's' : ''}
               </span>
             )}
           </p>
-        </div>
+        </SectionHeading>
 
         <div className="flex shrink-0 items-center gap-2">
           <Button
@@ -388,17 +502,24 @@ export default function HomePage() {
             )}
           </Button>
 
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={handleResetFilters}>
+              <RotateCcw size={14} aria-hidden="true" />
+              Réinitialiser
+            </Button>
+          )}
+
           <div
             role="group"
             aria-label="Mode d'affichage"
-            className="hidden items-center gap-0.5 rounded-pill border border-line bg-muted p-0.5 sm:flex"
+            className="hidden items-center gap-0.5 rounded-pill border border-line bg-muted p-1 sm:flex"
           >
             <button
               type="button"
               onClick={() => setViewMode('grid')}
               aria-pressed={viewMode === 'grid'}
               className={cn(
-                'inline-flex h-8 w-8 items-center justify-center rounded-pill transition-colors duration-200',
+                'inline-flex h-8 w-8 items-center justify-center rounded-pill transition-all duration-200',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                 viewMode === 'grid'
                   ? 'bg-surface text-accent shadow-card'
@@ -414,7 +535,7 @@ export default function HomePage() {
               onClick={() => setViewMode('list')}
               aria-pressed={viewMode === 'list'}
               className={cn(
-                'inline-flex h-8 w-8 items-center justify-center rounded-pill transition-colors duration-200',
+                'inline-flex h-8 w-8 items-center justify-center rounded-pill transition-all duration-200',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                 viewMode === 'list'
                   ? 'bg-surface text-accent shadow-card'
@@ -425,13 +546,6 @@ export default function HomePage() {
               <LayoutList size={15} aria-hidden="true" />
             </button>
           </div>
-
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={handleResetFilters}>
-              <RotateCcw size={14} aria-hidden="true" />
-              Réinitialiser
-            </Button>
-          )}
         </div>
       </div>
     ),
@@ -456,16 +570,18 @@ export default function HomePage() {
 
     return (
       <div
-        className="flex flex-col items-center justify-center gap-3 rounded-panel border border-danger/20 bg-danger-soft py-12 text-center"
+        className="flex flex-col items-center justify-center gap-3 rounded-panel border border-danger/20 bg-danger-soft py-14 text-center"
         role="alert"
       >
-        <AlertTriangle className="text-danger" size={28} aria-hidden="true" />
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-surface/70">
+          <AlertTriangle className="text-danger" size={24} aria-hidden="true" />
+        </span>
 
-        <p className="text-sm font-medium text-danger">
+        <p className="text-sm font-semibold text-danger">
           Erreur de chargement des produits
         </p>
 
-        <p className="max-w-sm text-xs text-fg-muted">
+        <p className="max-w-sm text-xs leading-relaxed text-fg-muted">
           Une erreur est survenue lors de la récupération du catalogue. Veuillez
           réessayer.
         </p>
@@ -486,11 +602,13 @@ export default function HomePage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center bg-canvas">
         <div className="space-y-4 text-center">
-          <Loader2
-            size={36}
-            className="mx-auto animate-spin text-accent"
-            aria-hidden="true"
-          />
+          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-line bg-surface shadow-card">
+            <Loader2
+              size={28}
+              className="animate-spin text-accent"
+              aria-hidden="true"
+            />
+          </span>
 
           <p className="text-sm text-fg-muted">Vérification du compte…</p>
         </div>
@@ -500,10 +618,23 @@ export default function HomePage() {
 
   return (
     <div className="bg-canvas text-fg">
-      {/* HERO */}
-      <Container padding="hero" size="default">
-        {renderHero()}
-      </Container>
+      {/* HERO + RÉASSURANCE */}
+      <div className="relative">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-b from-accent/10 via-accent/5 to-transparent"
+        />
+
+        <Container padding="hero" size="default">
+          <div className="relative">{renderHero()}</div>
+        </Container>
+
+        <Container padding="compact" size="default">
+          <div className="relative">
+            <ReassuranceStrip />
+          </div>
+        </Container>
+      </div>
 
       {/* PROMO BANNER */}
       <Suspense fallback={null}>
@@ -520,7 +651,7 @@ export default function HomePage() {
       </Container>
 
       {/* TODAY'S DEALS */}
-      <div className="bg-muted/40">
+      <div className="border-y border-line/60 bg-muted/40">
         <Container padding="section" size="default">
           <Suspense fallback={<SectionSkeleton title="Offres du jour" count={4} />}>
             <TodaysDeals />
@@ -538,7 +669,7 @@ export default function HomePage() {
       </Container>
 
       {/* NEW ARRIVALS */}
-      <div className="bg-muted/40">
+      <div className="border-y border-line/60 bg-muted/40">
         <Container padding="section" size="default">
           <Suspense fallback={<SectionSkeleton title="Nouveautés" count={4} />}>
             <NewArrivals />
@@ -553,18 +684,24 @@ export default function HomePage() {
         {showFilters && (
           <div
             id="catalogue-filters"
-            className="mb-6 rounded-card border border-line bg-surface p-4 lg:hidden"
+            className="mb-6 rounded-card border border-line bg-surface p-4 shadow-card lg:hidden"
           >
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-fg-subtle">
               Filtres actifs
             </p>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {hasActiveFilters ? (
-                <Button variant="ghost" size="xs" onClick={handleResetFilters}>
-                  <RotateCcw size={12} aria-hidden="true" />
-                  Tout effacer
-                </Button>
+                <>
+                  <span className="inline-flex items-center rounded-pill bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent">
+                    {activeFilterCount} filtre{activeFilterCount > 1 ? 's' : ''}
+                  </span>
+
+                  <Button variant="ghost" size="xs" onClick={handleResetFilters}>
+                    <RotateCcw size={12} aria-hidden="true" />
+                    Tout effacer
+                  </Button>
+                </>
               ) : (
                 <p className="text-xs text-fg-muted">Aucun filtre actif.</p>
               )}
@@ -597,9 +734,18 @@ export default function HomePage() {
         )}
 
         {hasNextPage && !error && (
-          <div ref={sentinelRef} className="mt-8 flex items-center justify-center">
+          <div
+            ref={sentinelRef}
+            className="mt-10 flex flex-col items-center justify-center gap-3"
+          >
+            {products.length > 0 && (productsCount?.count ?? 0) > 0 && (
+              <p className="text-xs text-fg-muted">
+                {products.length} sur {productsCount?.count} produits affichés
+              </p>
+            )}
+
             {isFetchingNextPage ? (
-              <span className="inline-flex items-center gap-2 text-sm text-fg-muted">
+              <span className="inline-flex items-center gap-2 rounded-pill border border-line bg-surface px-4 py-2 text-sm text-fg-muted shadow-card">
                 <Loader2
                   size={16}
                   className="animate-spin text-accent"
@@ -608,7 +754,7 @@ export default function HomePage() {
                 Chargement…
               </span>
             ) : (
-              <Button variant="secondary" size="sm" onClick={loadMore}>
+              <Button variant="secondary" size="md" onClick={loadMore}>
                 Charger plus de produits
               </Button>
             )}
@@ -647,10 +793,10 @@ export default function HomePage() {
           type="button"
           onClick={scrollToTop}
           className={cn(
-            'fixed bottom-6 right-6 z-40 inline-flex h-11 w-11 items-center justify-center',
-            'rounded-full border border-line bg-surface text-fg shadow-raised',
+            'fixed bottom-6 right-6 z-40 inline-flex h-12 w-12 items-center justify-center',
+            'rounded-full border border-line bg-surface/90 text-fg shadow-raised backdrop-blur',
             'transition-all duration-200 ease-out',
-            'hover:border-accent hover:bg-accent hover:text-accent-contrast',
+            'hover:-translate-y-0.5 hover:border-accent hover:bg-accent hover:text-accent-contrast',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
             'focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
             'animate-fade-in-up'
