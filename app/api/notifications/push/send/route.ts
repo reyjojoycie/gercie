@@ -1,7 +1,7 @@
 // app/api/notifications/push/send/route.ts
 import { createClient } from '@/lib/supabaseServer'
-import { getCurrentUser } from '@/lib/auth'
-import { NextResponse } from 'next/server'
+import { requireAdminApi } from '@/lib/auth/adminGuard'
+import { successResponse, errorResponse, validationErrorResponse } from '@/lib/api-response'
 import { z } from 'zod'
 import admin from 'firebase-admin'
 
@@ -30,34 +30,25 @@ const sendSchema = z.object({
 })
 
 export async function POST(request: Request) {
-  const user = await getCurrentUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
+  const { error: authError } = await requireAdminApi()
+  if (authError) return authError
+
+  let rawBody: any
+  try {
+    rawBody = await request.json()
+  } catch {
+    return errorResponse('Corps JSON invalide', 400)
   }
 
-  // Vérifier que l'utilisateur est admin ou autorisé (selon votre logique)
-  const supabase = await createClient(true)
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('is_admin')
-    .eq('id', user.id)
-    .single()
-  if (!profile?.is_admin) {
-    // Pour les notifications automatiques (ex: commande livrée), on pourrait autoriser le système
-    // Ici on exige admin pour l'appel direct
-    return NextResponse.json({ error: 'Non autorisé' }, { status: 403 })
-  }
-
-  // Valider les données
-  const rawBody = await request.json()
   const parsed = sendSchema.safeParse(rawBody)
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 })
+    return validationErrorResponse(parsed.error)
   }
 
   const { userId, title, body, data } = parsed.data
 
   try {
+    const supabase = await createClient(true)
     // Récupérer les tokens FCM actifs de l'utilisateur
     const { data: tokens, error: tokenError } = await supabase
       .from('livreur_notification_tokens')
@@ -66,7 +57,7 @@ export async function POST(request: Request) {
       .eq('is_active', true)
 
     if (tokenError || !tokens || tokens.length === 0) {
-      return NextResponse.json({ error: 'Aucun token de notification trouvé pour cet utilisateur' }, { status: 404 })
+      return errorResponse('Aucun token de notification trouvé pour cet utilisateur', 404)
     }
 
     const fcmTokens = tokens.map(t => t.token)
@@ -113,9 +104,12 @@ export async function POST(request: Request) {
       })
     }
 
-    return NextResponse.json({ success: true, successCount: response.successCount, failureCount: response.failureCount })
+    return successResponse({
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+    })
   } catch (error: any) {
     console.error('Erreur envoi notification push:', error)
-    return NextResponse.json({ error: 'Erreur lors de l’envoi de la notification' }, { status: 500 })
+    return errorResponse('Erreur lors de l’envoi de la notification', 500)
   }
 }

@@ -2,9 +2,10 @@
 // Génération de description produit par IA – réservé à l'administration.
 // Accepte des informations basiques et retourne un texte prêt à l'emploi.
 // ---------------------------------------------------------------------------
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { generateProductDescription } from '@/lib/ai/contentGenerator';
 import { requireAdminApi } from '@/lib/auth/adminGuard';
+import { successResponse, errorResponse, validationErrorResponse } from '@/lib/api-response';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
 
@@ -24,15 +25,12 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
+    return errorResponse('Corps JSON invalide.', 400);
   }
 
   const parsed = DescriptionRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: 'Paramètres invalides', details: parsed.error.flatten() },
-      { status: 400 }
-    );
+    return validationErrorResponse(parsed.error);
   }
 
   try {
@@ -42,12 +40,9 @@ export async function POST(request: NextRequest) {
       parsed.data.attributes
     );
 
-    return NextResponse.json({ description });
+    return successResponse({ description });
   } catch (error: any) {
     logger.error('Erreur génération description IA', error);
-    return NextResponse.json(
-      { error: 'Échec de la génération de description.' },
-      { status: 500 }
-    );
+    return errorResponse('Échec de la génération de description.', 500);
   }
 }

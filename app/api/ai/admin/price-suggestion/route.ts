@@ -1,9 +1,10 @@
 // app/api/ai/admin/price-suggestion/route.ts
 // Suggère un prix optimal pour un produit – réservé aux administrateurs.
 // ---------------------------------------------------------------------------
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { suggestOptimalPrice } from '@/lib/ai/priceOptimizer';
 import { requireAdminApi } from '@/lib/auth/adminGuard';
+import { successResponse, errorResponse, validationErrorResponse } from '@/lib/api-response';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
 
@@ -19,25 +20,19 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
+    return errorResponse('Corps JSON invalide.', 400);
   }
 
   const parsed = PriceSuggestionRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: 'Paramètres invalides', details: parsed.error.flatten() },
-      { status: 400 }
-    );
+    return validationErrorResponse(parsed.error);
   }
 
   try {
     const suggestion = await suggestOptimalPrice(parsed.data.productId);
-    return NextResponse.json(suggestion);
+    return successResponse(suggestion);
   } catch (error: any) {
     logger.error('Erreur suggestion de prix', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suggestion de prix.' },
-      { status: 500 }
-    );
+    return errorResponse('Erreur lors de la suggestion de prix.', 500);
   }
 }

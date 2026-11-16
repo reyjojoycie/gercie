@@ -1,57 +1,62 @@
 // lib/auth/adminGuard.ts
-import { createClient } from '@/lib/supabaseServer'
+import { createClient, createServiceClient } from '@/lib/supabaseServer'
 import { MESSAGES } from '@/lib/constants'
+import { errorResponse } from '@/lib/api-response'
 import type { User } from '@supabase/supabase-js'
-import type { Database } from '@/types/supabase'
 
 /**
- * Fonction interne pour vérifier si un utilisateur est administrateur.
- * Vérifie les métadonnées de l'utilisateur et la table 'profiles'.
- * @param user L'objet utilisateur Supabase.
- * @param supabase Le client Supabase (doit respecter les RLS).
- * @returns true si l'utilisateur est admin, false sinon.
+ * Vérifie si un objet User Supabase possède des droits admin dans ses métadonnées.
  */
-async function _isUserAdmin(user: User, supabase: ReturnType<typeof createClient>): Promise<boolean> {
-  // Vérifier d'abord les métadonnées de l'utilisateur
-  if (
+function checkUserMetadata(user: User): boolean {
+  return (
     user.app_metadata?.is_admin === true ||
     user.user_metadata?.is_admin === true ||
-    user.app_metadata?.role === 'admin' || // Pour compatibilité
-    user.user_metadata?.role === 'admin'   // Pour compatibilité
-  ) {
-    return true
+    user.app_metadata?.role === 'admin' ||
+    user.user_metadata?.role === 'admin'
+  )
+}
+
+/**
+ * Vérifie si un utilisateur (fourni par son ID ou son objet User) est administrateur.
+ * Interroge les métadonnées puis la table public.profiles.
+ */
+export async function isAdmin(userOrUserId: User | string): Promise<boolean> {
+  if (!userOrUserId) return false
+
+  let userId: string
+  if (typeof userOrUserId === 'object') {
+    if (checkUserMetadata(userOrUserId)) {
+      return true
+    }
+    userId = userOrUserId.id
+  } else {
+    userId = userOrUserId
   }
 
-  // Ensuite, vérifier la colonne is_admin dans la table public.profiles
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('is_admin, role') // Sélectionne également 'role' pour compatibilité
-    .eq('id', user.id)
-    .single()
+  try {
+    const supabase = createServiceClient()
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('is_admin, role')
+      .eq('id', userId)
+      .single()
 
-  if (error) {
-    // Log l'erreur pour débogage, mais ne pas la divulguer à l'utilisateur.
-    // Par sécurité, si la requête échoue, on considère l'utilisateur comme non-admin.
-    console.error('Erreur lors de la récupération du profil pour vérification admin:', error.message)
+    if (error || !profile) {
+      return false
+    }
+
+    return profile.is_admin === true || profile.role === 'admin'
+  } catch (error) {
+    console.error('Erreur lors de la vérification des droits admin:', error)
     return false
   }
-
-  // Si le profil existe et 'is_admin' est vrai, ou 'role' est 'admin'
-  if (profile?.is_admin === true || profile?.role === 'admin') {
-    return true
-  }
-
-  return false
 }
 
 /**
  * Vérifie si l'utilisateur connecté est un administrateur.
  * Lance une erreur si l'utilisateur n'est pas authentifié ou n'est pas admin.
- * @returns L'objet utilisateur si l'authentification et les droits sont valides.
- * @throws {Error} Si l'utilisateur n'est pas authentifié ou n'a pas les droits d'admin.
  */
 export async function requireAdmin(): Promise<User> {
-  // createClient() par défaut n'utilise PAS le rôle de service, donc respecte les RLS.
   const supabase = await createClient()
 
   const {
@@ -63,11 +68,49 @@ export async function requireAdmin(): Promise<User> {
     throw new Error(MESSAGES.NON_AUTHENTIFIE)
   }
 
-  const isAdminUser = await _isUserAdmin(user, supabase)
+  const isAdminUser = await isAdmin(user)
 
   if (!isAdminUser) {
     throw new Error(MESSAGES.ACCES_NON_AUTORISE)
   }
 
   return user
+}
+
+/**
+ * Helper centralisé pour sécuriser les routes d'API Next.js.
+ * Retourne soit un objet avec l'utilisateur, soit une NextResponse 401/403 standardisée.
+ */
+export async function requireAdminApi(): Promise<
+  { user: User; error: null } | { user: null; error: ReturnType<typeof errorResponse> }
+> {
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return {
+        user: null,
+        error: errorResponse(MESSAGES.NON_AUTHENTIFIE, 401),
+      }
+    }
+
+    const adminAuthorized = await isAdmin(user)
+    if (!adminAuthorized) {
+      return {
+        user: null,
+        error: errorResponse(MESSAGES.ACCES_NON_AUTORISE, 403),
+      }
+    }
+
+    return { user, error: null }
+  } catch (err: any) {
+    return {
+      user: null,
+      error: errorResponse(err.message || 'Erreur d’authentification', 500),
+    }
+  }
 }

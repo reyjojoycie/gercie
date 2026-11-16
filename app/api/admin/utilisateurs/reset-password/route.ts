@@ -1,16 +1,25 @@
 import { createClient } from '@/lib/supabaseServer'
-import { requireAdmin } from '@/lib/auth/adminGuard'
-import { NextResponse } from 'next/server'
+import { requireAdminApi } from '@/lib/auth/adminGuard'
+import { successResponse, errorResponse } from '@/lib/api-response'
 
 export async function POST(request: Request) {
-  try { await requireAdmin() } catch (e) { return NextResponse.json({ error: 'Non autorisé' }, { status: 403 }) }
-  const { userId } = await request.json()
-  if (!userId) return NextResponse.json({ error: 'userId requis' }, { status: 400 })
+  const { error: authError } = await requireAdminApi()
+  if (authError) return authError
+
+  let body: any
+  try {
+    body = await request.json()
+  } catch {
+    return errorResponse('Corps JSON invalide', 400)
+  }
+
+  const { userId } = body
+  if (!userId) return errorResponse('userId requis', 400)
 
   const newPassword = Math.random().toString(36).slice(-8) // génération simple
   const supabase = await createClient(true)
   const { error } = await supabase.auth.admin.updateUserById(userId, { password: newPassword })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return errorResponse(error.message, 500)
 
-  return NextResponse.json({ newPassword })
+  return successResponse({ newPassword })
 }
