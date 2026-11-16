@@ -4,11 +4,8 @@
 // ---------------------------------------------------------------------------
 import { NextRequest, NextResponse } from 'next/server';
 import { calculateFraudScore } from '@/lib/ai/fraudDetection';
-import { NextRequest, NextResponse } from 'next/server';
-import { calculateFraudScore } from '@/lib/ai/fraudDetection';
-import { requireAdmin } from '@/lib/auth/adminGuard'; // Import requireAdmin
+import { requireAdminApi } from '@/lib/auth/adminGuard';
 import { logger } from '@/lib/logger';
-import { MESSAGES } from '@/lib/constants'; // Import MESSAGES
 import { z } from 'zod';
 
 const FraudScoreRequestSchema = z.object({
@@ -16,10 +13,8 @@ const FraudScoreRequestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  // Vérification admin centralisée
-  try { await requireAdmin() } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: e.message === MESSAGES.NON_AUTHENTIFIE ? 401 : 403 });
-  }
+  const { error: authError } = await requireAdminApi();
+  if (authError) return authError;
 
   let body;
   try {
