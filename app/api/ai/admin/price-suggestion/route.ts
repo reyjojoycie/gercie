@@ -3,8 +3,11 @@
 // ---------------------------------------------------------------------------
 import { NextRequest, NextResponse } from 'next/server';
 import { suggestOptimalPrice } from '@/lib/ai/priceOptimizer';
-import { supabaseServer } from '@/lib/supabaseServer';
+import { NextRequest, NextResponse } from 'next/server';
+import { suggestOptimalPrice } from '@/lib/ai/priceOptimizer';
+import { requireAdmin } from '@/lib/auth/adminGuard'; // Import requireAdmin
 import { logger } from '@/lib/logger';
+import { MESSAGES } from '@/lib/constants'; // Import MESSAGES
 import { z } from 'zod';
 
 const PriceSuggestionRequestSchema = z.object({
@@ -12,24 +15,9 @@ const PriceSuggestionRequestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  // Vérification admin
-  const {
-    data: { user },
-    error: authError,
-  } = await supabaseServer.auth.getUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
-  }
-
-  const { data: userData, error: userError } = await supabaseServer
-    .from('utilisateurs')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-
-  if (userError || !userData || userData.role !== 'admin') {
-    return NextResponse.json({ error: 'Accès réservé aux administrateurs.' }, { status: 403 });
+  // Vérification admin centralisée
+  try { await requireAdmin() } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: e.message === MESSAGES.NON_AUTHENTIFIE ? 401 : 403 });
   }
 
   let body;
