@@ -5,12 +5,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MotionConfig } from 'framer-motion'
 
 import {
+  useEffect,
   useMemo,
   type ComponentType,
   type ReactNode,
 } from 'react'
 
-import { ThemeProvider } from '@/contexts/ThemeContext'
+import { ThemeProvider as NextThemesProvider } from 'next-themes'
 import { OnlineStatusProvider } from '@/contexts/OnlineStatusContext'
 import { AnnouncerProvider } from '@/contexts/AnnouncerContext'
 import { ToastProvider } from '@/components/ui/Toast'
@@ -187,7 +188,11 @@ function getQueryClient() {
 /* ═══════════════════════════════════════════════════════════════ */
 
 const AppProviders = composeProviders(
-  ThemeProvider,
+  // Next-themes ThemeProvider should be the first one
+  // attribute="class" is crucial for Tailwind CSS dark mode toggle
+  // defaultTheme="system" respects OS preference by default
+  // enableSystem allows switching between system/light/dark
+  (props) => <NextThemesProvider attribute="class" defaultTheme="system" enableSystem {...props} />,
   OnlineStatusProvider,
   AnnouncerProvider,
   ToastProvider,
@@ -208,6 +213,37 @@ export default function Providers({
   children: ReactNode
 }) {
   const queryClient = useMemo(() => getQueryClient(), [])
+
+  // Effectuer les détections de préférences système et de réseau
+  // pour appliquer les classes au document.documentElement
+  useEffect(() => {
+    const doc = document.documentElement;
+
+    // Préférence de mouvement réduit
+    const mediaQueryReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleReducedMotionChange = (event: MediaQueryListEvent) => {
+      doc.classList.toggle('reduced-motion', event.matches);
+    };
+    doc.classList.toggle('reduced-motion', mediaQueryReducedMotion.matches);
+    mediaQueryReducedMotion.addEventListener('change', handleReducedMotionChange);
+
+    // Détection de bande passante faible
+    // Utiliser window.navigator comme base, puis les propriétés spécifiques
+    const connection = (window.navigator as any).connection || (window.navigator as any).mozConnection || (window.navigator as any).webkitConnection;
+    const updateLowBandwidth = () => {
+      if (connection) {
+        const isSlow = connection.saveData || connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g';
+        doc.classList.toggle('low-bandwidth', isSlow);
+      }
+    };
+    updateLowBandwidth();
+    connection?.addEventListener('change', updateLowBandwidth); // Écoute les changements de connexion
+
+    return () => {
+      mediaQueryReducedMotion.removeEventListener('change', handleReducedMotionChange);
+      connection?.removeEventListener('change', updateLowBandwidth); // Nettoie l'écouteur
+    };
+  }, []); // Exécuter une seule fois au montage
 
   return (
     <QueryClientProvider client={queryClient}>

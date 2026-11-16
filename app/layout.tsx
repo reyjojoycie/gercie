@@ -46,10 +46,6 @@ const SITE_NAME = 'Gercie Market Place'
 const SITE_DESCRIPTION =
   'Marketplace premium en RDC : produits, commandes, livraison, paiement Mobile Money, carte bancaire, virement et paiement à la livraison. Prix affichés en USD avec conversion CDF.'
 
-/* Couleurs de la barre du navigateur (thème clair / sombre) */
-const THEME_COLOR_LIGHT = '#f8f8f5'
-const THEME_COLOR_DARK = '#070a14'
-
 const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || ''
 const isProduction = process.env.NODE_ENV === 'production'
 
@@ -194,10 +190,6 @@ export const viewport: Viewport = {
   userScalable: true,
   viewportFit: 'cover',
   colorScheme: 'light dark',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: THEME_COLOR_LIGHT },
-    { media: '(prefers-color-scheme: dark)', color: THEME_COLOR_DARK },
-  ],
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -235,170 +227,6 @@ const jsonLd = {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  STYLES CRITIQUES (injectés avant tout rendu)                   */
-/* ═══════════════════════════════════════════════════════════════ */
-
-const CRITICAL_THEME_CSS = `
-  :root {
-    color-scheme: light;
-  }
-
-  html {
-    background-color: ${THEME_COLOR_LIGHT};
-    color: #151518;
-    scroll-behavior: smooth;
-    scroll-padding-top: 5rem;
-    -webkit-text-size-adjust: 100%;
-    text-size-adjust: 100%;
-    -webkit-tap-highlight-color: transparent;
-    text-rendering: optimizeLegibility;
-  }
-
-  html.dark {
-    color-scheme: dark;
-    background-color: ${THEME_COLOR_DARK};
-    color: #e8ebf2;
-  }
-
-  body {
-    margin: 0;
-    min-height: 100dvh;
-    background-color: inherit;
-    color: inherit;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  ::selection {
-    background-color: rgba(212, 175, 55, 0.28);
-    color: inherit;
-  }
-
-  html.dark ::selection {
-    background-color: rgba(212, 175, 55, 0.35);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    html {
-      scroll-behavior: auto;
-    }
-  }
-
-  html.reduced-motion *,
-  html.reduced-motion *::before,
-  html.reduced-motion *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-`
-
-const FONT_BRIDGE_CSS = `
-  html {
-    font-family: var(--font-inter), var(--font-outfit), system-ui, -apple-system, 'Segoe UI', sans-serif;
-  }
-
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-heading), var(--font-outfit), system-ui, -apple-system, 'Segoe UI', sans-serif;
-    letter-spacing: -0.015em;
-    text-wrap: balance;
-  }
-
-  .font-sans {
-    font-family: var(--font-outfit), var(--font-inter), system-ui, -apple-system, 'Segoe UI', sans-serif !important;
-  }
-
-  .font-body {
-    font-family: var(--font-inter), var(--font-outfit), system-ui, -apple-system, 'Segoe UI', sans-serif !important;
-  }
-
-  .font-heading {
-    font-family: var(--font-heading), var(--font-outfit), system-ui, -apple-system, 'Segoe UI', sans-serif !important;
-  }
-`
-
-const THEME_INIT_SCRIPT = `
-  (function () {
-    try {
-      var doc = document.documentElement;
-
-      var keys = [
-        'gercie-theme',
-        'gercie-theme-choice',
-        'theme',
-        'gercie-admin-theme'
-      ];
-
-      var stored = null;
-
-      for (var i = 0; i < keys.length; i += 1) {
-        try {
-          var value = localStorage.getItem(keys[i]);
-          if (value) {
-            stored = value;
-            break;
-          }
-        } catch (error) {}
-      }
-
-      var systemDark =
-        window.matchMedia &&
-        window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-      var isDark =
-        stored === 'dark' ||
-        (
-          (stored === null || stored === '' || stored === 'system' || stored === 'auto') &&
-          systemDark
-        );
-
-      doc.classList.toggle('dark', isDark);
-      doc.dataset.theme = isDark ? 'dark' : 'light';
-      doc.style.colorScheme = isDark ? 'dark' : 'light';
-
-      var themeMeta = document.querySelector('meta[name="theme-color"]');
-      if (themeMeta) {
-        themeMeta.setAttribute('content', isDark ? '${THEME_COLOR_DARK}' : '${THEME_COLOR_LIGHT}');
-      }
-
-      var appleMeta = document.querySelector(
-        'meta[name="apple-mobile-web-app-status-bar-style"]'
-      );
-
-      if (appleMeta) {
-        appleMeta.setAttribute(
-          'content',
-          isDark ? 'black-translucent' : 'default'
-        );
-      }
-
-      var connection =
-        navigator.connection ||
-        navigator.mozConnection ||
-        navigator.webkitConnection;
-
-      if (connection) {
-        var isSlow =
-          connection.saveData ||
-          connection.effectiveType === 'slow-2g' ||
-          connection.effectiveType === '2g';
-
-        if (isSlow) {
-          doc.classList.add('low-bandwidth');
-        }
-      }
-
-      if (
-        window.matchMedia &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      ) {
-        doc.classList.add('reduced-motion');
-      }
-    } catch (error) {}
-  })();
-`
-
-/* ═══════════════════════════════════════════════════════════════ */
 /*  LAYOUT RACINE                                                  */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -421,18 +249,6 @@ export default async function RootLayout({
       className={`${outfit.variable} ${inter.variable} ${jakarta.variable}`}
     >
       <head>
-        {/* Style critique anti-flash : fond clair/sombre posé avant l'hydratation */}
-        <style
-          id="critical-theme-style"
-          dangerouslySetInnerHTML={{ __html: CRITICAL_THEME_CSS }}
-        />
-
-        {/* Pont typographique : applique les polices optimisées Next.js */}
-        <style
-          id="font-bridge-style"
-          dangerouslySetInnerHTML={{ __html: FONT_BRIDGE_CSS }}
-        />
-
         {/* Preconnect / DNS prefetch */}
         {preconnectUrls.map((url) => (
           <link key={`preconnect-${url}`} rel="preconnect" href={url} />
@@ -441,16 +257,6 @@ export default async function RootLayout({
         {preconnectUrls.map((url) => (
           <link key={`dns-${url}`} rel="dns-prefetch" href={url} />
         ))}
-
-        {/*
-          Initialisation du thème avant hydratation.
-          Clé principale : gercie-theme
-          Compatibilité ancienne : gercie-theme-choice, theme, gercie-admin-theme
-        */}
-        <script
-          id="theme-initializer"
-          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
-        />
 
         {/* Métadonnées Windows / mobile */}
         <meta name="msapplication-TileColor" content="#0f1b5c" />
