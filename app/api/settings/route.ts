@@ -1,12 +1,12 @@
 // app/api/settings/route.ts
 import { createClient } from '@/lib/supabaseServer'
-import { requireAdmin } from '@/lib/auth/adminGuard'
-import { NextResponse } from 'next/server'
+import { requireAdminApi } from '@/lib/auth/adminGuard'
+import { successResponse, errorResponse } from '@/lib/api-response'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const key = searchParams.get('key')
-  if (!key) return NextResponse.json({ error: 'Paramètre key requis' }, { status: 400 })
+  if (!key) return errorResponse('Paramètre key requis', 400)
 
   try {
     const supabase = await createClient()
@@ -16,21 +16,20 @@ export async function GET(request: Request) {
       .eq('key', key)
       .single()
 
-    if (error || !data) return NextResponse.json({ value: null })
-    return NextResponse.json({ value: data.value })
+    if (error || !data) return successResponse({ value: null })
+    return successResponse({ value: data.value })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return errorResponse(err.message || 'Erreur lors de la récupération des paramètres', 500)
   }
 }
 
 export async function PUT(request: Request) {
-  try { await requireAdmin() } catch (err: any) {
-    return NextResponse.json({ error: 'Accès non autorisé' }, { status: 403 })
-  }
+  const { error: authError } = await requireAdminApi()
+  if (authError) return authError
 
   const body = await request.json()
   const { key, value } = body
-  if (!key || value === undefined) return NextResponse.json({ error: 'key et value requis' }, { status: 400 })
+  if (!key || value === undefined) return errorResponse('key et value requis', 400)
 
   try {
     const supabase = await createClient(true)
@@ -39,8 +38,8 @@ export async function PUT(request: Request) {
       .upsert({ key, value }, { onConflict: 'key' })
 
     if (error) throw error
-    return NextResponse.json({ success: true })
+    return successResponse({ updated: true })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return errorResponse(err.message || 'Erreur lors de la sauvegarde du paramètre', 500)
   }
 }
