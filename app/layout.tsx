@@ -9,6 +9,7 @@ import './globals.css'
 import Providers from './Providers'
 import AppShell from '@/components/layout/AppShell'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
+import { APP_NAME, SITE_URL, SITE_DESCRIPTION } from '@/lib/constants'
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  POLICES                                                        */
@@ -39,12 +40,8 @@ const jakarta = Plus_Jakarta_Sans({
 /*  CONFIG                                                         */
 /* ═══════════════════════════════════════════════════════════════ */
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || SITE_URL
 const OG_IMAGE = '/og-image.jpg'
-const SITE_NAME = 'Gercie Market Place'
-
-const SITE_DESCRIPTION =
-  'Marketplace premium en RDC : produits, commandes, livraison, paiement Mobile Money, carte bancaire, virement et paiement à la livraison. Prix affichés en USD avec conversion CDF.'
 
 const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || ''
 const isProduction = process.env.NODE_ENV === 'production'
@@ -75,7 +72,7 @@ const preconnectUrls = Array.from(
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),
   title: {
-    default: SITE_NAME,
+    default: APP_NAME,
     template: '%s | Gercie',
   },
   description: SITE_DESCRIPTION,
@@ -115,21 +112,21 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'fr_CD',
     url: APP_URL,
-    siteName: SITE_NAME,
-    title: SITE_NAME,
+    siteName: APP_NAME,
+    title: APP_NAME,
     description: SITE_DESCRIPTION,
     images: [
       {
         url: OG_IMAGE,
         width: 1200,
         height: 630,
-        alt: SITE_NAME,
+        alt: APP_NAME,
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: SITE_NAME,
+    title: APP_NAME,
     description: SITE_DESCRIPTION,
     images: [OG_IMAGE],
     creator: '@Gercie',
@@ -174,7 +171,7 @@ export const metadata: Metadata = {
     'apple-mobile-web-app-status-bar-style': 'default',
     'apple-mobile-web-app-title': 'Gercie',
     'mobile-web-app-capable': 'yes',
-    'application-name': SITE_NAME,
+    'application-name': APP_NAME,
     referrer: 'strict-origin-when-cross-origin',
   },
 }
@@ -213,7 +210,7 @@ const jsonLd = {
     },
     {
       '@type': 'WebSite',
-      name: SITE_NAME,
+      name: APP_NAME,
       url: APP_URL,
       inLanguage: 'fr-CD',
       description: SITE_DESCRIPTION,

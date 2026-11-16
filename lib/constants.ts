@@ -1,6 +1,8 @@
 // ========== IDENTITÉ ==========
 export const APP_NAME = "Gercie Market Place"
 export const SITE_URL = "https://gercie.com"
+export const SITE_DESCRIPTION =
+  'Marketplace premium en RDC : produits, commandes, livraison, paiement Mobile Money, carte bancaire, virement et paiement à la livraison. Prix affichés en USD avec conversion CDF.'
 
 // ========== COMMISSIONS ET FRAIS ==========
 export const COMMISSION_PERCENT = 5 // 5% de commission Gercie sur chaque vente
