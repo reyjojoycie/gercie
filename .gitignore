@@ -33,3 +33,4 @@ fix-*.js
 
 # Cache TypeScript
 tsconfig.tsbuildinfo
+.aider*
